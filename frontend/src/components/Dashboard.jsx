@@ -1,159 +1,214 @@
-/**
- * Componente Dashboard - Panel Principal de Control del Usuario
- * 
- * Este componente sirve como el punto central de navegación y control
- * de la aplicación después del login. Proporciona acceso a todas las
- * funcionalidades del sistema según los permisos del usuario.
- * 
- * Funcionalidades principales:
- * - Panel de bienvenida personalizado
- * - Navegación a funcionalidades principales
- * - Información del usuario actual
- * - Controles administrativos (solo para admins)
- * - Gestión de documentos
- * - Herramientas de auditoría
- * - Sistema de logout seguro
- * 
- * Estados manejados:
- * - userInfo: Información detallada del usuario
- * - loading: Estado de carga durante obtención de datos
- * - error: Mensajes de error de la API
- * - stats: Estadísticas del sistema (admin)
- * 
- * Permisos y roles:
- * - Usuario regular: Búsqueda y visualización de documentos
- * - Administrador: Subida de documentos, auditoría, gestión completa
- * 
- * Integración:
- * - Firebase Authentication para autenticación
- * - API backend para obtener información del usuario
- * - React Router para navegación
- * - Contexto de autenticación
- * 
- * Seguridad:
- * - Verificación de permisos en tiempo real
- * - Separación de funcionalidades por rol
- * - Manejo seguro de tokens
- * - Logout seguro con limpieza de estado
- * 
-*/
-
-import React, { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useState } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
-import { authAPI } from "../services/api";
+import { Button } from "@/components/ui/button";
+import { UserCog } from "lucide-react";
 
-export default function Dashboard() {
-  const { currentUser, isAdmin, logout, idToken } = useAuth();
-  const [userInfo, setUserInfo] = useState(null);
-  const [loading,  setLoading]  = useState(true);
-  const [error,    setError]    = useState("");
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
+import {
+  FileText,
+  Search,
+  Upload,
+  Shield,
+  User,
+  LogOut,
+  Menu,
+  Home
+} from "lucide-react";
+
+export function Navbar() {
+  const { currentUser, isAdmin, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const [isSheetOpen, setIsSheetOpen] = useState(false);
 
-  /* Obtener información del usuario */
-  useEffect(() => {
-    if (!currentUser) return;
-
-    (async () => {
-      try {
-        const { data } = await authAPI.getCurrentUser();
-        setUserInfo(data);
-        setError("");
-      } catch (err) {
-        setError(err.response?.data?.detail || err.message);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, [currentUser]);
-
-  /* Cerrar sesión */
   const handleLogout = async () => {
     await logout();
     navigate("/login");
   };
 
-  /* Probar ruta de administrador */
-  const testAdminRoute = async () => {
-    try {
-      const { data } = await authAPI.testAdminRoute();
-      alert(`✔️ ${data.message}`);
-    } catch (err) {
-      const status = err.response?.status;
-      if (status === 403) {
-        alert("⚠️ Necesitas permisos de administrador para usar esta función.");
-      } else if (status === 401) {
-        alert("⚠️ Sesión expirada. Vuelve a iniciar sesión.");
-      } else {
-        alert(`Error inesperado: ${err.response?.data?.detail || err.message}`);
-      }
-    }
-  };
+  const navigation = [
+  {
+    name: "Inicio",
+    href: "/dashboard",
+    icon: Home,
+    show: true
+  },
+  {
+    name: "Buscar",
+    href: "/search",
+    icon: Search,
+    show: true
+  },
+  {
+    name: "Documentos",
+    href: "/documents",
+    icon: FileText,
+    show: true
+  },
+  {
+    name: "Subir",
+    href: "/upload",
+    icon: Upload,
+    show: isAdmin
+  },
+  {
+    name: "Auditoría",
+    href: "/audit",
+    icon: Shield,
+    show: isAdmin
+  },
+  {
+    name: "Administracion",
+    href: "/admin",
+    icon: UserCog,
+    show: isAdmin
+  }
+];
 
-  if (loading) return <div className="loading">Cargando…</div>;
+  const isActive = (path) => location.pathname === path;
+
+  const NavigationItems = ({ mobile = false, onItemClick = () => { } }) => (
+    <>
+      {navigation
+        .filter(item => item.show)
+        .map((item) => {
+          const Icon = item.icon;
+          return (
+            <Button
+              key={item.name}
+              variant={isActive(item.href) ? "default" : "ghost"}
+              className={`${mobile ? "w-full justify-start" : ""} gap-2`}
+              onClick={() => {
+                navigate(item.href);
+                onItemClick();
+              }}
+            >
+              <Icon className="h-4 w-4" />
+              {item.name}
+            </Button>
+          );
+        })}
+    </>
+  );
+
+  const UserDropdown = () => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" className="relative h-8 w-8 rounded-full">
+          <Avatar className="h-8 w-8">
+            <AvatarFallback>
+              {currentUser?.email?.charAt(0).toUpperCase() || "U"}
+            </AvatarFallback>
+          </Avatar>
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent className="w-56" align="end" forceMount>
+        <DropdownMenuLabel className="font-normal">
+          <div className="flex flex-col space-y-1">
+            <p className="text-sm font-medium leading-none">
+              {currentUser?.email}
+            </p>
+            <div className="flex items-center gap-2">
+              <Badge variant={isAdmin ? "default" : "secondary"}>
+                {isAdmin ? "Admin" : "Usuario"}
+              </Badge>
+            </div>
+          </div>
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={handleLogout}>
+          <LogOut className="mr-2 h-4 w-4" />
+          <span>Cerrar sesión</span>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 
   return (
-    <div className="dashboard">
-      <header className="dashboard-header">
-        <h1>Demo Indexador Gemini</h1>
-        <button onClick={handleLogout} className="logout-button">
-          Cerrar sesión
-        </button>
-      </header>
-
-      <div className="dashboard-content">
-        {/* Información de usuario */}
-        <div className="user-info">
-          <h2>Bienvenido, {currentUser.email}</h2>
-          <p><strong>UID:</strong> {currentUser.uid}</p>
-          <p><strong>Rol:</strong> {isAdmin ? "Admin" : "Usuario"}</p>
-          {error && <div className="error-message">{error}</div>}
-        </div>
-
-        {/* Acciones */}
-        <div className="dashboard-actions">
-          {/* Sección de pruebas */}
-          <div className="action-section">
-            <h3>Prueba de autenticación</h3>
-            <button onClick={testAdminRoute} className="test-button">
-              Probar ruta de administrador
-            </button>
+    <div className="space-y-4">
+      <nav className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+        <div className="container flex h-14 max-w-screen-2xl items-center">
+          {/* Logo */}
+          <div className="mr-4 hidden md:flex">
+            <Button
+              variant="ghost"
+              className="mr-6 text-lg font-semibold"
+              onClick={() => navigate("/dashboard")}
+            >
+              Demo Indexador Gemini
+            </Button>
           </div>
 
-          {/* Gestión de documentos */}
-          <div className="action-section">
-            <h3>Gestión de documentos</h3>
-            {isAdmin && (
-              <button onClick={() => navigate("/upload")} className="action-button">
-                Subir documento
-              </button>
-            )}
-            <button onClick={() => navigate("/search")}   className="action-button">
-              Buscar documentos
-            </button>
-            <button onClick={() => navigate("/documents")} className="action-button">
-              Ver documentos
-            </button>
-          </div>
+          {/* Mobile menu */}
+          <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
+            <SheetTrigger asChild>
+              <Button
+                variant="ghost"
+                className="mr-2 px-0 text-base hover:bg-transparent focus-visible:bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 md:hidden"
+              >
+                <Menu className="h-5 w-5" />
+                <span className="sr-only">Abrir menú</span>
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="left" className="pr-0">
+              <SheetHeader>
+                <SheetTitle>Demo Indexador Gemini</SheetTitle>
+                <SheetDescription>
+                  Sistema de gestión de documentos
+                </SheetDescription>
+              </SheetHeader>
+              <div className="my-4 h-[calc(100vh-8rem)] pb-10 pl-6">
+                <div className="flex flex-col space-y-2">
+                  <NavigationItems
+                    mobile
+                    onItemClick={() => setIsSheetOpen(false)}
+                  />
+                </div>
+              </div>
+            </SheetContent>
+          </Sheet>
 
-          {/* Herramientas de administrador */}
-          {isAdmin && (
-            <div className="action-section">
-              <h3>Herramientas de administrador</h3>
-              <button onClick={() => navigate("/audit")} className="test-button">
-                Registros de auditoría
-              </button>
+          {/* Desktop navigation */}
+          <div className="flex flex-1 items-center justify-between space-x-2 md:justify-end">
+            <div className="hidden md:flex md:space-x-2">
+              <NavigationItems />
             </div>
-          )}
-        </div>
 
-        {/* Token debug */}
-        <div className="token-info">
-          <h3>Token ID (debug)</h3>
-          <textarea readOnly rows={3} value={idToken || "Sin token"} />
+            {/* User menu */}
+            <div className="flex items-center space-x-2">
+              <UserDropdown />
+            </div>
+          </div>
         </div>
+      </nav>
+      <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
+        <div className="grid auto-rows-min gap-4 md:grid-cols-3">
+          <div className="bg-muted/50 aspect-video rounded-xl" />
+          <div className="bg-muted/50 aspect-video rounded-xl" />
+          <div className="bg-muted/50 aspect-video rounded-xl" />
+        </div>
+        <div className="bg-muted/50 min-h-[100vh] flex-1 rounded-xl md:min-h-min" />
       </div>
     </div>
   );
 }
 
+export default Navbar;

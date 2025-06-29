@@ -1,42 +1,20 @@
-/**
- * Componente principal de la aplicación Firebase Demo
- * 
- * Este componente configura el enrutamiento principal, la autenticación global,
- * y la estructura base de la aplicación. Incluye rutas protegidas,
- * control de acceso por roles, y configuración de navegación.
- * 
- * Características principales:
- * - Enrutamiento con React Router v6+
- * - Autenticación global con Context API
- * - Rutas protegidas con verificación de roles
- * - Lazy loading de componentes para optimización
- * - Redirecciones inteligentes
- * - Manejo de errores de navegación
- * 
- * Estructura de rutas:
- * - /login, /signup: Autenticación pública
- * - /dashboard: Panel principal (usuarios autenticados)
- * - /search, /documents: Búsqueda y listado (usuarios autenticados)
- * - /upload, /audit: Funciones administrativas (solo admins)
- * 
- * @component
- * @author Firebase Demo Project
- * @version 1.0.0
- * @since 2024
- */
-
 import React from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
-import { AuthProvider }  from "./contexts/AuthContext";
-import PrivateRoute      from "./components/PrivateRoute";
+import { AuthProvider } from "./contexts/AuthContext";
+import PrivateRoute from "./components/PrivateRoute";
 
-import Login             from "./components/Login";
-import Signup            from "./components/Signup";
-import Dashboard         from "./components/Dashboard";
-import AuditLogs         from "./components/AuditLogs";
-import UploadDocument    from "./components/UploadDocument";
-import SearchDocuments   from "./components/SearchDocuments";
-import DocumentsList     from "./components/DocumentsList";
+import { LoginForm } from "./components/Login";
+import { SignUpForm } from "./components/Signup";
+import Dashboard from "./components/Dashboard";
+import UploadDocument from "./components/UploadDocument";
+import SearchDocuments from "./components/SearchDocuments";
+import DocumentsList from "./components/DocumentsList";
+import AdminUsers from "./components/AdminUsers";
+import AdminDashboard from "./components/AdminDashboard";
+import AdminDocuments from "./components/AdminDocuments";
+import Library from "./components/Library";
+import Audit from "./components/Audit";
+import News from "./components/News"; // ✅ Nueva importación
 
 import "./App.css";
 
@@ -45,10 +23,12 @@ export default function App() {
     <Router>
       <AuthProvider>
         <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route path="/signup" element={<Signup />} />
+          {/* Rutas públicas */}
+          <Route path="/login" element={<LoginForm />} />
+          <Route path="/signup" element={<SignUpForm />} />
+          <Route path="/library" element={<Library />} />
 
-          {/* Panel principal (cualquier usuario autenticado) */}
+          {/* Panel principal (usuarios autenticados) */}
           <Route
             path="/dashboard"
             element={
@@ -58,7 +38,7 @@ export default function App() {
             }
           />
 
-          {/* Sólo administradores */}
+          {/* Funciones administrativas (solo admins) */}
           <Route
             path="/upload"
             element={
@@ -68,15 +48,55 @@ export default function App() {
             }
           />
           <Route
-            path="/audit"
+            path="/admin/audit"
             element={
               <PrivateRoute requireAdmin>
-                <AuditLogs />
+                <Audit />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/admin-users"
+            element={
+              <PrivateRoute requireAdmin>
+                <AdminUsers />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/admin"
+            element={
+              <PrivateRoute requireAdmin>
+                <AdminDashboard />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/admin/documents"
+            element={
+              <PrivateRoute requireAdmin>
+                <AdminDocuments />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/admin/library"
+            element={
+              <PrivateRoute requireAdmin>
+                <Library />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/admin/news"
+            element={
+              <PrivateRoute requireAdmin>
+                <News />
               </PrivateRoute>
             }
           />
 
-          {/* Disponibles para todos los usuarios autenticados */}
+          {/* Funciones generales (usuarios autenticados) */}
           <Route
             path="/search"
             element={
