@@ -37,6 +37,7 @@ import AuditLogs         from "./components/AuditLogs";
 import UploadDocument    from "./components/UploadDocument";
 import SearchDocuments   from "./components/SearchDocuments";
 import DocumentsList     from "./components/DocumentsList";
+import ManageUsers       from "./components/ManageUsers";
 
 import "./App.css";
 
@@ -72,6 +73,14 @@ export default function App() {
             element={
               <PrivateRoute requireAdmin>
                 <AuditLogs />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/users"
+            element={
+              <PrivateRoute requireAdmin>
+                <ManageUsers />
               </PrivateRoute>
             }
           />

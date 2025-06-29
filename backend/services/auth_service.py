@@ -31,7 +31,7 @@ from services.firebase_service import get_auth_client, get_firestore_client
 from utils.audit_logger import log_event
 from fastapi import HTTPException, status
 from pydantic import BaseModel, Field, EmailStr
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from datetime import datetime
 
 
@@ -583,4 +583,92 @@ async def get_user_info(uid: str) -> Dict[str, Any]:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error obteniendo información del usuario: {str(e)}"
+        )
+
+
+# ============================================================================
+#                           NUEVAS FUNCIONES DE USUARIOS
+# ============================================================================
+
+async def list_users(limit: int = 100) -> List[Dict[str, Any]]:
+    """Devuelve una lista básica de usuarios registrados."""
+    try:
+        firebase_auth = get_auth_client()
+        users: List[Dict[str, Any]] = []
+
+        page = firebase_auth.list_users(page_token=None, max_results=limit)
+        for user in page.users:
+            users.append({
+                "uid": user.uid,
+                "email": user.email,
+                "display_name": user.display_name,
+                "disabled": user.disabled,
+                "custom_claims": user.custom_claims or {},
+                "email_verified": user.email_verified,
+            })
+
+        return users
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error listando usuarios: {str(e)}"
+        )
+
+
+async def update_user(uid: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    """Actualiza la información básica de un usuario."""
+    try:
+        firebase_auth = get_auth_client()
+        firestore_client = get_firestore_client()
+
+        user = firebase_auth.update_user(uid, **{k: v for k, v in data.items() if k in {"email", "password", "display_name", "disabled"}})
+
+        updates = {}
+        if "role" in data:
+            updates["role"] = data["role"]
+        if "display_name" in data:
+            updates["display_name"] = data["display_name"]
+        if updates:
+            firestore_client.collection("users").document(uid).update(updates)
+
+        return {
+            "uid": user.uid,
+            "email": user.email,
+            "display_name": user.display_name,
+            "disabled": user.disabled,
+        }
+
+    except auth.UserNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Usuario no encontrado: {uid}"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error actualizando usuario: {str(e)}"
+        )
+
+
+async def delete_user(uid: str) -> Dict[str, Any]:
+    """Elimina un usuario por UID."""
+    try:
+        firebase_auth = get_auth_client()
+        firestore_client = get_firestore_client()
+
+        firebase_auth.delete_user(uid)
+        firestore_client.collection("users").document(uid).delete()
+
+        return {"message": "Usuario eliminado", "uid": uid}
+
+    except auth.UserNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Usuario no encontrado: {uid}"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error eliminando usuario: {str(e)}"
         )

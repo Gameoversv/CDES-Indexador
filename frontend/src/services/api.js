@@ -211,8 +211,32 @@ export const authAPI = {
    * 
    * @returns {Promise<Object>} Respuesta de verificación
    */
-  testAdminRoute: () => 
-    api.get("/auth/admin-only-test")
+  testAdminRoute: () =>
+    api.get("/auth/admin-only-test"),
+
+  /**
+   * Lista usuarios (solo admin)
+   */
+  listUsers: (limit = 100) =>
+    api.get(`/auth/users?limit=${limit}`),
+
+  /**
+   * Crea un usuario desde el panel de administración
+   */
+  adminCreateUser: (data) =>
+    api.post("/auth/users", data),
+
+  /**
+   * Actualiza datos de un usuario
+   */
+  updateUser: (uid, data) =>
+    api.patch(`/auth/users/${uid}`, data),
+
+  /**
+   * Elimina un usuario
+   */
+  deleteUser: (uid) =>
+    api.delete(`/auth/users/${uid}`)
 };
 
 // ===== API DE DOCUMENTOS =====

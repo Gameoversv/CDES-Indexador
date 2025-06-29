@@ -137,3 +137,15 @@ button:disabled {
   width: 100%;
   resize: vertical;
 }
+
+/* Gestión de usuarios */
+.admin-users .user-form {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.admin-users .users-table th,
+.admin-users .users-table td {
+  padding: 0.25rem 0.5rem;
+}

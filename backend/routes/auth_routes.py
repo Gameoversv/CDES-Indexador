@@ -27,7 +27,7 @@ Dependencias:
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from typing import Annotated
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, EmailStr
 
 # Importaciones de servicios locales
 from services.auth_service import (
@@ -35,8 +35,23 @@ from services.auth_service import (
     verify_id_token,
     UserRegister,
     TokenData,
+    list_users,
+    update_user,
+    delete_user,
 )
 from utils.audit_logger import log_event
+
+
+class AdminUserCreate(UserRegister):
+    is_admin: bool | None = Field(default=False, description="Crear usuario como admin")
+
+
+class UserUpdate(BaseModel):
+    email: EmailStr | None = None
+    password: str | None = Field(default=None, min_length=6, max_length=128)
+    display_name: str | None = Field(default=None, max_length=100)
+    disabled: bool | None = None
+    role: str | None = Field(default=None, pattern="^(admin|user)$")
 
 # ==================================================================================
 #                           CONFIGURACIÓN DEL ROUTER
@@ -303,3 +318,57 @@ async def admin_only_route(
         "access_granted": True,
         "timestamp": "2024-06-05T22:00:00Z"  # En producción, usar timestamp real
     }
+
+
+@router.get(
+    "/users",
+    summary="Listar usuarios",
+    tags=["🔐 Solo Administradores"]
+)
+async def api_list_users(
+    current_admin: Annotated[TokenData, Depends(get_current_admin_user)],
+    limit: int = 100
+):
+    return await list_users(limit)
+
+
+@router.post(
+    "/users",
+    status_code=status.HTTP_201_CREATED,
+    summary="Crear usuario (admin)",
+    tags=["🔐 Solo Administradores"]
+)
+async def api_admin_create_user(
+    user: AdminUserCreate,
+    current_admin: Annotated[TokenData, Depends(get_current_admin_user)]
+):
+    result = await register_user(user)
+    if user.is_admin:
+        await update_user(result["uid"], {"role": "admin"})
+    return result
+
+
+@router.patch(
+    "/users/{uid}",
+    summary="Actualizar usuario",
+    tags=["🔐 Solo Administradores"]
+)
+async def api_update_user(
+    uid: str,
+    updates: UserUpdate,
+    current_admin: Annotated[TokenData, Depends(get_current_admin_user)]
+):
+    return await update_user(uid, updates.model_dump(exclude_unset=True))
+
+
+@router.delete(
+    "/users/{uid}",
+    status_code=status.HTTP_200_OK,
+    summary="Eliminar usuario",
+    tags=["🔐 Solo Administradores"]
+)
+async def api_delete_user(
+    uid: str,
+    current_admin: Annotated[TokenData, Depends(get_current_admin_user)]
+):
+    return await delete_user(uid)

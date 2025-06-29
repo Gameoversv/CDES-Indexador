@@ -143,6 +143,9 @@ export default function Dashboard() {
               <button onClick={() => navigate("/audit")} className="test-button">
                 Registros de auditoría
               </button>
+              <button onClick={() => navigate("/users")} className="test-button">
+                Gestión de usuarios
+              </button>
             </div>
           )}
         </div>
