@@ -1,56 +1,43 @@
-/**
- * Componente de Registro - Creación de Nuevas Cuentas de Usuario
- * 
- * Este componente proporciona la interfaz de usuario para el registro
- * de nuevos usuarios en el sistema. Maneja la creación de cuentas con
- * Firebase Auth y proporciona validaciones robustas y una experiencia
- * de usuario optimizada.
- * 
- * Funcionalidades principales:
- * - Formulario de registro con validación completa
- * - Confirmación de contraseña
- * - Validaciones de seguridad en tiempo real
- * - Integración con Firebase Authentication
- * - Manejo de estados de carga y errores
- * - Redirección automática después del registro exitoso
- * - Enlace para usuarios existentes
- * 
- * Estados manejados:
- * - email: Dirección de correo electrónico del usuario
- * - password: Contraseña del usuario
- * - confirmPassword: Confirmación de la contraseña
- * - error: Mensajes de error de validación o registro
- * - loading: Estado de carga durante el proceso de registro
- * 
- * Validaciones implementadas:
- * - Formato de email válido
- * - Longitud mínima de contraseña (6 caracteres)
- * - Coincidencia de contraseñas
- * - Campos requeridos
- * - Validaciones en tiempo real
- * 
- * Seguridad:
- * - Validación de fortaleza de contraseña
- * - Prevención de envíos duplicados
- * - Manejo seguro de credenciales
- * - Mensajes de error informativos pero seguros
- * 
-*/
-
+import { cn } from "@/lib/utils"
+import { Button } from "@/components/ui/button"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import React, { useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
-import { auth } from "../services/firebase";
+import { useNavigate } from "react-router-dom";
+import { auth } from "@/services/firebase";
 import { createUserWithEmailAndPassword } from "firebase/auth";
 
-export default function Signup() {
+export function SignUpForm({
+  className,
+  ...props
+}) {
   const navigate = useNavigate();
-  const [email,    setEmail]    = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error,    setError]    = useState("");
-
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [error, setError] = useState("");
+  
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
+
+    if (password !== confirmPassword) {
+      setError("Las contraseñas no coinciden");
+      return;
+    }
+
+    if (password.length < 6) {
+      setError("La contraseña debe tener al menos 6 caracteres");
+      return;
+    }
+
     try {
       await createUserWithEmailAndPassword(auth, email, password);
       navigate("/dashboard");
@@ -72,31 +59,74 @@ export default function Signup() {
   };
 
   return (
-    <div className="auth-container">
-      <h2>Crear cuenta</h2>
-      <form onSubmit={handleSubmit}>
-        <input
-          type="email"
-          placeholder="Correo electrónico"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-        />
-        <input
-          type="password"
-          placeholder="Contraseña"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-        />
-        <button className="auth-button" type="submit">
-          Registrarse
-        </button>
-        {error && <p className="error">{error}</p>}
-      </form>
-      <p>
-        ¿Ya tienes cuenta? <Link to="/login">Inicia sesión</Link>
-      </p>
+    <div className="flex min-h-svh w-full items-center justify-center p-6 md:p-10">
+      <div className="w-full max-w-sm">
+        <div className={cn("flex flex-col gap-6", className)} {...props}>
+          <Card>
+            <CardHeader>
+              <CardTitle>Crear tu cuenta</CardTitle>
+              <CardDescription>
+                Ingresa tu información para crear tu cuenta
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleSubmit}>
+                <div className="flex flex-col gap-6">
+                  <div className="grid gap-3">
+                    <Label htmlFor="email">Correo electrónico</Label>
+                    <Input
+                      onChange={(e) => setEmail(e.target.value)}
+                      id="email"
+                      type="email"
+                      placeholder="correo@ejemplo.com"
+                      value={email}
+                      required
+                    />
+                  </div>
+                  <div className="grid gap-3">
+                    <Label htmlFor="password">Contraseña</Label>
+                    <Input 
+                      id="password" 
+                      onChange={(e) => setPassword(e.target.value)} 
+                      type="password" 
+                      value={password}
+                      placeholder="Mínimo 6 caracteres"
+                      required 
+                    />
+                  </div>
+                  <div className="grid gap-3">
+                    <Label htmlFor="confirmPassword">Confirmar contraseña</Label>
+                    <Input 
+                      id="confirmPassword" 
+                      onChange={(e) => setConfirmPassword(e.target.value)} 
+                      type="password" 
+                      value={confirmPassword}
+                      placeholder="Confirma tu contraseña"
+                      required 
+                    />
+                  </div>
+                  {error && (
+                    <div className="text-red-500 text-sm text-center">
+                      {error}
+                    </div>
+                  )}
+                  <div className="flex flex-col gap-3">
+                    <Button type="submit" className="w-full">
+                      Crear cuenta
+                    </Button>
+                  </div>
+                </div>
+                <div className="mt-4 text-center text-sm">
+                  ¿Ya tienes una cuenta?{" "}
+                  <a href="/login" className="underline underline-offset-4">
+                    Iniciar sesión
+                  </a>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
     </div>
-  );
+  )
 }

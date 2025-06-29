@@ -1,14 +1,16 @@
-fastapi
-uvicorn[standard] # Servidor ASGI para FastAPI
-python-dotenv     # Para cargar variables de .env
-pydantic          # Para la configuración y modelos de datos
-firebase-admin    # Para interactuar con Firebase desde Python
-google-generativeai # Para la API de Gemini
-meilisearch       # Para interactuar con Meilisearch
-python-multipart  # Necesario para el manejo de archivos en FastAPI
+ fastapi==0.110.2
+ uvicorn[standard]==0.29.0
+ python-dotenv==1.0.1
+ pydantic==2.11.7
+ firebase-admin==6.4.0
+ google-generativeai==0.3.2
+ meilisearch==0.30.0
+ python-multipart==0.0.9
+ gunicorn
 
-# Extracción de texto
-pdfplumber
-python-docx
-python-pptx
-openpyxl
+ # Extracción de texto
+ pdfplumber==0.11.0
+ python-docx==1.1.0
+ python-pptx==0.6.23
+ openpyxl==3.1.2
+ pydantic_settings

@@ -1,45 +1,32 @@
-/**
- * Componente de Inicio de Sesión - Autenticación de Usuarios
- * 
- * Este componente proporciona la interfaz de usuario para el inicio de sesión
- * de usuarios registrados en el sistema. Maneja la autenticación con Firebase
- * Auth y proporciona una experiencia de usuario intuitiva y segura.
- * 
- * Funcionalidades principales:
- * - Formulario de inicio de sesión con validación
- * - Integración con Firebase Authentication
- * - Manejo de estados de carga y errores
- * - Redirección automática después del login exitoso
- * - Enlace para registro de nuevos usuarios
- * 
- * Estados manejados:
- * - email: Dirección de correo electrónico del usuario
- * - password: Contraseña del usuario
- * - error: Mensajes de error de autenticación
- * - loading: Estado de carga durante el proceso de login
- * 
- * Seguridad:
- * - Validación de campos requeridos
- * - Manejo seguro de credenciales
- * - Protección contra ataques de fuerza bruta (lado servidor)
- * - Mensajes de error informativos pero seguros
- * 
-*/
-
+import { cn } from "@/lib/utils"
+import { Button } from "@/components/ui/button"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import React, { useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
-import { auth } from "../services/firebase";
+import { useNavigate } from "react-router-dom";
 import { signInWithEmailAndPassword } from "firebase/auth";
+import { auth } from "@/services/firebase";
 
-export default function Login() {
+export function LoginForm({
+  className,
+  ...props
+}) {
   const navigate = useNavigate();
-  const [email,    setEmail]    = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error,    setError]    = useState("");
-
+  const [error, setError] = useState("");
+  
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
+    
     try {
       await signInWithEmailAndPassword(auth, email, password);
       navigate("/dashboard");
@@ -54,6 +41,9 @@ export default function Login() {
         case "auth/invalid-email":
           setError("Correo electrónico inválido");
           break;
+        case "auth/invalid-credential":
+          setError("Credenciales inválidas");
+          break;
         default:
           setError(err.message);
       }
@@ -61,31 +51,70 @@ export default function Login() {
   };
 
   return (
-    <div className="auth-container">
-      <h2>Iniciar sesión</h2>
-      <form onSubmit={handleSubmit}>
-        <input
-          type="email"
-          placeholder="Correo electrónico"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-        />
-        <input
-          type="password"
-          placeholder="Contraseña"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-        />
-        <button className="auth-button" type="submit">
-          Entrar
-        </button>
-        {error && <p className="error">{error}</p>}
-      </form>
-      <p>
-        ¿No tienes cuenta? <Link to="/signup">Regístrate</Link>
-      </p>
+    <div className="flex min-h-svh w-full items-center justify-center p-6 md:p-10">
+      <div className="w-full max-w-sm">
+        <div className={cn("flex flex-col gap-6", className)} {...props}>
+          <Card>
+            <CardHeader>
+              <CardTitle>Iniciar sesión</CardTitle>
+              <CardDescription>
+                Ingresa tu correo electrónico para acceder a tu cuenta
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleSubmit}>
+                <div className="flex flex-col gap-6">
+                  <div className="grid gap-3">
+                    <Label htmlFor="email">Correo electrónico</Label>
+                    <Input
+                      onChange={(e) => setEmail(e.target.value)}
+                      id="email"
+                      type="email"
+                      placeholder="correo@ejemplo.com"
+                      value={email}
+                      required
+                    />
+                  </div>
+                  <div className="grid gap-3">
+                    <div className="flex items-center">
+                      <Label htmlFor="password">Contraseña</Label>
+                      <a
+                        href="#"
+                        className="ml-auto inline-block text-sm underline-offset-4 hover:underline"
+                      >
+                        ¿Olvidaste tu contraseña?
+                      </a>
+                    </div>
+                    <Input 
+                      id="password" 
+                      onChange={(e) => setPassword(e.target.value)} 
+                      type="password" 
+                      value={password}
+                      required 
+                    />
+                  </div>
+                  {error && (
+                    <div className="text-red-500 text-sm text-center">
+                      {error}
+                    </div>
+                  )}
+                  <div className="flex flex-col gap-3">
+                    <Button type="submit" className="w-full">
+                      Iniciar sesión
+                    </Button>
+                  </div>
+                </div>
+                <div className="mt-4 text-center text-sm">
+                  ¿No tienes una cuenta?{" "}
+                  <a href="/signup" className="underline underline-offset-4">
+                    Crear cuenta
+                  </a>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
     </div>
-  );
+  )
 }
