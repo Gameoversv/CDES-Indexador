@@ -15,6 +15,7 @@ import AdminDocuments from "./components/AdminDocuments";
 import Library from "./components/Library";
 import Audit from "./components/Audit";
 import News from "./components/News"; // ✅ Nueva importación
+import { Toaster } from "sonner";
 
 import "./App.css";
 
@@ -22,6 +23,9 @@ export default function App() {
   return (
     <Router>
       <AuthProvider>
+        {/* ✅ Toaster global para notificaciones */}
+        <Toaster position="top-right" richColors closeButton />
+
         <Routes>
           {/* Rutas públicas */}
           <Route path="/login" element={<LoginForm />} />
