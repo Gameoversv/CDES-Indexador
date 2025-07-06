@@ -199,7 +199,8 @@ app = FastAPI(
 ALLOWED_ORIGINS = [
     "http://localhost:3000",    # React development server (Create React App)
     "http://localhost:5173",    # Vite development server
-    "http://127.0.0.1:5173",    # Vite alternative
+    "http://127.0.0.1:5173", 
+    "http://localhost:5174"  # Vite alternative
     # Añadir aquí las URLs de producción cuando sea necesario
     # "https://tu-dominio.com",
 ]

@@ -1,16 +1,15 @@
- fastapi==0.110.2
- uvicorn[standard]==0.29.0
- python-dotenv==1.0.1
- pydantic==2.11.7
- firebase-admin==6.4.0
- google-generativeai==0.3.2
- meilisearch==0.30.0
- python-multipart==0.0.9
- gunicorn
+fastapi==0.110.2
+uvicorn[standard]==0.29.0
+python-dotenv==1.0.1
+pydantic==2.7.1
+firebase-admin==6.4.0
+google-generativeai==0.3.2
+meilisearch==0.30.0
+python-multipart==0.0.9
 
- # Extracción de texto
- pdfplumber==0.11.0
- python-docx==1.1.0
- python-pptx==0.6.23
- openpyxl==3.1.2
- pydantic_settings
+# Extracción de texto
+pdfplumber==0.11.0
+python-docx==1.1.0
+python-pptx==0.6.23
+openpyxl==3.1.2
+pydantic_settings
