@@ -1,16 +1,6 @@
-import React, { useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import AdminLayout from "@/components/AdminLayout";
-import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import {
-  Dialog,
-  DialogContent,
-  DialogTrigger,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { documentsAPI } from "@/services/api";
 import {
   FileText,
   Upload,
@@ -22,38 +12,75 @@ import {
   ArrowUpDown,
   Trash2,
 } from "lucide-react";
-
-const mockFiles = [
-  { name: "informe1.pdf", size: 120000, type: "pdf", updated: "2025-06-27", public: true },
-  { name: "plan2025.docx", size: 87000, type: "docx", updated: "2025-06-26", public: false },
-  { name: "datos.xlsx", size: 132000, type: "xlsx", updated: "2025-06-25", public: true },
-];
+import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogTrigger,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Loader2 } from "lucide-react";
+import { toast } from "sonner"; // asegúrate de tener `sonner` instalado
 
 export default function AdminDocuments() {
-  const [files, setFiles] = useState(mockFiles);
+  const [files, setFiles] = useState([]);
   const [search, setSearch] = useState("");
+  const [typeFilter, setTypeFilter] = useState("");
+  const [sortBy, setSortBy] = useState("filename");
+  const [sortOrder, setSortOrder] = useState("asc");
+  const [previewFile, setPreviewFile] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState({
+    open: false,
+    fileIndex: null,
+  });
+  const [viewMode, setViewMode] = useState("list");
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [newFile, setNewFile] = useState(null);
   const [apartado, setApartado] = useState("");
   const [publico, setPublico] = useState(false);
-  const [sortBy, setSortBy] = useState("name");
-  const [sortOrder, setSortOrder] = useState("asc");
-  const [previewFile, setPreviewFile] = useState(null);
-  const [confirmDelete, setConfirmDelete] = useState({ open: false, fileIndex: null });
 
-  const totalSize = files.reduce((acc, f) => acc + f.size, 0);
-  const countByType = (ext) => files.filter(f => f.type === ext).length;
+  useEffect(() => {
+    fetchFiles();
+  }, []);
+
+  const fetchFiles = async () => {
+    setLoading(true);
+    try {
+      const res = await documentsAPI.listStorage();
+      if (Array.isArray(res.data?.files)) {
+        setFiles(res.data.files);
+        toast.success("Documentos actualizados correctamente.");
+      } else {
+        console.error("Respuesta inesperada:", res.data);
+        setFiles([]);
+        toast.error("Respuesta inesperada del servidor.");
+      }
+    } catch (error) {
+      console.error("Error al obtener documentos:", error);
+      setFiles([]);
+      toast.error("Error al cargar los documentos.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const formatSize = (bytes) =>
-    bytes > 1e6 ? (bytes / 1e6).toFixed(1) + " MB" : (bytes / 1e3).toFixed(1) + " KB";
+    bytes > 1e6
+      ? (bytes / 1e6).toFixed(1) + " MB"
+      : (bytes / 1e3).toFixed(1) + " KB";
 
-  const toggleVisibility = (index) => {
-    setFiles(prev =>
-      prev.map((file, i) =>
-        i === index ? { ...file, public: !file.public } : file
-      )
-    );
-  };
+  const totalSize = useMemo(
+    () => files.reduce((acc, f) => acc + (f.size || 0), 0),
+    [files]
+  );
+
+  const countByType = (ext) =>
+    files.filter((f) => f.filename?.toLowerCase().endsWith(`.${ext}`)).length;
 
   const handleSort = (field) => {
     if (sortBy === field) {
@@ -64,20 +91,42 @@ export default function AdminDocuments() {
     }
   };
 
+  const handleDownload = async (path, filename) => {
+    try {
+      const resp = await documentsAPI.downloadByPath(path);
+      const url = URL.createObjectURL(new Blob([resp.data]));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error(
+        "Error al descargar:",
+        err.response?.data?.detail || err.message
+      );
+    }
+  };
+
   const sortedFiles = [...files].sort((a, b) => {
     let valA = a[sortBy];
     let valB = b[sortBy];
     if (sortBy === "updated") {
       valA = new Date(valA);
       valB = new Date(valB);
+    } else {
+      valA = valA?.toString().toLowerCase();
+      valB = valB?.toString().toLowerCase();
     }
     if (valA < valB) return sortOrder === "asc" ? -1 : 1;
     if (valA > valB) return sortOrder === "asc" ? 1 : -1;
     return 0;
   });
 
-  const filteredFiles = sortedFiles.filter(f =>
-    f.name.toLowerCase().includes(search.toLowerCase())
+  const filteredFiles = sortedFiles.filter(
+    (f) =>
+      f.filename?.toLowerCase().includes(search.toLowerCase()) &&
+      (typeFilter === "" || f.filename?.toLowerCase().endsWith(typeFilter))
   );
 
   return (
@@ -94,20 +143,51 @@ export default function AdminDocuments() {
               Gestiona y accede a todos los documentos del sistema
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" className="gap-1">
-              <RefreshCw className="h-4 w-4" />
-              Actualizar
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              onClick={fetchFiles}
+              className="gap-2"
+              disabled={loading}
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Actualizando...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="h-4 w-4" />
+                  Actualizar
+                </>
+              )}
             </Button>
-            <Button variant="secondary" className="bg-red-500 text-white hover:bg-red-600">
-              <LayoutList className="h-4 w-4" />
-            </Button>
-            <Button variant="outline">
-              <LayoutGrid className="h-4 w-4" />
-            </Button>
+
+            <div className="flex rounded-md overflow-hidden border">
+              <Button
+                onClick={() => setViewMode("list")}
+                className={`rounded-none px-3 ${
+                  viewMode === "list"
+                    ? "bg-red-500 text-white hover:bg-red-600"
+                    : "bg-white text-black hover:bg-muted"
+                }`}
+              >
+                <LayoutList className="h-4 w-4" />
+              </Button>
+              <Button
+                onClick={() => setViewMode("grid")}
+                className={`rounded-none px-3 ${
+                  viewMode === "grid"
+                    ? "bg-red-500 text-white hover:bg-red-600"
+                    : "bg-white text-black hover:bg-muted"
+                }`}
+              >
+                <LayoutGrid className="h-4 w-4" />
+              </Button>
+            </div>
             <Dialog open={uploadModalOpen} onOpenChange={setUploadModalOpen}>
               <DialogTrigger asChild>
-                <Button className="gap-2">
+                <Button className="bg-red-500 text-white hover:bg-red-600 gap-2">
                   <Upload className="h-4 w-4" />
                   Subir documento
                 </Button>
@@ -116,38 +196,67 @@ export default function AdminDocuments() {
                 <DialogHeader>
                   <DialogTitle>Subir nuevo documento</DialogTitle>
                 </DialogHeader>
-                <form className="space-y-4">
-                  <div>
-                    <label className="text-sm font-medium">Apartado</label>
-                    <select
-                      value={apartado}
-                      onChange={(e) => setApartado(e.target.value)}
-                      className="w-full border rounded px-3 py-2 text-sm"
-                    >
-                      <option value="">Selecciona una opción</option>
-                      <option value="CDES Inst.">CDES Inst.</option>
-                      <option value="PES 203P">PES 203P</option>
-                    </select>
-                  </div>
-                  <div className="flex items-center gap-2">
+                <form
+                  className="space-y-4"
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    if (!newFile || !apartado) {
+                      toast.warning(
+                        "Debes seleccionar un archivo y un apartado."
+                      );
+                      return;
+                    }
+                    try {
+                      const formData = new FormData();
+                      formData.append("file", newFile);
+                      formData.append("apartado", apartado);
+                      formData.append("publico", publico);
+
+                      await documentsAPI.upload(formData);
+
+                      toast.success("Archivo subido correctamente.");
+                      setUploadModalOpen(false);
+                      setNewFile(null);
+                      setApartado("");
+                      setPublico(false);
+                      fetchFiles();
+                    } catch (error) {
+                      console.error("Error al subir archivo:", error);
+                      toast.error("Error al subir el archivo.");
+                    }
+                  }}
+                >
+                  <Input
+                    type="file"
+                    accept=".pdf,.docx,.xlsx"
+                    onChange={(e) => setNewFile(e.target.files?.[0] || null)}
+                    required
+                  />
+                  <select
+                    className="border rounded px-3 py-2 w-full"
+                    value={apartado}
+                    onChange={(e) => setApartado(e.target.value)}
+                    required
+                  >
+                    <option value="">Selecciona un apartado</option>
+                    <option value="CDES Inst.">CDES Inst.</option>
+                    <option value="PES 203P">PES 203P</option>
+                  </select>
+                  <label className="flex items-center gap-2 text-sm">
                     <input
                       type="checkbox"
-                      id="publico"
                       checked={publico}
                       onChange={(e) => setPublico(e.target.checked)}
                     />
-                    <label htmlFor="publico" className="text-sm">Habilitar en biblioteca pública</label>
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium">Archivo</label>
-                    <Input
-                      type="file"
-                      onChange={(e) => setNewFile(e.target.files[0])}
-                    />
-                  </div>
-                  <div className="flex justify-end gap-2 pt-2">
-                    <Button variant="outline" onClick={() => setUploadModalOpen(false)}>Cancelar</Button>
-                    <Button disabled>Subir</Button>
+                    Habilitar en biblioteca pública
+                  </label>
+                  <div className="flex justify-end">
+                    <Button
+                      type="submit"
+                      className="bg-red-500 text-white hover:bg-red-600"
+                    >
+                      Subir
+                    </Button>
                   </div>
                 </form>
               </DialogContent>
@@ -157,10 +266,30 @@ export default function AdminDocuments() {
 
         {/* Estadísticas */}
         <div className="grid md:grid-cols-4 gap-4">
-          <Card><CardContent className="p-4"><h4 className="text-sm">Total archivos</h4><p className="text-2xl font-bold">{files.length}</p></CardContent></Card>
-          <Card><CardContent className="p-4"><h4 className="text-sm">Espacio usado</h4><p className="text-2xl font-bold">{formatSize(totalSize)}</p></CardContent></Card>
-          <Card><CardContent className="p-4"><h4 className="text-sm">PDFs</h4><p className="text-2xl font-bold">{countByType("pdf")}</p></CardContent></Card>
-          <Card><CardContent className="p-4"><h4 className="text-sm">DOCX</h4><p className="text-2xl font-bold">{countByType("docx")}</p></CardContent></Card>
+          <Card>
+            <CardContent className="p-4">
+              <h4 className="text-sm">Total archivos</h4>
+              <p className="text-2xl font-bold">{files.length}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <h4 className="text-sm">Espacio usado</h4>
+              <p className="text-2xl font-bold">{formatSize(totalSize)}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <h4 className="text-sm">PDFs</h4>
+              <p className="text-2xl font-bold">{countByType("pdf")}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <h4 className="text-sm">DOCX</h4>
+              <p className="text-2xl font-bold">{countByType("docx")}</p>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Filtros */}
@@ -173,17 +302,21 @@ export default function AdminDocuments() {
                 onChange={(e) => setSearch(e.target.value)}
                 className="md:flex-1"
               />
-              <select className="border rounded px-3 py-2 text-sm">
+              <select
+                className="border rounded px-3 py-2 text-sm"
+                value={typeFilter}
+                onChange={(e) => setTypeFilter(e.target.value)}
+              >
                 <option value="">Todos los tipos</option>
-                <option value="pdf">PDF</option>
-                <option value="docx">DOCX</option>
-                <option value="xlsx">XLSX</option>
+                <option value=".pdf">PDF</option>
+                <option value=".docx">DOCX</option>
+                <option value=".xlsx">XLSX</option>
               </select>
               <select
                 className="border rounded px-3 py-2 text-sm"
                 onChange={(e) => handleSort(e.target.value)}
               >
-                <option value="name">Nombre</option>
+                <option value="filename">Nombre</option>
                 <option value="updated">Fecha</option>
                 <option value="size">Tamaño</option>
               </select>
@@ -191,94 +324,157 @@ export default function AdminDocuments() {
           </CardContent>
         </Card>
 
-        {/* Lista en tabla */}
-        <Card>
-          <CardContent className="p-4 space-y-4">
-            <div className="flex justify-between items-center">
+        {/* Vista */}
+        {viewMode === "list" ? (
+          <Card>
+            <CardContent className="p-4 space-y-4">
               <h3 className="text-sm font-semibold flex items-center gap-2">
                 <LayoutList className="h-4 w-4" />
                 Lista de Archivos
-                <span className="text-muted-foreground text-xs">({filteredFiles.length} archivos)</span>
+                <span className="text-muted-foreground text-xs">
+                  ({filteredFiles.length} archivos)
+                </span>
               </h3>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-sm border-separate border-spacing-y-2">
-                <thead>
-                  <tr className="text-left text-muted-foreground">
-                    <th className="cursor-pointer" onClick={() => handleSort("name")}>
-                      Archivo <ArrowUpDown className="inline h-3 w-3" />
-                    </th>
-                    <th className="cursor-pointer" onClick={() => handleSort("size")}>
-                      Tamaño <ArrowUpDown className="inline h-3 w-3" />
-                    </th>
-                    <th className="cursor-pointer" onClick={() => handleSort("updated")}>
-                      Última modificación <ArrowUpDown className="inline h-3 w-3" />
-                    </th>
-                    <th>Tipo</th>
-                    <th className="text-right">Acciones</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredFiles.map((f, i) => (
-                    <tr key={i} className="bg-muted/50 rounded-md">
-                      <td className="py-2 pr-4">{f.name}</td>
-                      <td className="py-2 pr-4">{formatSize(f.size)}</td>
-                      <td className="py-2 pr-4 text-muted-foreground">{f.updated}</td>
-                      <td className="py-2 pr-4">
-                        <Badge variant="secondary">{f.type.toUpperCase()}</Badge>
-                      </td>
-                      <td className="py-2 pr-4 text-right space-x-2">
-                        <Button size="icon" variant="ghost" onClick={() => setPreviewFile(f)}>
-                          <Eye className="h-4 w-4" />
-                        </Button>
-                        <Button size="icon" variant="ghost" onClick={() => setConfirmDelete({ open: true, fileIndex: i })}>
-                          <Trash2 className="h-4 w-4 text-red-500" />
-                        </Button>
-                        <Button size="sm" variant="outline">Descargar</Button>
-                      </td>
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm border-separate border-spacing-y-2">
+                  <thead>
+                    <tr className="text-left text-muted-foreground">
+                      <th
+                        className="cursor-pointer"
+                        onClick={() => handleSort("filename")}
+                      >
+                        Archivo <ArrowUpDown className="inline h-3 w-3" />
+                      </th>
+                      <th
+                        className="cursor-pointer"
+                        onClick={() => handleSort("size")}
+                      >
+                        Tamaño <ArrowUpDown className="inline h-3 w-3" />
+                      </th>
+                      <th
+                        className="cursor-pointer"
+                        onClick={() => handleSort("updated")}
+                      >
+                        Última modificación{" "}
+                        <ArrowUpDown className="inline h-3 w-3" />
+                      </th>
+                      <th>Tipo</th>
+                      <th className="text-right">Acciones</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Modal vista previa */}
+                  </thead>
+                  <tbody>
+                    {filteredFiles.map((f, i) => (
+                      <tr key={i} className="bg-muted/50 rounded-md">
+                        <td className="py-2 pr-4">{f.filename}</td>
+                        <td className="py-2 pr-4">{formatSize(f.size)}</td>
+                        <td className="py-2 pr-4 text-muted-foreground">
+                          {new Date(f.updated).toLocaleDateString()}
+                        </td>
+                        <td className="py-2 pr-4">
+                          <Badge variant="secondary">
+                            {f.filename?.split(".").pop()?.toUpperCase()}
+                          </Badge>
+                        </td>
+                        <td className="py-2 pr-4 text-right space-x-2">
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => setPreviewFile(f)}
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() =>
+                              setConfirmDelete({ open: true, fileIndex: i })
+                            }
+                          >
+                            <Trash2 className="h-4 w-4 text-red-500" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleDownload(f.path, f.filename)}
+                            className="gap-1"
+                          >
+                            <Download className="h-4 w-4" />
+                            Descargar
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+            {filteredFiles.map((f, i) => (
+              <Card key={i}>
+                <CardContent className="p-4 space-y-2">
+                  <p className="font-medium">{f.filename}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {formatSize(f.size)}
+                  </p>
+                  <p className="text-xs">
+                    {new Date(f.updated).toLocaleDateString()}
+                  </p>
+                  <div className="flex justify-between">
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => setPreviewFile(f)}
+                    >
+                      <Eye className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() =>
+                        setConfirmDelete({ open: true, fileIndex: i })
+                      }
+                    >
+                      <Trash2 className="h-4 w-4 text-red-500" />
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="outline"
+                      onClick={() => handleDownload(f.path, f.filename)}
+                    >
+                      <Download className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+        {/* Modales */}
         <Dialog open={!!previewFile} onOpenChange={() => setPreviewFile(null)}>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Vista previa</DialogTitle>
             </DialogHeader>
             <div className="text-sm space-y-2">
-              <p><strong>Archivo:</strong> {previewFile?.name}</p>
-              <p><strong>Tipo:</strong> {previewFile?.type.toUpperCase()}</p>
-              <p><strong>Última modificación:</strong> {previewFile?.updated}</p>
-              <p className="text-muted-foreground">Simulación de vista previa del documento.</p>
-            </div>
-          </DialogContent>
-        </Dialog>
-
-        {/* Modal de confirmación */}
-        <Dialog open={confirmDelete.open} onOpenChange={() => setConfirmDelete({ open: false, fileIndex: null })}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>¿Eliminar documento?</DialogTitle>
-            </DialogHeader>
-            <p className="text-sm text-muted-foreground">
-              ¿Estás seguro de que deseas eliminar el archivo <strong>{files[confirmDelete.fileIndex]?.name}</strong>? Esta acción no se puede deshacer.
-            </p>
-            <div className="flex justify-end gap-2 mt-4">
-              <Button variant="outline" onClick={() => setConfirmDelete({ open: false, fileIndex: null })}>
-                Cancelar
-              </Button>
-              <Button variant="destructive" onClick={() => {
-                setFiles(prev => prev.filter((_, i) => i !== confirmDelete.fileIndex));
-                setConfirmDelete({ open: false, fileIndex: null });
-              }}>
-                Eliminar
-              </Button>
+              <p>
+                <strong>Archivo:</strong> {previewFile?.filename}
+              </p>
+              <p>
+                <strong>Tipo:</strong>{" "}
+                {previewFile?.filename?.split(".").pop()?.toUpperCase()}
+              </p>
+              <p>
+                <strong>Tamaño:</strong> {formatSize(previewFile?.size)}
+              </p>
+              <p>
+                <strong>Última modificación:</strong>{" "}
+                {new Date(previewFile?.updated).toLocaleDateString()}
+              </p>
+              <p>
+                <strong>Ruta:</strong> {previewFile?.path}
+              </p>
             </div>
           </DialogContent>
         </Dialog>
