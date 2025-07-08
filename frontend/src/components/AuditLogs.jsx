@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import AdminLayout from "@/components/AdminLayout";
 import {
   Select,
   SelectContent,
@@ -240,6 +241,7 @@ export default function AuditLogs() {
   }
 
   return (
+    <AdminLayout>
     <div className="container mx-auto py-6 space-y-6">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -553,5 +555,6 @@ export default function AuditLogs() {
         </CardContent>
       </Card>
     </div>
+    </AdminLayout>
   );
 }
