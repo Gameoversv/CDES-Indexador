@@ -14,6 +14,7 @@ import AdminDashboard from "./components/AdminDashboard";
 import AdminDocuments from "./components/AdminDocuments";
 import Library from "./components/Library";
 import Audit from "./components/Audit";
+import AuditLogs from "./components/AuditLogs";
 import News from "./components/News"; // ✅ Nueva importación
 import { Toaster } from "sonner";
 
@@ -52,13 +53,13 @@ export default function App() {
             }
           />
           <Route
-            path="/admin/audit"
-            element={
-              <PrivateRoute requireAdmin>
-                <Audit />
-              </PrivateRoute>
-            }
-          />
+  path="/admin/audit"
+  element={
+    <PrivateRoute requireAdmin>
+      <AuditLogs />
+    </PrivateRoute>
+  }
+/>
           <Route
             path="/admin-users"
             element={
