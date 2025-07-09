@@ -1,88 +1,338 @@
 import React, { useEffect, useState, useMemo } from "react";
-import AdminLayout from "@/components/AdminLayout";
-import { documentsAPI } from "@/services/api";
-import {
-  FileText,
-  Upload,
-  RefreshCw,
-  LayoutList,
-  LayoutGrid,
-  Eye,
-  Download,
-  ArrowUpDown,
-  Trash2,
-} from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import {
   Dialog,
   DialogContent,
-  DialogTrigger,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogTrigger,
 } from "@/components/ui/dialog";
-import { Loader2 } from "lucide-react";
-import { toast } from "sonner"; // asegúrate de tener `sonner` instalado
+import { 
+  FileText, 
+  Search, 
+  Download, 
+  Calendar, 
+  Filter,
+  Loader2,
+  AlertCircle,
+  HardDrive,
+  File,
+  RefreshCw,
+  ArrowUpDown,
+  Eye,
+  Archive,
+  FolderOpen,
+  Grid3X3,
+  List,
+  User,
+  BookOpen,
+  CheckCircle,
+  FileSpreadsheet,
+  FileBarChart,
+  FileCode,
+  FilePlus,
+  Edit,
+  Users,
+  Clock,
+  ChevronDown,
+  ChevronUp
+} from "lucide-react";
 
-export default function AdminDocuments() {
+// Estado de los documentos (escala de grises)
+const DOC_STATUS = {
+  draft: { label: "Borrador", color: "bg-gray-200 text-gray-800" },
+  review: { label: "En revisión", color: "bg-gray-300 text-gray-800" },
+  approved: { label: "Aprobado", color: "bg-gray-400 text-gray-800" },
+  published: { label: "Publicado", color: "bg-gray-500 text-white" },
+  archived: { label: "Archivado", color: "bg-gray-600 text-white" },
+  formulation: { label: "Formulación", color: "bg-gray-300 text-gray-800" },
+  implementation: { label: "Implementación", color: "bg-gray-400 text-gray-800" }
+};
+
+// Ejes estratégicos (escala de grises)
+const STRATEGIC_AXES = {
+  governance: { label: "Gobernabilidad", icon: <BookOpen size={16} />, color: "bg-gray-100 text-gray-800" },
+  economy: { label: "Economía", icon: <FileSpreadsheet size={16} />, color: "bg-gray-200 text-gray-800" },
+  environment: { label: "Medio Ambiente", icon: <FileBarChart size={16} />, color: "bg-gray-300 text-gray-800" },
+  social: { label: "Desarrollo Social", icon: <FileCode size={16} />, color: "bg-gray-400 text-gray-800" },
+  territorial: { label: "Ordenamiento Territorial", icon: <FileBarChart size={16} />, color: "bg-gray-500 text-white" }
+};
+
+export default function DocumentsList() {
+  // Datos estáticos simulando archivos en el almacenamiento
+  const STATIC_FILES = [
+    {
+      id: "doc-001",
+      filename: "Plan_Vision_2030.pdf",
+      size: 1048576,
+      updated: "2025-06-25T15:24:00Z",
+      created: "2025-06-20T09:15:00Z",
+      path: "/docs/Plan_Vision_2030.pdf",
+      title: "Plan Visión 2030",
+      type: "Plan Estratégico",
+      description: "Documento base de planificación a largo plazo para el desarrollo urbano. Contiene estrategias, objetivos y metas para la transformación de la ciudad hacia un modelo sostenible e inclusivo.",
+      axis: "governance",
+      status: "formulation",
+      responsible: "Oficina Técnica",
+      createdBy: "W. Vargas",
+      files: [
+        { name: "plan2030_v2.pdf", type: "pdf" },
+        { name: "Anexos_metodologicos.docx", type: "docx" },
+        { name: "Presentacion_vision2030.pptx", type: "pptx" }
+      ],
+      history: [
+        { date: "2025-06-10", user: "N. Díaz", action: "Edición", detail: "Modificó la descripción del documento" },
+        { date: "2025-06-08", user: "C. Hernández", action: "Adición", detail: "Subió nueva versión del documento principal" },
+        { date: "2025-06-05", user: "W. Vargas", action: "Creación", detail: "Creó el documento inicial" }
+      ],
+      tags: ["desarrollo", "urbano", "planificación"]
+    },
+    {
+      id: "doc-002",
+      filename: "Presupuesto_2025.xlsx",
+      size: 512000,
+      updated: "2025-06-20T10:00:00Z",
+      created: "2025-05-15T14:30:00Z",
+      path: "/docs/Presupuesto_2025.xlsx",
+      title: "Presupuesto Anual 2025",
+      type: "Documento Financiero",
+      description: "Presupuesto anual para proyectos estratégicos",
+      axis: "economy",
+      status: "published",
+      responsible: "Departamento de Finanzas",
+      createdBy: "Carlos Mendoza",
+      files: [
+        { name: "Presupuesto_2025.xlsx", type: "xlsx" },
+        { name: "Anexos_justificacion.docx", type: "docx" }
+      ],
+      history: [
+        { date: "2025-06-18", user: "M. Rodriguez", action: "Revisión", detail: "Revisó cifras del cuarto trimestre" },
+        { date: "2025-06-10", user: "C. Mendoza", action: "Actualización", detail: "Actualizó proyecciones de ingresos" },
+        { date: "2025-05-15", user: "C. Mendoza", action: "Creación", detail: "Creó documento inicial" }
+      ],
+      tags: ["finanzas", "presupuesto"]
+    },
+    {
+      id: "doc-003",
+      filename: "Acta_Reunion.docx",
+      size: 204800,
+      updated: "2025-06-22T08:30:00Z",
+      created: "2025-06-22T08:00:00Z",
+      path: "/docs/Acta_Reunion.docx",
+      title: "Acta de Reunión del Comité",
+      type: "Acta",
+      description: "Acta de reunión del comité directivo con los puntos tratados y acuerdos alcanzados",
+      axis: "governance",
+      status: "draft",
+      responsible: "Secretaría General",
+      createdBy: "Ana López",
+      files: [
+        { name: "Acta_Reunion.docx", type: "docx" }
+      ],
+      history: [
+        { date: "2025-06-22", user: "A. López", action: "Creación", detail: "Creó el documento inicial" }
+      ],
+      tags: ["reunión", "comité"]
+    },
+  ];
+
   const [files, setFiles] = useState([]);
-  const [search, setSearch] = useState("");
-  const [typeFilter, setTypeFilter] = useState("");
-  const [sortBy, setSortBy] = useState("filename");
+  const [filteredFiles, setFilteredFiles] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [sortBy, setSortBy] = useState("name");
   const [sortOrder, setSortOrder] = useState("asc");
-  const [previewFile, setPreviewFile] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState({
-    open: false,
-    fileIndex: null,
-  });
-  const [viewMode, setViewMode] = useState("list");
-  const [uploadModalOpen, setUploadModalOpen] = useState(false);
-  const [newFile, setNewFile] = useState(null);
-  const [apartado, setApartado] = useState("");
-  const [publico, setPublico] = useState(false);
+  const [filterType, setFilterType] = useState("all");
+  const [filterStatus, setFilterStatus] = useState("all");
+  const [filterAxis, setFilterAxis] = useState("all");
+  const [viewMode, setViewMode] = useState("table");
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [showHistory, setShowHistory] = useState(true);
 
   useEffect(() => {
-    fetchFiles();
+    // Simular carga con retraso
+    setLoading(true);
+    setError("");
+    setTimeout(() => {
+      setFiles(STATIC_FILES);
+      setLoading(false);
+    }, 700);
   }, []);
 
-  const fetchFiles = async () => {
-    setLoading(true);
-    try {
-      const res = await documentsAPI.listStorage();
-      if (Array.isArray(res.data?.files)) {
-        setFiles(res.data.files);
-        toast.success("Documentos actualizados correctamente.");
-      } else {
-        console.error("Respuesta inesperada:", res.data);
-        setFiles([]);
-        toast.error("Respuesta inesperada del servidor.");
+  useEffect(() => {
+    applyFiltersAndSort();
+  }, [files, searchTerm, sortBy, sortOrder, filterType, filterStatus, filterAxis]);
+
+  const applyFiltersAndSort = () => {
+    let filtered = [...files];
+
+    // Buscar por nombre
+    if (searchTerm) {
+      filtered = filtered.filter(file =>
+        file.filename.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (file.title && file.title.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        file.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        file.tags.some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase()))
+      );
+    }
+
+    // Filtrar por tipo
+    if (filterType !== "all") {
+      filtered = filtered.filter(file => {
+        const ext = file.filename.split('.').pop()?.toLowerCase();
+        return ext === filterType;
+      });
+    }
+
+    // Filtrar por estado
+    if (filterStatus !== "all") {
+      filtered = filtered.filter(file => file.status === filterStatus);
+    }
+
+    // Filtrar por eje
+    if (filterAxis !== "all") {
+      filtered = filtered.filter(file => file.axis === filterAxis);
+    }
+
+    // Ordenar
+    filtered.sort((a, b) => {
+      let aValue, bValue;
+
+      switch (sortBy) {
+        case "name":
+          aValue = a.filename.toLowerCase();
+          bValue = b.filename.toLowerCase();
+          break;
+        case "size":
+          aValue = a.size || 0;
+          bValue = b.size || 0;
+          break;
+        case "date":
+          aValue = new Date(a.updated);
+          bValue = new Date(b.updated);
+          break;
+        case "responsible":
+          aValue = a.responsible.toLowerCase();
+          bValue = b.responsible.toLowerCase();
+          break;
+        default:
+          return 0;
       }
-    } catch (error) {
-      console.error("Error al obtener documentos:", error);
-      setFiles([]);
-      toast.error("Error al cargar los documentos.");
-    } finally {
-      setLoading(false);
+
+      if (aValue < bValue) return sortOrder === "asc" ? -1 : 1;
+      if (aValue > bValue) return sortOrder === "asc" ? 1 : -1;
+      return 0;
+    });
+
+    setFilteredFiles(filtered);
+  };
+
+  // Simula descarga sin hacer nada real
+  const handleDownload = (path, filename) => {
+    alert(`Simulación descarga: ${filename}\nRuta: ${path}`);
+  };
+
+  const formatFileSize = (bytes) => {
+    if (!bytes) return "—";
+    if (bytes === 0) return "0 Bytes";
+    const k = 1024;
+    const sizes = ["Bytes", "KB", "MB", "GB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+  };
+
+  const getFileIcon = (filename) => {
+    const ext = filename?.split('.').pop()?.toLowerCase();
+    switch (ext) {
+      case 'pdf': return <FileText className="text-gray-800" size={20} />;
+      case 'doc':
+      case 'docx': return <FileText className="text-gray-800" size={20} />;
+      case 'xls':
+      case 'xlsx': return <FileSpreadsheet className="text-gray-800" size={20} />;
+      case 'ppt':
+      case 'pptx': return <FileBarChart className="text-gray-800" size={20} />;
+      default: return <File className="text-gray-800" size={20} />;
     }
   };
 
-  const formatSize = (bytes) =>
-    bytes > 1e6
-      ? (bytes / 1e6).toFixed(1) + " MB"
-      : (bytes / 1e3).toFixed(1) + " KB";
+  const getFileTypeColor = (filename) => {
+    const ext = filename?.split('.').pop()?.toLowerCase();
+    switch (ext) {
+      case 'pdf': return "bg-gray-100 text-gray-800";
+      case 'doc':
+      case 'docx': return "bg-gray-100 text-gray-800";
+      case 'xls':
+      case 'xlsx': return "bg-gray-100 text-gray-800";
+      case 'ppt':
+      case 'pptx': return "bg-gray-100 text-gray-800";
+      default: return "bg-gray-100 text-gray-800";
+    }
+  };
 
-  const totalSize = useMemo(
-    () => files.reduce((acc, f) => acc + (f.size || 0), 0),
-    [files]
-  );
+  const formatDate = (dateString) => {
+    return new Date(dateString).toLocaleDateString('es-ES', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
 
-  const countByType = (ext) =>
-    files.filter((f) => f.filename?.toLowerCase().endsWith(`.${ext}`)).length;
+  const formatSimpleDate = (dateString) => {
+    return new Date(dateString).toLocaleDateString('es-ES', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    });
+  };
 
-  const handleSort = (field) => {
+  const stats = useMemo(() => {
+    const totalSize = files.reduce((acc, file) => acc + (file.size || 0), 0);
+    const typeCount = {};
+    const statusCount = {};
+    const axisCount = {};
+    
+    files.forEach(file => {
+      const ext = file.filename.split('.').pop()?.toLowerCase() || 'other';
+      typeCount[ext] = (typeCount[ext] || 0) + 1;
+      
+      statusCount[file.status] = (statusCount[file.status] || 0) + 1;
+      axisCount[file.axis] = (axisCount[file.axis] || 0) + 1;
+    });
+
+    return {
+      totalFiles: files.length,
+      totalSize,
+      typeCount,
+      statusCount,
+      axisCount
+    };
+  }, [files]);
+
+  const toggleSort = (field) => {
     if (sortBy === field) {
       setSortOrder(sortOrder === "asc" ? "desc" : "asc");
     } else {
@@ -91,394 +341,710 @@ export default function AdminDocuments() {
     }
   };
 
-  const handleDownload = async (path, filename) => {
-    try {
-      const resp = await documentsAPI.downloadByPath(path);
-      const url = URL.createObjectURL(new Blob([resp.data]));
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error(
-        "Error al descargar:",
-        err.response?.data?.detail || err.message
-      );
-    }
-  };
+  if (loading) {
+    return (
+      <div className="container mx-auto py-6">
+        <div className="flex flex-col items-center justify-center h-64">
+          <Loader2 className="h-12 w-12 animate-spin text-gray-800" />
+          <span className="mt-4 text-lg font-medium text-gray-800">
+            Cargando documentos...
+          </span>
+        </div>
+      </div>
+    );
+  }
 
-  const sortedFiles = [...files].sort((a, b) => {
-    let valA = a[sortBy];
-    let valB = b[sortBy];
-    if (sortBy === "updated") {
-      valA = new Date(valA);
-      valB = new Date(valB);
-    } else {
-      valA = valA?.toString().toLowerCase();
-      valB = valB?.toString().toLowerCase();
-    }
-    if (valA < valB) return sortOrder === "asc" ? -1 : 1;
-    if (valA > valB) return sortOrder === "asc" ? 1 : -1;
-    return 0;
-  });
-
-  const filteredFiles = sortedFiles.filter(
-    (f) =>
-      f.filename?.toLowerCase().includes(search.toLowerCase()) &&
-      (typeFilter === "" || f.filename?.toLowerCase().endsWith(typeFilter))
-  );
+  if (error) {
+    return (
+      <div className="container mx-auto py-6">
+        <Alert variant="destructive" className="border border-gray-300 bg-gray-100">
+          <div className="flex items-center gap-3">
+            <AlertCircle className="h-5 w-5 text-gray-800" />
+            <AlertDescription className="text-gray-800">{error}</AlertDescription>
+          </div>
+        </Alert>
+      </div>
+    );
+  }
 
   return (
-    <AdminLayout>
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex flex-col md:flex-row justify-between md:items-center gap-4">
-          <div>
-            <h2 className="text-2xl font-bold flex items-center gap-2">
-              <FileText className="h-6 w-6" />
-              Documentos Almacenados
-            </h2>
-            <p className="text-muted-foreground text-sm">
-              Gestiona y accede a todos los documentos del sistema
-            </p>
-          </div>
-          <div className="flex gap-2">
+    <div className="container mx-auto py-6 space-y-6 bg-white">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="space-y-1">
+          <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3 text-gray-800">
+            <Archive className="h-8 w-8 text-gray-800" />
+            <span>Documentos Almacenados</span>
+          </h1>
+          <p className="text-gray-600">
+            Gestiona y accede a todos los documentos del sistema
+          </p>
+        </div>
+        <div className="flex gap-3">
+          <Button 
+            variant="outline" 
+            onClick={() => {
+              setLoading(true);
+              setTimeout(() => {
+                setFiles(STATIC_FILES);
+                setLoading(false);
+              }, 700);
+            }} 
+            className="gap-2 px-4 py-2 rounded-lg shadow-sm bg-gray-800 text-white hover:bg-gray-700 border-gray-800"
+          >
+            <RefreshCw className="h-4 w-4" />
+            Actualizar
+          </Button>
+          <div className="flex rounded-lg border border-gray-200 overflow-hidden">
             <Button
-              variant="outline"
-              onClick={fetchFiles}
-              className="gap-2"
-              disabled={loading}
+              variant={viewMode === "table" ? "default" : "ghost"}
+              size="sm"
+              onClick={() => setViewMode("table")}
+              className="rounded-none border-r border-gray-200 px-3 bg-gray-800 text-white hover:bg-gray-700"
             >
-              {loading ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Actualizando...
-                </>
-              ) : (
-                <>
-                  <RefreshCw className="h-4 w-4" />
-                  Actualizar
-                </>
-              )}
+              <List className="h-4 w-4" />
             </Button>
-
-            <div className="flex rounded-md overflow-hidden border">
-              <Button
-                onClick={() => setViewMode("list")}
-                className={`rounded-none px-3 ${
-                  viewMode === "list"
-                    ? "bg-red-500 text-white hover:bg-red-600"
-                    : "bg-white text-black hover:bg-muted"
-                }`}
-              >
-                <LayoutList className="h-4 w-4" />
-              </Button>
-              <Button
-                onClick={() => setViewMode("grid")}
-                className={`rounded-none px-3 ${
-                  viewMode === "grid"
-                    ? "bg-red-500 text-white hover:bg-red-600"
-                    : "bg-white text-black hover:bg-muted"
-                }`}
-              >
-                <LayoutGrid className="h-4 w-4" />
-              </Button>
-            </div>
-            <Dialog open={uploadModalOpen} onOpenChange={setUploadModalOpen}>
-              <DialogTrigger asChild>
-                <Button className="bg-red-500 text-white hover:bg-red-600 gap-2">
-                  <Upload className="h-4 w-4" />
-                  Subir documento
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Subir nuevo documento</DialogTitle>
-                </DialogHeader>
-                <form
-                  className="space-y-4"
-                  onSubmit={async (e) => {
-                    e.preventDefault();
-                    if (!newFile || !apartado) {
-                      toast.warning(
-                        "Debes seleccionar un archivo y un apartado."
-                      );
-                      return;
-                    }
-                    try {
-                      const formData = new FormData();
-                      formData.append("file", newFile);
-                      formData.append("apartado", apartado);
-                      formData.append("publico", publico);
-
-                      await documentsAPI.upload(formData);
-
-                      toast.success("Archivo subido correctamente.");
-                      setUploadModalOpen(false);
-                      setNewFile(null);
-                      setApartado("");
-                      setPublico(false);
-                      fetchFiles();
-                    } catch (error) {
-                      console.error("Error al subir archivo:", error);
-                      toast.error("Error al subir el archivo.");
-                    }
-                  }}
-                >
-                  <Input
-                    type="file"
-                    accept=".pdf,.docx,.xlsx"
-                    onChange={(e) => setNewFile(e.target.files?.[0] || null)}
-                    required
-                  />
-                  <select
-                    className="border rounded px-3 py-2 w-full"
-                    value={apartado}
-                    onChange={(e) => setApartado(e.target.value)}
-                    required
-                  >
-                    <option value="">Selecciona un apartado</option>
-                    <option value="CDES Inst.">CDES Inst.</option>
-                    <option value="PES 203P">PES 203P</option>
-                  </select>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={publico}
-                      onChange={(e) => setPublico(e.target.checked)}
-                    />
-                    Habilitar en biblioteca pública
-                  </label>
-                  <div className="flex justify-end">
-                    <Button
-                      type="submit"
-                      className="bg-red-500 text-white hover:bg-red-600"
-                    >
-                      Subir
-                    </Button>
-                  </div>
-                </form>
-              </DialogContent>
-            </Dialog>
+            <Button
+              variant={viewMode === "grid" ? "default" : "ghost"}
+              size="sm"
+              onClick={() => setViewMode("grid")}
+              className="rounded-none px-3 bg-gray-800 text-white hover:bg-gray-700"
+            >
+              <Grid3X3 className="h-4 w-4" />
+            </Button>
           </div>
         </div>
+      </div>
 
-        {/* Estadísticas */}
-        <div className="grid md:grid-cols-4 gap-4">
-          <Card>
-            <CardContent className="p-4">
-              <h4 className="text-sm">Total archivos</h4>
-              <p className="text-2xl font-bold">{files.length}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <h4 className="text-sm">Espacio usado</h4>
-              <p className="text-2xl font-bold">{formatSize(totalSize)}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <h4 className="text-sm">PDFs</h4>
-              <p className="text-2xl font-bold">{countByType("pdf")}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <h4 className="text-sm">DOCX</h4>
-              <p className="text-2xl font-bold">{countByType("docx")}</p>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Filtros */}
-        <Card>
-          <CardContent className="p-4 space-y-4">
-            <div className="flex flex-col md:flex-row gap-4">
-              <Input
-                placeholder="Buscar archivos por nombre..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="md:flex-1"
-              />
-              <select
-                className="border rounded px-3 py-2 text-sm"
-                value={typeFilter}
-                onChange={(e) => setTypeFilter(e.target.value)}
-              >
-                <option value="">Todos los tipos</option>
-                <option value=".pdf">PDF</option>
-                <option value=".docx">DOCX</option>
-                <option value=".xlsx">XLSX</option>
-              </select>
-              <select
-                className="border rounded px-3 py-2 text-sm"
-                onChange={(e) => handleSort(e.target.value)}
-              >
-                <option value="filename">Nombre</option>
-                <option value="updated">Fecha</option>
-                <option value="size">Tamaño</option>
-              </select>
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <Card className="border border-gray-200 shadow-md">
+          <CardContent className="p-6">
+            <div className="flex items-center gap-3">
+              <div className="bg-gray-200 p-2 rounded-full">
+                <FolderOpen className="h-5 w-5 text-gray-800" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-gray-800">{stats.totalFiles}</p>
+                <p className="text-sm text-gray-600">Total archivos</p>
+              </div>
             </div>
           </CardContent>
         </Card>
-
-        {/* Vista */}
-        {viewMode === "list" ? (
-          <Card>
-            <CardContent className="p-4 space-y-4">
-              <h3 className="text-sm font-semibold flex items-center gap-2">
-                <LayoutList className="h-4 w-4" />
-                Lista de Archivos
-                <span className="text-muted-foreground text-xs">
-                  ({filteredFiles.length} archivos)
-                </span>
-              </h3>
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-sm border-separate border-spacing-y-2">
-                  <thead>
-                    <tr className="text-left text-muted-foreground">
-                      <th
-                        className="cursor-pointer"
-                        onClick={() => handleSort("filename")}
-                      >
-                        Archivo <ArrowUpDown className="inline h-3 w-3" />
-                      </th>
-                      <th
-                        className="cursor-pointer"
-                        onClick={() => handleSort("size")}
-                      >
-                        Tamaño <ArrowUpDown className="inline h-3 w-3" />
-                      </th>
-                      <th
-                        className="cursor-pointer"
-                        onClick={() => handleSort("updated")}
-                      >
-                        Última modificación{" "}
-                        <ArrowUpDown className="inline h-3 w-3" />
-                      </th>
-                      <th>Tipo</th>
-                      <th className="text-right">Acciones</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredFiles.map((f, i) => (
-                      <tr key={i} className="bg-muted/50 rounded-md">
-                        <td className="py-2 pr-4">{f.filename}</td>
-                        <td className="py-2 pr-4">{formatSize(f.size)}</td>
-                        <td className="py-2 pr-4 text-muted-foreground">
-                          {new Date(f.updated).toLocaleDateString()}
-                        </td>
-                        <td className="py-2 pr-4">
-                          <Badge variant="secondary">
-                            {f.filename?.split(".").pop()?.toUpperCase()}
-                          </Badge>
-                        </td>
-                        <td className="py-2 pr-4 text-right space-x-2">
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            onClick={() => setPreviewFile(f)}
-                          >
-                            <Eye className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            onClick={() =>
-                              setConfirmDelete({ open: true, fileIndex: i })
-                            }
-                          >
-                            <Trash2 className="h-4 w-4 text-red-500" />
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleDownload(f.path, f.filename)}
-                            className="gap-1"
-                          >
-                            <Download className="h-4 w-4" />
-                            Descargar
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+        
+        <Card className="border border-gray-200 shadow-md">
+          <CardContent className="p-6">
+            <div className="flex items-center gap-3">
+              <div className="bg-gray-200 p-2 rounded-full">
+                <HardDrive className="h-5 w-5 text-gray-800" />
               </div>
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-            {filteredFiles.map((f, i) => (
-              <Card key={i}>
-                <CardContent className="p-4 space-y-2">
-                  <p className="font-medium">{f.filename}</p>
-                  <p className="text-sm text-muted-foreground">
-                    {formatSize(f.size)}
-                  </p>
-                  <p className="text-xs">
-                    {new Date(f.updated).toLocaleDateString()}
-                  </p>
-                  <div className="flex justify-between">
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      onClick={() => setPreviewFile(f)}
-                    >
-                      <Eye className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      onClick={() =>
-                        setConfirmDelete({ open: true, fileIndex: i })
-                      }
-                    >
-                      <Trash2 className="h-4 w-4 text-red-500" />
-                    </Button>
-                    <Button
-                      size="icon"
-                      variant="outline"
-                      onClick={() => handleDownload(f.path, f.filename)}
-                    >
-                      <Download className="h-4 w-4" />
-                    </Button>
+              <div>
+                <p className="text-2xl font-bold text-gray-800">{formatFileSize(stats.totalSize)}</p>
+                <p className="text-sm text-gray-600">Espacio usado</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card className="border border-gray-200 shadow-md">
+          <CardContent className="p-6">
+            <div className="flex items-center gap-3">
+              <div className="bg-gray-200 p-2 rounded-full">
+                <CheckCircle className="h-5 w-5 text-gray-800" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-gray-800">{stats.statusCount.approved || 0}</p>
+                <p className="text-sm text-gray-600">Documentos aprobados</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card className="border border-gray-200 shadow-md">
+          <CardContent className="p-6">
+            <div className="flex items-center gap-3">
+              <div className="bg-gray-200 p-2 rounded-full">
+                <BookOpen className="h-5 w-5 text-gray-800" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-gray-800">{stats.axisCount.governance || 0}</p>
+                <p className="text-sm text-gray-600">Documentos de gobernabilidad</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Filters and Search */}
+      <Card className="border border-gray-200 shadow-md rounded-xl">
+        <CardContent className="p-6">
+          <div className="space-y-4">
+            <div className="relative">
+              <Search className="absolute left-3 top-3 h-4 w-4 text-gray-500" />
+              <Input
+                placeholder="Buscar por nombre, descripción o etiquetas..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10 py-5 rounded-lg border border-gray-200"
+              />
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="flex flex-col gap-1">
+                <label className="text-sm font-medium text-gray-700">Tipo de archivo</label>
+                <Select value={filterType} onValueChange={setFilterType}>
+                  <SelectTrigger className="w-full py-5 rounded-lg border border-gray-200">
+                    <SelectValue placeholder="Todos los tipos" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos los tipos</SelectItem>
+                    <SelectItem value="pdf">PDF</SelectItem>
+                    <SelectItem value="docx">DOCX</SelectItem>
+                    <SelectItem value="xlsx">XLSX</SelectItem>
+                    <SelectItem value="pptx">PPTX</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-sm font-medium text-gray-700">Estado</label>
+                <Select value={filterStatus} onValueChange={setFilterStatus}>
+                  <SelectTrigger className="w-full py-5 rounded-lg border border-gray-200">
+                    <SelectValue placeholder="Todos los estados" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos los estados</SelectItem>
+                    <SelectItem value="draft">Borrador</SelectItem>
+                    <SelectItem value="review">En revisión</SelectItem>
+                    <SelectItem value="approved">Aprobado</SelectItem>
+                    <SelectItem value="published">Publicado</SelectItem>
+                    <SelectItem value="archived">Archivado</SelectItem>
+                    <SelectItem value="formulation">Formulación</SelectItem>
+                    <SelectItem value="implementation">Implementación</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-sm font-medium text-gray-700">Eje estratégico</label>
+                <Select value={filterAxis} onValueChange={setFilterAxis}>
+                  <SelectTrigger className="w-full py-5 rounded-lg border border-gray-200">
+                    <SelectValue placeholder="Todos los ejes" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos los ejes</SelectItem>
+                    <SelectItem value="governance">Gobernabilidad</SelectItem>
+                    <SelectItem value="economy">Economía</SelectItem>
+                    <SelectItem value="environment">Medio Ambiente</SelectItem>
+                    <SelectItem value="social">Desarrollo Social</SelectItem>
+                    <SelectItem value="territorial">Ordenamiento Territorial</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Content */}
+      <Card className="border border-gray-200 shadow-md rounded-xl">
+        <CardHeader>
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <CardTitle className="flex items-center gap-2 text-gray-800">
+                <FileText className="h-5 w-5 text-gray-800" />
+                Lista de Archivos
+                <Badge variant="secondary" className="ml-2 bg-gray-800 text-white">
+                  {filteredFiles.length} archivos
+                </Badge>
+              </CardTitle>
+              <CardDescription className="mt-1 text-gray-600">
+                {filteredFiles.length !== files.length && 
+                  `Mostrando ${filteredFiles.length} de ${files.length} archivos`
+                }
+              </CardDescription>
+            </div>
+            <Select 
+              value={`${sortBy}-${sortOrder}`} 
+              onValueChange={(value) => {
+                const [field, order] = value.split('-');
+                setSortBy(field);
+                setSortOrder(order);
+              }}
+            >
+              <SelectTrigger className="w-48 py-5 rounded-lg border border-gray-200">
+                <SelectValue placeholder="Ordenar por" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="name-asc">Nombre (A-Z)</SelectItem>
+                <SelectItem value="name-desc">Nombre (Z-A)</SelectItem>
+                <SelectItem value="size-desc">Tamaño (Mayor)</SelectItem>
+                <SelectItem value="size-asc">Tamaño (Menor)</SelectItem>
+                <SelectItem value="date-desc">Fecha (Reciente)</SelectItem>
+                <SelectItem value="date-asc">Fecha (Antigua)</SelectItem>
+                <SelectItem value="responsible-asc">Responsable (A-Z)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {filteredFiles.length > 0 ? (
+            viewMode === "table" ? (
+              // Vista tabla
+              <div className="space-y-4">
+                <div className="hidden md:block">
+                  <Table>
+                    <TableHeader className="bg-gray-100">
+                      <TableRow>
+                        <TableHead 
+                          className="cursor-pointer hover:bg-gray-200 py-4 text-gray-800 font-semibold"
+                          onClick={() => toggleSort("name")}
+                        >
+                          <div className="flex items-center gap-1">
+                            Archivo
+                            <ArrowUpDown className="h-3 w-3" />
+                          </div>
+                        </TableHead>
+                        <TableHead 
+                          className="cursor-pointer hover:bg-gray-200 py-4 text-gray-800 font-semibold"
+                          onClick={() => toggleSort("size")}
+                        >
+                          <div className="flex items-center gap-1">
+                            Tamaño
+                            <ArrowUpDown className="h-3 w-3" />
+                          </div>
+                        </TableHead>
+                        <TableHead 
+                          className="cursor-pointer hover:bg-gray-200 py-4 text-gray-800 font-semibold"
+                          onClick={() => toggleSort("date")}
+                        >
+                          <div className="flex items-center gap-1">
+                            Última modificación
+                            <ArrowUpDown className="h-3 w-3" />
+                          </div>
+                        </TableHead>
+                        <TableHead className="text-gray-800 font-semibold">Tipo</TableHead>
+                        <TableHead className="text-gray-800 font-semibold">Eje</TableHead>
+                        <TableHead className="text-gray-800 font-semibold">Estado</TableHead>
+                        <TableHead className="text-right text-gray-800 font-semibold">Acciones</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredFiles.map((file) => (
+                        <TableRow key={file.id} className="hover:bg-gray-50">
+                          <TableCell className="font-medium">
+                            <div className="flex items-center gap-3">
+                              {getFileIcon(file.filename)}
+                              <div>
+                                <div className="font-medium text-gray-800">{file.filename}</div>
+                                {file.title && <div className="text-xs text-gray-500 mt-1">{file.title}</div>}
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-gray-700">{formatFileSize(file.size)}</TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-1 text-sm text-gray-600">
+                              <Calendar className="h-3 w-3" />
+                              {formatDate(file.updated)}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="secondary" className={getFileTypeColor(file.filename)}>
+                              {file.filename.split('.').pop()?.toUpperCase()}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-1 text-gray-700">
+                              {STRATEGIC_AXES[file.axis].icon}
+                              <span>{STRATEGIC_AXES[file.axis].label}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="secondary" className={DOC_STATUS[file.status].color}>
+                              {DOC_STATUS[file.status].label}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex gap-2 justify-end">
+                              <Dialog>
+                                <DialogTrigger asChild>
+                                  <Button 
+                                    variant="ghost" 
+                                    size="sm" 
+                                    className="rounded-full p-2 bg-gray-100 hover:bg-gray-200 text-gray-800"
+                                    onClick={() => setSelectedFile(file)}
+                                  >
+                                    <Eye className="h-4 w-4" />
+                                  </Button>
+                                </DialogTrigger>
+                              </Dialog>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleDownload(file.path, file.filename)}
+                                className="gap-1 rounded-full px-3 bg-gray-800 text-white hover:bg-gray-700 border-gray-800"
+                              >
+                                <Download className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+
+                {/* Mobile Cards */}
+                <div className="md:hidden space-y-4">
+                  {filteredFiles.map((file) => (
+                    <Card key={file.id} className="border border-gray-200 shadow-sm rounded-lg">
+                      <CardContent className="p-4">
+                        <div className="space-y-3">
+                          <div className="flex items-start justify-between">
+                            <div className="flex items-center gap-3 min-w-0">
+                              {getFileIcon(file.filename)}
+                              <div className="min-w-0">
+                                <p className="font-medium truncate text-gray-800">{file.filename}</p>
+                                {file.title && <p className="text-xs text-gray-500 truncate mt-1">{file.title}</p>}
+                              </div>
+                            </div>
+                            <div className="flex flex-col items-end gap-1">
+                              <Badge variant="secondary" className={getFileTypeColor(file.filename)}>
+                                {file.filename.split('.').pop()?.toUpperCase()}
+                              </Badge>
+                              <Badge variant="secondary" className={DOC_STATUS[file.status].color}>
+                                {DOC_STATUS[file.status].label}
+                              </Badge>
+                            </div>
+                          </div>
+                          
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="flex items-center gap-1 text-sm text-gray-600">
+                              <Calendar className="h-4 w-4" />
+                              <span>{formatDate(file.updated)}</span>
+                            </div>
+                            <div className="flex items-center gap-1 text-sm text-gray-600">
+                              {STRATEGIC_AXES[file.axis].icon}
+                              <span>{STRATEGIC_AXES[file.axis].label}</span>
+                            </div>
+                          </div>
+                          
+                          <div className="flex gap-2">
+                            <Dialog>
+                              <DialogTrigger asChild>
+                                <Button 
+                                  variant="outline" 
+                                  size="sm"
+                                  className="flex-1 gap-1 bg-white text-gray-800 border-gray-300 hover:bg-gray-100"
+                                  onClick={() => setSelectedFile(file)}
+                                >
+                                  <Eye className="h-4 w-4" />
+                                  Ver detalles
+                                </Button>
+                              </DialogTrigger>
+                            </Dialog>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleDownload(file.path, file.filename)}
+                              className="flex-1 gap-1 bg-gray-800 text-white border-gray-800 hover:bg-gray-700"
+                            >
+                              <Download className="h-4 w-4" />
+                              Descargar
+                            </Button>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              // Vista grid
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+                {filteredFiles.map((file) => (
+                  <Card 
+                    key={file.id} 
+                    className="border border-gray-200 shadow-sm rounded-xl overflow-hidden hover:shadow-md transition-all"
+                  >
+                    <div className="p-1 bg-gray-100">
+                      <div className="flex justify-center py-4">
+                        {getFileIcon(file.filename)}
+                      </div>
+                    </div>
+                    <CardContent className="p-4">
+                      <div className="space-y-3">
+                        <div>
+                          <p className="font-medium truncate text-gray-800" title={file.filename}>
+                            {file.filename}
+                          </p>
+                          {file.title && <p className="text-xs text-gray-500 mt-1 line-clamp-2">
+                            {file.title}
+                          </p>}
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="flex items-center gap-1 text-xs text-gray-600">
+                            <Calendar className="h-3 w-3" />
+                            <span>{formatDate(file.updated)}</span>
+                          </div>
+                          <div className="flex items-center gap-1 text-xs text-gray-600">
+                            {STRATEGIC_AXES[file.axis].icon}
+                            <span>{STRATEGIC_AXES[file.axis].label}</span>
+                          </div>
+                        </div>
+                        
+                        <div className="flex justify-between items-center mt-2">
+                          <Badge variant="secondary" className={DOC_STATUS[file.status].color}>
+                            {DOC_STATUS[file.status].label}
+                          </Badge>
+                          
+                          <div className="flex gap-1">
+                            <Dialog>
+                              <DialogTrigger asChild>
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm" 
+                                  className="rounded-full p-1.5 bg-gray-100 hover:bg-gray-200 text-gray-800"
+                                  onClick={() => setSelectedFile(file)}
+                                >
+                                  <Eye className="h-4 w-4" />
+                                </Button>
+                              </DialogTrigger>
+                            </Dialog>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleDownload(file.path, file.filename)}
+                              className="rounded-full p-1.5 bg-gray-800 text-white hover:bg-gray-700 border-gray-800"
+                            >
+                              <Download className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )
+          ) : (
+            <div className="text-center py-12">
+              <File className="h-16 w-16 text-gray-400 mx-auto mb-4" />
+              <p className="text-xl font-medium text-gray-800">No se encontraron archivos</p>
+              <p className="text-gray-600 max-w-md mx-auto mt-2">
+                {searchTerm || filterType !== "all" || filterStatus !== "all" || filterAxis !== "all"
+                  ? "Intenta ajustar los filtros de búsqueda o restablecer los filtros"
+                  : "No hay documentos almacenados en el sistema"
+                }
+              </p>
+              <Button 
+                variant="outline" 
+                className="mt-4 gap-2 bg-white text-gray-800 border-gray-300 hover:bg-gray-100"
+                onClick={() => {
+                  setSearchTerm("");
+                  setFilterType("all");
+                  setFilterStatus("all");
+                  setFilterAxis("all");
+                }}
+              >
+                <RefreshCw className="h-4 w-4" />
+                Restablecer filtros
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Dialog para detalles del archivo */}
+      {selectedFile && (
+        <Dialog open={!!selectedFile} onOpenChange={() => setSelectedFile(null)}>
+          <DialogContent className="sm:max-w-3xl rounded-xl p-0 max-h-[90vh] flex flex-col">
+            <DialogHeader className="bg-gray-100 p-6 rounded-t-xl">
+              <DialogTitle className="flex items-center gap-3 text-gray-800">
+                <FileText className="h-6 w-6 text-gray-800" />
+                <span>Detalle del Documento</span>
+              </DialogTitle>
+              <DialogDescription className="text-gray-600">
+                Información completa del documento seleccionado
+              </DialogDescription>
+            </DialogHeader>
+            
+            <div className="overflow-y-auto p-6 space-y-6 flex-grow">
+              {/* Información Básica */}
+              <Card className="border border-gray-200">
+                <CardHeader className="pb-4">
+                  <div className="flex items-center gap-2">
+                    <FilePlus className="h-5 w-5 text-gray-800" />
+                    <h3 className="font-semibold text-gray-800">Información Básica</h3>
+                  </div>
+                </CardHeader>
+                <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-gray-500">Título</p>
+                    <p className="font-medium text-gray-800">{selectedFile.title || selectedFile.filename}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Tipo</p>
+                    <p className="font-medium text-gray-800">{selectedFile.type || "Documento"}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Eje</p>
+                    <div className="flex items-center gap-1 text-gray-800">
+                      {STRATEGIC_AXES[selectedFile.axis].icon}
+                      <span className="font-medium">{STRATEGIC_AXES[selectedFile.axis].label}</span>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Estatus</p>
+                    <Badge variant="secondary" className={`${DOC_STATUS[selectedFile.status].color} font-medium`}>
+                      {DOC_STATUS[selectedFile.status].label}
+                    </Badge>
                   </div>
                 </CardContent>
               </Card>
-            ))}
-          </div>
-        )}
-        {/* Modales */}
-        <Dialog open={!!previewFile} onOpenChange={() => setPreviewFile(null)}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Vista previa</DialogTitle>
-            </DialogHeader>
-            <div className="text-sm space-y-2">
-              <p>
-                <strong>Archivo:</strong> {previewFile?.filename}
-              </p>
-              <p>
-                <strong>Tipo:</strong>{" "}
-                {previewFile?.filename?.split(".").pop()?.toUpperCase()}
-              </p>
-              <p>
-                <strong>Tamaño:</strong> {formatSize(previewFile?.size)}
-              </p>
-              <p>
-                <strong>Última modificación:</strong>{" "}
-                {new Date(previewFile?.updated).toLocaleDateString()}
-              </p>
-              <p>
-                <strong>Ruta:</strong> {previewFile?.path}
-              </p>
+              
+              {/* Responsable */}
+              <Card className="border border-gray-200">
+                <CardHeader className="pb-4">
+                  <div className="flex items-center gap-2">
+                    <Users className="h-5 w-5 text-gray-800" />
+                    <h3 className="font-semibold text-gray-800">Responsable</h3>
+                  </div>
+                </CardHeader>
+                <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-gray-500">Unidad</p>
+                    <p className="font-medium text-gray-800">{selectedFile.responsible}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Creado por</p>
+                    <p className="font-medium text-gray-800">{selectedFile.createdBy}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Fecha de creación</p>
+                    <p className="font-medium text-gray-800">{formatSimpleDate(selectedFile.created)}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Última modificación</p>
+                    <p className="font-medium text-gray-800">{formatSimpleDate(selectedFile.updated)}</p>
+                  </div>
+                </CardContent>
+              </Card>
+              
+              {/* Descripción */}
+              <Card className="border border-gray-200">
+                <CardHeader className="pb-4">
+                  <div className="flex items-center gap-2">
+                    <FileText className="h-5 w-5 text-gray-800" />
+                    <h3 className="font-semibold text-gray-800">Descripción</h3>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-gray-700">{selectedFile.description}</p>
+                </CardContent>
+              </Card>
+              
+              {/* Archivos */}
+              <Card className="border border-gray-200">
+                <CardHeader className="pb-4">
+                  <div className="flex items-center gap-2">
+                    <File className="h-5 w-5 text-gray-800" />
+                    <h3 className="font-semibold text-gray-800">Archivos</h3>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {selectedFile.files.map((file, index) => (
+                    <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                      <div className="flex items-center gap-3">
+                        {file.type === "pdf" && <FileText className="h-5 w-5 text-gray-800" />}
+                        {file.type === "docx" && <FileText className="h-5 w-5 text-gray-800" />}
+                        {file.type === "xlsx" && <FileSpreadsheet className="h-5 w-5 text-gray-800" />}
+                        {file.type === "pptx" && <FileBarChart className="h-5 w-5 text-gray-800" />}
+                        <span className="font-medium text-gray-800">{file.name}</span>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleDownload(`/docs/${file.name}`, file.name)}
+                        className="gap-1 bg-gray-800 text-white hover:bg-gray-700 border-gray-800"
+                      >
+                        <Download className="h-4 w-4" />
+                        Descargar
+                      </Button>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+              
+              {/* Historial de Cambios */}
+              <Card className="border border-gray-200">
+                <CardHeader className="pb-0">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Clock className="h-5 w-5 text-gray-800" />
+                      <h3 className="font-semibold text-gray-800">Historial de Cambios</h3>
+                    </div>
+                    <Button 
+                      variant="ghost" 
+                      size="sm"
+                      onClick={() => setShowHistory(!showHistory)}
+                      className="text-gray-500"
+                    >
+                      {showHistory ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                    </Button>
+                  </div>
+                </CardHeader>
+                {showHistory && (
+                  <CardContent className="pt-4">
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader className="bg-gray-100">
+                          <TableRow>
+                            <TableHead className="text-gray-800 font-semibold">Fecha</TableHead>
+                            <TableHead className="text-gray-800 font-semibold">Usuario</TableHead>
+                            <TableHead className="text-gray-800 font-semibold">Acción</TableHead>
+                            <TableHead className="text-gray-800 font-semibold">Detalle</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {selectedFile.history.map((item, index) => (
+                            <TableRow key={index}>
+                              <TableCell className="text-gray-700">{item.date}</TableCell>
+                              <TableCell className="text-gray-700">{item.user}</TableCell>
+                              <TableCell className="text-gray-700">{item.action}</TableCell>
+                              <TableCell className="text-gray-700">{item.detail}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </CardContent>
+                )}
+              </Card>
+            </div>
+            
+            {/* Botones de acción */}
+            <div className="flex justify-end gap-3 p-6 border-t border-gray-200">
+              <Button 
+                variant="outline" 
+                onClick={() => setSelectedFile(null)}
+                className="border border-gray-300 bg-white text-gray-800 hover:bg-gray-100"
+              >
+                Cerrar
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => handleDownload(selectedFile.path, selectedFile.filename)}
+                className="gap-1 bg-gray-800 text-white hover:bg-gray-700 border-gray-800"
+              >
+                <Download className="h-4 w-4" />
+                Descargar documento principal
+              </Button>
             </div>
           </DialogContent>
         </Dialog>
-      </div>
-    </AdminLayout>
+      )}
+    </div>
   );
 }
