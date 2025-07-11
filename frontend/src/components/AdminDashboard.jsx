@@ -11,9 +11,9 @@ import {
   FileText,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { documentsAPI } from "../services/api";
+import { documentsAPI } from "../services/api";          // Asegúrate que este API apunte a process.env.REACT_APP_API_URL
 import { Button } from "@/components/ui/button";
-import AdminLayout from "@/components/AdminLayout"; // <-- Importa el layout
+import AdminLayout from "@/components/AdminLayout";
 
 export default function DashboardPage() {
   const [metrics, setMetrics] = useState([
@@ -22,31 +22,48 @@ export default function DashboardPage() {
     { title: "Aprobados", value: 0, description: "listos para uso", icon: CheckCircle },
   ]);
   const [recentActivities, setRecentActivities] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const navigate = useNavigate();
 
   useEffect(() => {
     const fetchData = async () => {
+      setLoading(true);
+      setError(null);
       try {
         const { data } = await documentsAPI.list();
-        const docs = data.documents || [];
+        let docs = Array.isArray(data.documents) ? data.documents : [];
 
+        // --- Simulaciones provisionales ---
+        docs = docs.map((doc) => ({
+          // Aliases: backend puede devolver `file_name` o `filename`
+          filename: doc.filename || doc.file_name || "—",
+          // Simula status si no existe
+          status: doc.status || (Math.random() > 0.5 ? "pendiente" : "aprobado"),
+          // Simula usuario si no existe
+          last_modified_by: doc.last_modified_by || "Usuario demo",
+          // Mantén el resto de campos reales
+          ...doc,
+        }));
+
+        // Métricas
         const totalDocs = docs.length;
-        const pendientes = docs.filter((doc) => doc.status === "pendiente").length;
-        const aprobados = docs.filter((doc) => doc.status === "aprobado").length;
-
+        const pendientes = docs.filter((d) => d.status === "pendiente").length;
+        const aprobados = docs.filter((d) => d.status === "aprobado").length;
         setMetrics([
           { title: "Documentos", value: totalDocs, description: "registrados", icon: File },
           { title: "Pendientes", value: pendientes, description: "por revisar", icon: Clock },
           { title: "Aprobados", value: aprobados, description: "listos para uso", icon: CheckCircle },
         ]);
 
-        const sortedDocs = docs
-          .filter((doc) => doc.date)
+        // Últimas 5 actividades ordenadas por fecha
+        const sorted = docs
+          .filter((d) => d.date && !Number.isNaN(new Date(d.date).getTime()))
           .sort((a, b) => new Date(b.date) - new Date(a.date))
           .slice(0, 5);
 
-        const activities = sortedDocs.map((doc) => ({
-          user: doc.last_modified_by || "Desconocido",
+        const activities = sorted.map((doc) => ({
+          user: doc.last_modified_by,
           action:
             doc.status === "aprobado"
               ? "aprobó el documento"
@@ -54,13 +71,21 @@ export default function DashboardPage() {
               ? "subió el documento"
               : "actualizó el documento",
           document: doc.title || doc.filename || "Documento sin título",
-          date: new Date(doc.date).toLocaleString("es-ES"),
+          date: new Date(doc.date).toLocaleString("es-ES", {
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
           icon: doc.status === "aprobado" ? CheckCircle : Settings,
         }));
-
         setRecentActivities(activities);
-      } catch (error) {
-        console.error("Error al cargar datos del dashboard:", error);
+      } catch (err) {
+        console.error("Error al cargar datos del dashboard:", err);
+        setError("Error cargando datos. Intenta de nuevo más tarde.");
+      } finally {
+        setLoading(false);
       }
     };
 
@@ -78,87 +103,80 @@ export default function DashboardPage() {
           <h2 className="text-xl font-bold">Dashboard</h2>
         </div>
 
-        {/* Métricas */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          {metrics.map((metric, idx) => {
-            const Icon = metric.icon;
-            return (
-              <div
-                key={idx}
-                className="bg-white rounded-lg border border-black p-4 shadow"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="bg-black/10 w-10 h-10 rounded flex items-center justify-center">
-                    <Icon className="h-5 w-5 text-black" />
+        {/* Estado de carga / error */}
+        {loading && <p className="text-center text-black">Cargando métricas…</p>}
+        {error && <p className="text-center text-red-600">{error}</p>}
+
+        {!loading && !error && (
+          <>
+            {/* Métricas */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+              {metrics.map((metric, idx) => {
+                const Icon = metric.icon;
+                return (
+                  <div key={idx} className="bg-white rounded-lg border border-black p-4 shadow">
+                    <div className="flex items-center gap-3">
+                      <div className="bg-black/10 w-10 h-10 rounded flex items-center justify-center">
+                        <Icon className="h-5 w-5 text-black" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm text-black">{metric.title}</h3>
+                        <p className="text-lg font-semibold text-black">{metric.value}</p>
+                        <p className="text-xs text-black">{metric.description}</p>
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="text-sm text-black">{metric.title}</h3>
-                    <p className="text-lg font-semibold text-black">{metric.value}</p>
-                    <p className="text-xs text-black">{metric.description}</p>
-                  </div>
-                </div>
+                );
+              })}
+            </div>
+
+            {/* Accesos rápidos */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+              <Button onClick={() => navigate("/upload")} className="w-full justify-start gap-3" variant="outline">
+                <Upload className="h-5 w-5" /> Subir documento
+              </Button>
+              <Button onClick={() => navigate("/search")} className="w-full justify-start gap-3" variant="outline">
+                <Search className="h-5 w-5" /> Buscar documento
+              </Button>
+              <Button onClick={() => navigate("/documents")} className="w-full justify-start gap-3" variant="outline">
+                <FileText className="h-5 w-5" /> Ver documentos
+              </Button>
+            </div>
+
+            {/* Últimos movimientos */}
+            <div className="bg-white rounded-lg border border-black p-4 shadow">
+              <div className="flex items-center gap-2 mb-4">
+                <History className="text-black h-5 w-5" />
+                <h3 className="text-lg font-semibold text-black">Últimos movimientos</h3>
               </div>
-            );
-          })}
-        </div>
-
-        {/* Accesos rápidos */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <Button
-            onClick={() => navigate("/upload")}
-            className="w-full justify-start gap-3"
-            variant="outline"
-          >
-            <Upload className="h-5 w-5" /> Subir documento
-          </Button>
-          <Button
-            onClick={() => navigate("/search")}
-            className="w-full justify-start gap-3"
-            variant="outline"
-          >
-            <Search className="h-5 w-5" /> Buscar documento
-          </Button>
-          <Button
-            onClick={() => navigate("/documents")}
-            className="w-full justify-start gap-3"
-            variant="outline"
-          >
-            <FileText className="h-5 w-5" /> Ver documentos
-          </Button>
-        </div>
-
-        {/* Últimos movimientos */}
-        <div className="bg-white rounded-lg border border-black p-4 shadow">
-          <div className="flex items-center gap-2 mb-4">
-            <History className="text-black h-5 w-5" />
-            <h3 className="text-lg font-semibold text-black">Últimos movimientos</h3>
-          </div>
-          <div className="space-y-3">
-            {recentActivities.length === 0 && (
-              <p className="text-black text-center">No hay movimientos recientes</p>
-            )}
-            {recentActivities.map((activity, idx) => {
-              const Icon = activity.icon;
-              return (
-                <div
-                  key={idx}
-                  className="flex items-start gap-3 p-2 border-b border-black/10 last:border-0"
-                >
-                  <div className="bg-black/10 w-9 h-9 rounded flex items-center justify-center flex-shrink-0">
-                    <Icon className="text-black h-5 w-5" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-black">
-                      <span className="font-medium">{activity.user}</span> {activity.action}
-                    </p>
-                    <p className="text-sm italic text-black">"{activity.document}"</p>
-                    <p className="text-xs text-black/60">{activity.date}</p>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+              <div className="space-y-3">
+                {recentActivities.length === 0 && (
+                  <p className="text-black text-center">No hay movimientos recientes</p>
+                )}
+                {recentActivities.map((activity, idx) => {
+                  const Icon = activity.icon;
+                  return (
+                    <div
+                      key={idx}
+                      className="flex items-start gap-3 p-2 border-b border-black/10 last:border-0"
+                    >
+                      <div className="bg-black/10 w-9 h-9 rounded flex items-center justify-center flex-shrink-0">
+                        <Icon className="text-black h-5 w-5" />
+                      </div>
+                      <div>
+                        <p className="text-sm text-black">
+                          <span className="font-medium">{activity.user}</span> {activity.action}
+                        </p>
+                        <p className="text-sm italic text-black">"{activity.document}"</p>
+                        <p className="text-xs text-black/60">{activity.date}</p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </>
+        )}
       </main>
     </AdminLayout>
   );
