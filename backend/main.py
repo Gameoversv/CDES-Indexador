@@ -23,7 +23,7 @@ from services.firebase_service import (
 )
 from services.meilisearch_service import initialize_meilisearch
 from utils.audit_logger import log_event
-from routes import auth_routes, document_routes, audit_routes
+from routes import auth_routes, document_routes, audit_routes, user_routes
 
 # ==================================================================================
 #                           GESTIÓN DEL CICLO DE VIDA DE LA APLICACIÓN
@@ -229,6 +229,11 @@ app.include_router(
         403: {"description": "Prohibido - Permisos insuficientes"}
     }
 )
+# Incluir rutas de gestión de usuarios
+app.include_router(
+    user_routes.router, 
+    tags=["Admin Users"])
+
 
 # Incluir rutas de gestión de documentos
 app.include_router(
