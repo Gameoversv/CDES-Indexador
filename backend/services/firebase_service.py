@@ -24,6 +24,9 @@ import os
 import uuid
 from datetime import datetime
 from typing import Dict, List, Any, Optional
+from fastapi import Request, HTTPException
+from firebase_admin import auth as firebase_auth
+
 
 # ==================================================================================
 #                           INICIALIZACIÓN DE FIREBASE
@@ -377,47 +380,36 @@ def delete_file_from_storage(blob_path: str) -> None:
 # ==================================================================================
 
 async def create_admin_user(email: str, password: str) -> Dict[str, Any]:
-    """
-    Crea un usuario administrador con privilegios especiales.
-    
-    ⚠️ ADVERTENCIA: Esta función es para desarrollo inicial únicamente.
-    En producción, implementar un proceso seguro de creación de administradores.
-    
-    Args:
-        email: Correo electrónico del administrador
-        password: Contraseña del administrador
-        
-    Returns:
-        Dict: Información del usuario creado
-        
-    Raises:
-        Exception: Si hay errores durante la creación
-    """
     try:
         auth_client = get_auth_client()
-        
+
         # Crear usuario con email y contraseña
         user = auth_client.create_user(
             email=email,
             password=password,
-            email_verified=True  # Marcar email como verificado
+            email_verified=True
         )
-        
+
         # Asignar custom claim de administrador
         auth_client.set_custom_user_claims(user.uid, {'admin': True})
-        
-        # Mensaje de depuración - comentado para producción
-        # print(f"✅ Usuario admin '{email}' creado con UID: {user.uid}")
-        # print("⚠️  IMPORTANTE: El usuario debe cerrar sesión y volver a iniciar")
-        # print("   para que los custom claims tengan efecto")
-        
+
+        # Guardar el usuario en Firestore
+        firestore_client = get_firestore_client()
+        firestore_client.collection("users").document(user.uid).set({
+            "uid": user.uid,
+            "email": email,
+            "role": "admin",
+            "status": "active",
+            "created_at": datetime.now().isoformat()
+        })
+
         return {
             "uid": user.uid,
             "email": email,
             "admin": True,
             "created_at": datetime.now().isoformat()
         }
-        
+
     except FirebaseError as e:
         if "EMAIL_EXISTS" in str(e):
             raise Exception(f"El email '{email}' ya está registrado en Firebase")
@@ -426,6 +418,26 @@ async def create_admin_user(email: str, password: str) -> Dict[str, Any]:
     except Exception as e:
         raise Exception(f"Error inesperado creando usuario admin: {e}")
 
+
+def verify_token(request: Request):
+    """
+    Middleware / Dependency de FastAPI para verificar tokens de Firebase.
+
+    Esta función debe usarse como Depends(verify_token) en tus endpoints protegidos.
+    """
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Token de autorización faltante")
+
+    id_token = auth_header.split("Bearer ")[1]
+
+    try:
+        decoded_token = firebase_auth.verify_id_token(id_token)
+        return decoded_token
+    except InvalidIdTokenError:
+        raise HTTPException(status_code=401, detail="Token inválido")
+    except Exception:
+        raise HTTPException(status_code=401, detail="Error verificando el token")
 
 def get_user_info(uid: str) -> Dict[str, Any]:
     """

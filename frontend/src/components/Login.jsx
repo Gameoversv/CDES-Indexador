@@ -1,51 +1,84 @@
-import { cn } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { signInWithEmailAndPassword } from "firebase/auth";
-import { auth } from "@/services/firebase";
+import { auth, db } from "@/services/firebase";
+import { doc, getDoc } from "firebase/firestore";
 
-export function LoginForm({
-  className,
-  ...props
-}) {
+export function LoginForm({ className, ...props }) {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-  
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
-    
+
     try {
-      await signInWithEmailAndPassword(auth, email, password);
-      navigate("/dashboard");
-    } catch (err) {
-      switch (err.code) {
-        case "auth/wrong-password":
-          setError("Contraseña incorrecta");
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const { user } = userCredential;
+
+      // Obtener información del usuario desde Firestore
+      const docRef = doc(db, "users", user.uid);
+      const docSnap = await getDoc(docRef);
+
+      if (!docSnap.exists()) {
+        throw new Error("No se encontró el perfil del usuario.");
+      }
+
+      const userData = docSnap.data();
+
+      // Guardar datos útiles en localStorage
+      localStorage.setItem("userRole", userData.role);
+      localStorage.setItem("userId", user.uid);
+      localStorage.setItem("userEmail", user.email);
+
+      // Redirigir según el rol
+      switch (userData.role) {
+        case "admin":
+          navigate("/admin");
           break;
-        case "auth/user-not-found":
-          setError("El usuario no existe");
+        case "secretaria":
+          navigate("/secretaria");
           break;
-        case "auth/invalid-email":
-          setError("Correo electrónico inválido");
-          break;
-        case "auth/invalid-credential":
-          setError("Credenciales inválidas");
+        case "supervisor":
+          navigate("/supervisor");
           break;
         default:
-          setError(err.message);
+          navigate("/dashboard");
+      }
+    } catch (err) {
+      console.error("Error al iniciar sesión:", err);
+      if (err.code) {
+        switch (err.code) {
+          case "auth/wrong-password":
+            setError("Contraseña incorrecta");
+            break;
+          case "auth/user-not-found":
+            setError("El usuario no existe");
+            break;
+          case "auth/invalid-email":
+            setError("Correo electrónico inválido");
+            break;
+          case "auth/invalid-credential":
+            setError("Credenciales inválidas");
+            break;
+          default:
+            setError("Error al iniciar sesión");
+        }
+      } else {
+        setError(err.message || "Error desconocido");
       }
     }
   };
@@ -67,11 +100,11 @@ export function LoginForm({
                   <div className="grid gap-3">
                     <Label htmlFor="email">Correo electrónico</Label>
                     <Input
-                      onChange={(e) => setEmail(e.target.value)}
                       id="email"
                       type="email"
                       placeholder="correo@ejemplo.com"
                       value={email}
+                      onChange={(e) => setEmail(e.target.value)}
                       required
                     />
                   </div>
@@ -85,12 +118,12 @@ export function LoginForm({
                         ¿Olvidaste tu contraseña?
                       </a>
                     </div>
-                    <Input 
-                      id="password" 
-                      onChange={(e) => setPassword(e.target.value)} 
-                      type="password" 
+                    <Input
+                      id="password"
+                      type="password"
                       value={password}
-                      required 
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
                     />
                   </div>
                   {error && (
@@ -116,5 +149,5 @@ export function LoginForm({
         </div>
       </div>
     </div>
-  )
+  );
 }
