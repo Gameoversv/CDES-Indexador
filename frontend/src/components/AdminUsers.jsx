@@ -1,5 +1,5 @@
-// frontend/pages/Users.jsx
 import React, { useEffect, useState } from "react";
+import AdminLayout from "@/components/AdminLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -7,7 +7,7 @@ import {
   CardContent,
   CardDescription,
   CardHeader,
-  CardTitle
+  CardTitle,
 } from "@/components/ui/card";
 import {
   Table,
@@ -15,304 +15,382 @@ import {
   TableCell,
   TableHead,
   TableHeader,
-  TableRow
+  TableRow,
 } from "@/components/ui/table";
-import {
-  Dialog, DialogContent, DialogTrigger, DialogHeader, DialogTitle, DialogDescription,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import {
-  Search,
-  User,
-  Shield,
-  CheckCircle,
-  XCircle,
-  Plus
-} from "lucide-react";
 import {
   Dialog,
   DialogContent,
   DialogTrigger,
   DialogHeader,
-  DialogTitle
+  DialogTitle,
 } from "@/components/ui/dialog";
-
-const API_BASE = "http://localhost:8000";
+import {
+  Search,
+  User,
+  Plus,
+  Pencil,
+  Trash2,
+  Lock,
+} from "lucide-react";
+import { toast } from "sonner";
+import {
+  getUsers,
+  createUser,
+  updateUser,
+  deleteUser,
+  changeUserPassword,
+} from "@/services/usersAPI";
 
 export default function Users() {
   const [users, setUsers] = useState([]);
   const [search, setSearch] = useState("");
-  const [createData, setCreateData] = useState({
+  const [modalOpen, setModalOpen] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [formData, setFormData] = useState({
     display_name: "",
     email: "",
     password: "",
-    role: "usuario"
+    role: "secretaria",
+    status: "active",
   });
 
-  // Carga usuarios desde GET /users
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+
   const fetchUsers = async () => {
     try {
-      const res = await fetch(`${API_BASE}/users`, {
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem("token")}`
-        }
-      });
-      if (!res.ok) throw new Error("Error al cargar usuarios");
-      const data = await res.json();
-      setUsers(data);
-    } catch (err) {
-      console.error("Error al cargar usuarios:", err);
+      const res = await getUsers();
+      setUsers(res);
+    } catch {
+      toast.error("Error al cargar usuarios");
     }
-    setIsDialogOpen(false);
   };
 
-  const handleDelete = (userId) => {
-    setUsers((prev) => prev.filter((u) => u.id !== userId));
-    setIsDeleteDialogOpen(false);
+  useEffect(() => {
+    fetchUsers();
+  }, []);
+
+  const handleCreateOrUpdate = async () => {
+    if (!formData.display_name || !formData.email) {
+      toast.error("Nombre y correo son obligatorios.");
+      return;
+    }
+
+    if (!formData.role || !["admin", "secretaria", "supervisor"].includes(formData.role)) {
+      toast.error("Debes seleccionar un rol válido.");
+      return;
+    }
+
+    if (!formData.status || !["active", "inactive"].includes(formData.status)) {
+      toast.error("Debes seleccionar un estado válido.");
+      return;
+    }
+
+    if (!isEditing && !formData.password) {
+      toast.error("La contraseña es obligatoria al crear un usuario.");
+      return;
+    }
+
+    try {
+      if (isEditing && selectedUser?.id) {
+        await updateUser(selectedUser.id, {
+          display_name: formData.display_name,
+          email: formData.email,
+          role: formData.role,
+          status: formData.status,
+        });
+        toast.success("Usuario actualizado");
+      } else {
+        await createUser(formData);
+        toast.success("Usuario creado");
+      }
+
+      setModalOpen(false);
+      setFormData({
+        display_name: "",
+        email: "",
+        password: "",
+        role: "secretaria",
+        status: "active",
+      });
+      setSelectedUser(null);
+      fetchUsers();
+    } catch {
+      toast.error("Error al guardar usuario");
+    }
   };
 
-  const filtered = users.filter(
-    (u) =>
-      u.display_name.toLowerCase().includes(search.toLowerCase()) ||
-      u.email.toLowerCase().includes(search.toLowerCase())
+  const handleEdit = (user) => {
+    setSelectedUser(user);
+    setFormData({
+      display_name: user.display_name || "",
+      email: user.email,
+      role: user.role,
+      status: user.status,
+    });
+    setIsEditing(true);
+    setModalOpen(true);
+  };
+
+  const handleDelete = async (id) => {
+    if (!confirm("¿Eliminar este usuario?")) return;
+    try {
+      await deleteUser(id);
+      toast.success("Usuario eliminado");
+      fetchUsers();
+    } catch {
+      toast.error("Error al eliminar usuario");
+    }
+  };
+
+  const openPasswordModal = (user) => {
+    setSelectedUser(user);
+    setNewPassword("");
+    setPasswordModalOpen(true);
+  };
+
+  const handlePasswordSubmit = async () => {
+    if (!newPassword) {
+      toast.error("Debes ingresar una nueva contraseña.");
+      return;
+    }
+    try {
+      await changeUserPassword(selectedUser.email, newPassword);
+      toast.success("Contraseña actualizada");
+      setPasswordModalOpen(false);
+      setSelectedUser(null);
+    } catch {
+      toast.error("Error actualizando contraseña");
+    }
+  };
+
+  const filtered = users.filter((u) =>
+    u.email.toLowerCase().includes(search.toLowerCase())
   );
 
   const stats = {
     total: users.length,
-    active: users.filter((u) => !u.disabled).length,
-    admins: users.filter((u) => u.role === "admin").length
-  };
-
-  // Crea usuario usando POST /users
-  const handleCreate = async () => {
-    try {
-      const res = await fetch(`${API_BASE}/users`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("token")}`
-        },
-        body: JSON.stringify({
-          email: createData.email,
-          password: createData.password,
-          display_name: createData.display_name,
-          role: createData.role,
-          disabled: false
-        })
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.detail || "Error al crear usuario");
-      }
-      // refresca lista y limpia formulario
-      fetchUsers();
-      setCreateData({ display_name: "", email: "", password: "", role: "usuario" });
-    } catch (err) {
-      console.error(err);
-      alert(err.message);
-    }
+    active: users.filter((u) => u.status === "active").length,
+    admins: users.filter((u) => u.role === "admin").length,
   };
 
   return (
-    <div className="container mx-auto py-6 space-y-6 bg-white text-black">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="space-y-1">
-          <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-            <User className="h-8 w-8" />
-            Gestión de Usuarios
-          </h1>
-          <p className="text-sm text-[#6b7280]">
-            Administra los usuarios y permisos del sistema
-          </p>
-        </div>
-        <Dialog>
-          <DialogTrigger asChild>
-            <Button className="flex items-center gap-2 bg-red-500 text-white">
-              <Plus className="h-4 w-4" />
-              Nuevo Usuario
-            </Button>
-          </DialogTrigger>
+    <AdminLayout>
+      <div className="p-6 space-y-6">
+        {/* Modal cambio de contraseña */}
+        <Dialog open={passwordModalOpen} onOpenChange={setPasswordModalOpen}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Crear nuevo usuario</DialogTitle>
+              <DialogTitle>
+                Cambiar contraseña para {selectedUser?.email}
+              </DialogTitle>
             </DialogHeader>
-            <div className="space-y-4 mt-4">
-              <div className="space-y-1">
-                <label className="text-sm font-medium">Nombre</label>
-                <Input
-                  value={createData.display_name}
-                  onChange={(e) =>
-                    setCreateData({ ...createData, display_name: e.target.value })
-                  }
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-sm font-medium">Correo</label>
-                <Input
-                  type="email"
-                  value={createData.email}
-                  onChange={(e) =>
-                    setCreateData({ ...createData, email: e.target.value })
-                  }
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-sm font-medium">Contraseña</label>
-                <Input
-                  type="password"
-                  value={createData.password}
-                  onChange={(e) =>
-                    setCreateData({ ...createData, password: e.target.value })
-                  }
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-sm font-medium">Rol</label>
-                <select
-                  value={createData.role}
-                  onChange={(e) =>
-                    setCreateData({ ...createData, role: e.target.value })
-                  }
-                  className="w-full border rounded px-3 py-2 text-sm"
-                >
-                  <option value="admin">Administrador</option>
-                  <option value="usuario">Usuario</option>
-                  <option value="lector">Lector</option>
-                </select>
-              </div>
+            <div className="space-y-4 mt-2">
+              <label className="text-sm">Nueva contraseña</label>
+              <Input
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+              />
               <div className="flex justify-end gap-2 pt-2">
-                <Button variant="outline">Cancelar</Button>
-                <Button onClick={handleCreate}>Crear</Button>
+                <Button variant="outline" onClick={() => setPasswordModalOpen(false)}>
+                  Cancelar
+                </Button>
+                <Button onClick={handlePasswordSubmit}>Actualizar</Button>
               </div>
             </div>
           </DialogContent>
         </Dialog>
-      </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* Resto del componente */}
+        <div className="flex justify-between items-center">
+          <h1 className="text-2xl font-bold flex gap-2 items-center">
+            <User className="h-6 w-6" /> Gestión de Usuarios
+          </h1>
+          <Dialog open={modalOpen} onOpenChange={setModalOpen}>
+            <DialogTrigger asChild>
+              <Button
+                onClick={() => {
+                  setIsEditing(false);
+                  setSelectedUser(null);
+                  setFormData({
+                    display_name: "",
+                    email: "",
+                    password: "",
+                    role: "secretaria",
+                    status: "active",
+                  });
+                }}
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Nuevo Usuario
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>{isEditing ? "Editar usuario" : "Nuevo usuario"}</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 mt-4">
+                <div>
+                  <label className="text-sm">Nombre completo</label>
+                  <Input
+                    value={formData.display_name}
+                    onChange={(e) =>
+                      setFormData({ ...formData, display_name: e.target.value })
+                    }
+                  />
+                </div>
+                <div>
+                  <label className="text-sm">Correo electrónico</label>
+                  <Input
+                    value={formData.email}
+                    onChange={(e) =>
+                      setFormData({ ...formData, email: e.target.value })
+                    }
+                    disabled={isEditing}
+                  />
+                </div>
+                {!isEditing && (
+                  <div>
+                    <label className="text-sm">Contraseña</label>
+                    <Input
+                      type="password"
+                      value={formData.password}
+                      onChange={(e) =>
+                        setFormData({ ...formData, password: e.target.value })
+                      }
+                    />
+                  </div>
+                )}
+                <div>
+                  <label className="text-sm">Rol</label>
+                  <select
+                    className="w-full border rounded px-3 py-2 text-sm"
+                    value={formData.role}
+                    onChange={(e) =>
+                      setFormData({ ...formData, role: e.target.value })
+                    }
+                  >
+                    <option value="admin">Administrador</option>
+                    <option value="secretaria">Secretaria</option>
+                    <option value="supervisor">Supervisor</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-sm">Estado</label>
+                  <select
+                    className="w-full border rounded px-3 py-2 text-sm"
+                    value={formData.status}
+                    onChange={(e) =>
+                      setFormData({ ...formData, status: e.target.value })
+                    }
+                  >
+                    <option value="active">Activo</option>
+                    <option value="inactive">Inactivo</option>
+                  </select>
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button variant="outline" onClick={() => setModalOpen(false)}>
+                    Cancelar
+                  </Button>
+                  <Button onClick={handleCreateOrUpdate}>
+                    {isEditing ? "Actualizar" : "Crear"}
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </div>
+
+        {/* Estadísticas */}
+        <div className="grid md:grid-cols-3 gap-4">
+          <Card><CardContent className="p-6"><p className="text-2xl font-bold">{stats.total}</p><p className="text-sm text-muted-foreground">Usuarios totales</p></CardContent></Card>
+          <Card><CardContent className="p-6"><p className="text-2xl font-bold">{stats.active}</p><p className="text-sm text-muted-foreground">Usuarios activos</p></CardContent></Card>
+          <Card><CardContent className="p-6"><p className="text-2xl font-bold">{stats.admins}</p><p className="text-sm text-muted-foreground">Administradores</p></CardContent></Card>
+        </div>
+
+        {/* Filtro */}
         <Card>
           <CardContent className="p-6">
-            <div className="flex items-center gap-2">
-              <User className="h-5 w-5 text-[#6b7280]" />
-              <div>
-                <p className="text-2xl font-bold">{stats.total}</p>
-                <p className="text-sm text-[#6b7280]">Usuarios totales</p>
-              </div>
+            <div className="relative">
+              <Search className="absolute left-3 top-3 h-4 w-4 text-muted" />
+              <Input
+                placeholder="Buscar por email..."
+                className="pl-10"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
             </div>
           </CardContent>
         </Card>
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center gap-2">
-              <CheckCircle className="h-5 w-5 text-[#6b7280]" />
-              <div>
-                <p className="text-2xl font-bold">{stats.active}</p>
-                <p className="text-sm text-[#6b7280]">Usuarios activos</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center gap-2">
-              <Shield className="h-5 w-5 text-[#6b7280]" />
-              <div>
-                <p className="text-2xl font-bold">{stats.admins}</p>
-                <p className="text-sm text-[#6b7280]">Administradores</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
 
-      {/* Filtro */}
-      <Card>
-        <CardContent className="p-6">
-          <div className="relative">
-            <Search className="absolute left-3 top-3 h-4 w-4 text-[#6b7280]" />
-            <Input
-              placeholder="Buscar usuarios por nombre o email..."
-              className="pl-10"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Tabla de usuarios */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <User className="h-5 w-5" />
-            Lista de Usuarios
-          </CardTitle>
-          <CardDescription className="text-[#6b7280]">
-            {filtered.length} usuarios encontrados
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="font-semibold text-black">Usuario</TableHead>
-                <TableHead className="font-semibold text-black">Email</TableHead>
-                <TableHead className="font-semibold text-black">Rol</TableHead>
-                <TableHead className="font-semibold text-black">Estado</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filtered.map((user) => (
-                <TableRow key={user.uid}>
-                  <TableCell>
-                    <div className="flex items-center gap-3">
-                      <div className="bg-gray-200 border-2 border-dashed rounded-xl w-10 h-10" />
-                      <div>
-                        <div className="font-medium">{user.display_name}</div>
-                        <div className="text-sm text-[#6b7280]">ID: {user.uid}</div>
-                      </div>
-                    </div>
-                  </TableCell>
-                  <TableCell>{user.email}</TableCell>
-                  <TableCell>
-                    <Badge
-                      variant="secondary"
-                      style={{
-                        backgroundColor:
-                          user.role === "admin" ? "#fee2e2" : "#e5e7eb",
-                        color: "#111827"
-                      }}
-                    >
-                      {user.role}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    {!user.disabled ? (
-                      <Badge
-                        variant="secondary"
-                        style={{ backgroundColor: "#22c55e", color: "white" }}
-                      >
-                        <CheckCircle className="h-3 w-3 mr-1" /> Activo
-                      </Badge>
-                    ) : (
-                      <Badge
-                        variant="secondary"
-                        style={{ backgroundColor: "#ef4444", color: "white" }}
-                      >
-                        <XCircle className="h-3 w-3 mr-1" /> Inactivo
-                      </Badge>
-                    )}
-                  </TableCell>
+        {/* Tabla */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <User className="h-5 w-5" />
+              Lista de Usuarios
+            </CardTitle>
+            <CardDescription>{filtered.length} usuarios encontrados</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Nombre</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Rol</TableHead>
+                  <TableHead>Estado</TableHead>
+                  <TableHead>Acciones</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-    </div>
+              </TableHeader>
+              <TableBody>
+                {filtered.map((u) => (
+                  <TableRow key={u.id}>
+                    <TableCell>{u.display_name}</TableCell>
+                    <TableCell>{u.email}</TableCell>
+                    <TableCell><Badge>{u.role}</Badge></TableCell>
+                    <TableCell>
+                      <Badge
+                        style={{
+                          backgroundColor: u.status === "active" ? "#22c55e" : "#ef4444",
+                          color: "white",
+                        }}
+                      >
+                        {u.status === "active" ? "Activo" : "Inactivo"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="outline" onClick={() => handleEdit(u)}>
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="border-red-500 text-red-500"
+                          onClick={() => handleDelete(u.id)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => openPasswordModal(u)}
+                        >
+                          <Lock className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      </div>
+    </AdminLayout>
   );
 }
