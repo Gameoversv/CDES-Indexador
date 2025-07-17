@@ -51,6 +51,7 @@ import { getAuth, connectAuthEmulator } from 'firebase/auth';
 import { getStorage, connectStorageEmulator } from 'firebase/storage';
 import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore';
 
+
 // ===== CONFIGURACIÓN =====
 
 /**
@@ -406,3 +407,4 @@ export { firestore };
  * utilizada para inicializar servicios adicionales.
  */
 export default app;
+export const db = firestore;

@@ -1,8 +1,21 @@
-import React, { useState } from "react";
-import AdminLayout from "@/components/AdminLayout";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+// frontend/pages/Users.jsx
+import React, { useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
-  Table, TableHeader, TableRow, TableHead, TableBody, TableCell,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle
+} from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow
 } from "@/components/ui/table";
 import {
   Dialog, DialogContent, DialogTrigger, DialogHeader, DialogTitle, DialogDescription,
@@ -10,58 +23,47 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Label } from "@/components/ui/label";
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
-import { 
-  UserPlus, Pencil, Trash2, UserCog, Search, User, Shield, Eye, Book 
+import {
+  Search,
+  User,
+  Shield,
+  CheckCircle,
+  XCircle,
+  Plus
 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogTrigger,
+  DialogHeader,
+  DialogTitle
+} from "@/components/ui/dialog";
 
-export default function AdminUsers() {
-  const initialUsers = [
-    { id: 1, name: "Juan Pérez", email: "juan@example.com", role: "admin", active: true },
-    { id: 2, name: "Ana García", email: "ana@example.com", role: "usuario", active: true },
-    { id: 3, name: "Carlos Díaz", email: "carlos@example.com", role: "lector", active: false },
-    { id: 4, name: "María López", email: "maria@example.com", role: "usuario", active: true },
-    { id: 5, name: "Roberto Jiménez", email: "roberto@example.com", role: "lector", active: true },
-  ];
+const API_BASE = "http://localhost:8000";
 
-  const [users, setUsers] = useState(initialUsers);
+export default function Users() {
+  const [users, setUsers] = useState([]);
   const [search, setSearch] = useState("");
-  const [selectedUser, setSelectedUser] = useState(null);
-  const [formData, setFormData] = useState({ name: "", email: "", role: "usuario", active: true });
-  const [mode, setMode] = useState("edit");
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [createData, setCreateData] = useState({
+    display_name: "",
+    email: "",
+    password: "",
+    role: "usuario"
+  });
 
-  const ROLE_ICONS = {
-    admin: <Shield className="h-4 w-4 mr-2" />,
-    usuario: <User className="h-4 w-4 mr-2" />,
-    lector: <Book className="h-4 w-4 mr-2" />
-  };
-
-  const openEditModal = (user) => {
-    setSelectedUser(user);
-    setFormData({ ...user });
-    setMode("edit");
-    setIsDialogOpen(true);
-  };
-
-  const openCreateModal = () => {
-    setSelectedUser(null);
-    setFormData({ name: "", email: "", role: "usuario", active: true });
-    setMode("create");
-    setIsDialogOpen(true);
-  };
-
-  const handleSave = () => {
-    if (mode === "edit") {
-      setUsers((prev) => prev.map((u) => (u.id === selectedUser.id ? { ...u, ...formData } : u)));
-    } else {
-      const newUser = {
-        ...formData,
-        id: users.length ? Math.max(...users.map(u => u.id)) + 1 : 1,
-      };
-      setUsers((prev) => [...prev, newUser]);
+  // Carga usuarios desde GET /users
+  const fetchUsers = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/users`, {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("token")}`
+        }
+      });
+      if (!res.ok) throw new Error("Error al cargar usuarios");
+      const data = await res.json();
+      setUsers(data);
+    } catch (err) {
+      console.error("Error al cargar usuarios:", err);
     }
     setIsDialogOpen(false);
   };
@@ -71,281 +73,246 @@ export default function AdminUsers() {
     setIsDeleteDialogOpen(false);
   };
 
-  const filteredUsers = users.filter(
+  const filtered = users.filter(
     (u) =>
-      u.name.toLowerCase().includes(search.toLowerCase()) ||
+      u.display_name.toLowerCase().includes(search.toLowerCase()) ||
       u.email.toLowerCase().includes(search.toLowerCase())
   );
 
-  return (
-    <AdminLayout>
-      <div className="space-y-6">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl md:text-3xl font-bold flex items-center gap-3">
-              <UserCog className="h-7 w-7 text-primary" />
-              <span>Gestión de Usuarios</span>
-            </h1>
-            <p className="text-muted-foreground mt-2">
-              Administra los usuarios y sus permisos en el sistema
-            </p>
-          </div>
-          
-          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-            <DialogTrigger asChild>
-              <Button className="gap-2 shadow-sm hover:shadow-md transition-shadow" onClick={openCreateModal}>
-                <UserPlus className="h-4 w-4" />
-                Nuevo usuario
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-md rounded-lg">
-              <DialogHeader>
-                <DialogTitle className="flex items-center gap-2">
-                  {mode === "create" ? (
-                    <>
-                      <UserPlus className="h-5 w-5 text-primary" />
-                      Crear nuevo usuario
-                    </>
-                  ) : (
-                    <>
-                      <Pencil className="h-5 w-5 text-primary" />
-                      Editar usuario
-                    </>
-                  )}
-                </DialogTitle>
-                <DialogDescription>
-                  Completa la información del usuario
-                </DialogDescription>
-              </DialogHeader>
-              
-              <form className="space-y-4 mt-2" onSubmit={(e) => e.preventDefault()}>
-                <div className="space-y-2">
-                  <Label htmlFor="name">Nombre completo</Label>
-                  <Input
-                    id="name"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    placeholder="Nombre y apellidos"
-                  />
-                </div>
-                
-                <div className="space-y-2">
-                  <Label htmlFor="email">Correo electrónico</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    placeholder="ejemplo@dominio.com"
-                  />
-                </div>
-                
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Rol</Label>
-                    <Select
-                      value={formData.role}
-                      onValueChange={(value) => setFormData({ ...formData, role: value })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecciona un rol" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="admin">
-                          <div className="flex items-center">
-                            <Shield className="h-4 w-4 mr-2" />
-                            Administrador
-                          </div>
-                        </SelectItem>
-                        <SelectItem value="usuario">
-                          <div className="flex items-center">
-                            <User className="h-4 w-4 mr-2" />
-                            Usuario
-                          </div>
-                        </SelectItem>
-                        <SelectItem value="lector">
-                          <div className="flex items-center">
-                            <Book className="h-4 w-4 mr-2" />
-                            Lector
-                          </div>
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label>Estado</Label>
-                    <Select
-                      value={formData.active ? "activo" : "inactivo"}
-                      onValueChange={(value) => setFormData({ ...formData, active: value === "activo" })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Estado" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="activo">Activo</SelectItem>
-                        <SelectItem value="inactivo">Inactivo</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-                
-                <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
-                  <Button 
-                    variant="outline" 
-                    onClick={() => setIsDialogOpen(false)}
-                  >
-                    Cancelar
-                  </Button>
-                  <Button onClick={handleSave}>
-                    {mode === "create" ? "Crear usuario" : "Guardar cambios"}
-                  </Button>
-                </div>
-              </form>
-            </DialogContent>
-          </Dialog>
-        </div>
+  const stats = {
+    total: users.length,
+    active: users.filter((u) => !u.disabled).length,
+    admins: users.filter((u) => u.role === "admin").length
+  };
 
-        <Card className="border rounded-xl shadow-sm">
-          <CardHeader className="pb-3">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div>
-                <CardTitle>Lista de usuarios</CardTitle>
-                <CardDescription className="mt-1">
-                  {filteredUsers.length} de {users.length} usuarios encontrados
-                </CardDescription>
-              </div>
-              <div className="relative">
-                <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+  // Crea usuario usando POST /users
+  const handleCreate = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/users`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("token")}`
+        },
+        body: JSON.stringify({
+          email: createData.email,
+          password: createData.password,
+          display_name: createData.display_name,
+          role: createData.role,
+          disabled: false
+        })
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail || "Error al crear usuario");
+      }
+      // refresca lista y limpia formulario
+      fetchUsers();
+      setCreateData({ display_name: "", email: "", password: "", role: "usuario" });
+    } catch (err) {
+      console.error(err);
+      alert(err.message);
+    }
+  };
+
+  return (
+    <div className="container mx-auto py-6 space-y-6 bg-white text-black">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="space-y-1">
+          <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
+            <User className="h-8 w-8" />
+            Gestión de Usuarios
+          </h1>
+          <p className="text-sm text-[#6b7280]">
+            Administra los usuarios y permisos del sistema
+          </p>
+        </div>
+        <Dialog>
+          <DialogTrigger asChild>
+            <Button className="flex items-center gap-2 bg-red-500 text-white">
+              <Plus className="h-4 w-4" />
+              Nuevo Usuario
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Crear nuevo usuario</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 mt-4">
+              <div className="space-y-1">
+                <label className="text-sm font-medium">Nombre</label>
                 <Input
-                  placeholder="Buscar usuario..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="pl-10"
+                  value={createData.display_name}
+                  onChange={(e) =>
+                    setCreateData({ ...createData, display_name: e.target.value })
+                  }
                 />
               </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader className="bg-gray-50">
-                <TableRow>
-                  <TableHead className="w-[35%]">Usuario</TableHead>
-                  <TableHead className="w-[30%]">Correo</TableHead>
-                  <TableHead className="w-[15%]">Rol</TableHead>
-                  <TableHead className="w-[15%]">Estado</TableHead>
-                  <TableHead className="text-right w-[5%]">Acciones</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredUsers.map((user) => (
-                  <TableRow key={user.id} className="hover:bg-gray-50">
-                    <TableCell className="font-medium flex items-center">
-                      <div className="bg-gray-100 rounded-full p-2 mr-3">
-                        <User className="h-4 w-4 text-gray-600" />
-                      </div>
-                      {user.name}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">{user.email}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center">
-                        {ROLE_ICONS[user.role]}
-                        <Badge 
-                          variant={user.role === "admin" ? "default" : "secondary"}
-                          className="capitalize"
-                        >
-                          {user.role}
-                        </Badge>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge 
-                        variant={user.active ? "success" : "destructive"}
-                        className="flex items-center gap-1"
-                      >
-                        <div className={`h-2 w-2 rounded-full ${user.active ? 'bg-green-500' : 'bg-red-500'}`}></div>
-                        {user.active ? "Activo" : "Inactivo"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right space-x-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => openEditModal(user)}
-                        className="text-primary hover:bg-primary/10"
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-
-                      <Dialog open={isDeleteDialogOpen && selectedUser?.id === user.id} onOpenChange={(open) => {
-                        if (!open) setIsDeleteDialogOpen(false);
-                      }}>
-                        <DialogTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => {
-                              setSelectedUser(user);
-                              setIsDeleteDialogOpen(true);
-                            }}
-                            className="text-red-500 hover:bg-red-500/10"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </DialogTrigger>
-                        <DialogContent className="rounded-lg max-w-sm">
-                          <DialogHeader>
-                            <DialogTitle className="flex items-center gap-2">
-                              <Trash2 className="h-5 w-5 text-red-500" />
-                              Eliminar usuario
-                            </DialogTitle>
-                          </DialogHeader>
-                          
-                          <div className="py-4">
-                            <p className="text-sm text-gray-700">
-                              ¿Estás seguro que deseas eliminar al usuario <strong>{selectedUser?.name}</strong>?
-                            </p>
-                            <p className="text-xs text-gray-500 mt-2">
-                              Esta acción eliminará permanentemente la cuenta y no se podrá deshacer.
-                            </p>
-                          </div>
-                          
-                          <div className="flex justify-end gap-2 pt-2">
-                            <Button 
-                              variant="outline" 
-                              onClick={() => setIsDeleteDialogOpen(false)}
-                            >
-                              Cancelar
-                            </Button>
-                            <Button 
-                              variant="destructive" 
-                              onClick={() => handleDelete(selectedUser.id)}
-                              className="gap-1"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                              Eliminar
-                            </Button>
-                          </div>
-                        </DialogContent>
-                      </Dialog>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-            
-            {filteredUsers.length === 0 && (
-              <div className="text-center py-12">
-                <Search className="h-12 w-12 mx-auto text-gray-300" />
-                <h3 className="mt-4 font-medium text-gray-600">No se encontraron usuarios</h3>
-                <p className="text-sm text-gray-500 mt-1">
-                  {search ? 'Intenta con otro término de búsqueda' : 'No hay usuarios registrados'}
-                </p>
+              <div className="space-y-1">
+                <label className="text-sm font-medium">Correo</label>
+                <Input
+                  type="email"
+                  value={createData.email}
+                  onChange={(e) =>
+                    setCreateData({ ...createData, email: e.target.value })
+                  }
+                />
               </div>
-            )}
+              <div className="space-y-1">
+                <label className="text-sm font-medium">Contraseña</label>
+                <Input
+                  type="password"
+                  value={createData.password}
+                  onChange={(e) =>
+                    setCreateData({ ...createData, password: e.target.value })
+                  }
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-medium">Rol</label>
+                <select
+                  value={createData.role}
+                  onChange={(e) =>
+                    setCreateData({ ...createData, role: e.target.value })
+                  }
+                  className="w-full border rounded px-3 py-2 text-sm"
+                >
+                  <option value="admin">Administrador</option>
+                  <option value="usuario">Usuario</option>
+                  <option value="lector">Lector</option>
+                </select>
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <Button variant="outline">Cancelar</Button>
+                <Button onClick={handleCreate}>Crear</Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card>
+          <CardContent className="p-6">
+            <div className="flex items-center gap-2">
+              <User className="h-5 w-5 text-[#6b7280]" />
+              <div>
+                <p className="text-2xl font-bold">{stats.total}</p>
+                <p className="text-sm text-[#6b7280]">Usuarios totales</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-6">
+            <div className="flex items-center gap-2">
+              <CheckCircle className="h-5 w-5 text-[#6b7280]" />
+              <div>
+                <p className="text-2xl font-bold">{stats.active}</p>
+                <p className="text-sm text-[#6b7280]">Usuarios activos</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-6">
+            <div className="flex items-center gap-2">
+              <Shield className="h-5 w-5 text-[#6b7280]" />
+              <div>
+                <p className="text-2xl font-bold">{stats.admins}</p>
+                <p className="text-sm text-[#6b7280]">Administradores</p>
+              </div>
+            </div>
           </CardContent>
         </Card>
       </div>
-    </AdminLayout>
+
+      {/* Filtro */}
+      <Card>
+        <CardContent className="p-6">
+          <div className="relative">
+            <Search className="absolute left-3 top-3 h-4 w-4 text-[#6b7280]" />
+            <Input
+              placeholder="Buscar usuarios por nombre o email..."
+              className="pl-10"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Tabla de usuarios */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <User className="h-5 w-5" />
+            Lista de Usuarios
+          </CardTitle>
+          <CardDescription className="text-[#6b7280]">
+            {filtered.length} usuarios encontrados
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="font-semibold text-black">Usuario</TableHead>
+                <TableHead className="font-semibold text-black">Email</TableHead>
+                <TableHead className="font-semibold text-black">Rol</TableHead>
+                <TableHead className="font-semibold text-black">Estado</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filtered.map((user) => (
+                <TableRow key={user.uid}>
+                  <TableCell>
+                    <div className="flex items-center gap-3">
+                      <div className="bg-gray-200 border-2 border-dashed rounded-xl w-10 h-10" />
+                      <div>
+                        <div className="font-medium">{user.display_name}</div>
+                        <div className="text-sm text-[#6b7280]">ID: {user.uid}</div>
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell>{user.email}</TableCell>
+                  <TableCell>
+                    <Badge
+                      variant="secondary"
+                      style={{
+                        backgroundColor:
+                          user.role === "admin" ? "#fee2e2" : "#e5e7eb",
+                        color: "#111827"
+                      }}
+                    >
+                      {user.role}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    {!user.disabled ? (
+                      <Badge
+                        variant="secondary"
+                        style={{ backgroundColor: "#22c55e", color: "white" }}
+                      >
+                        <CheckCircle className="h-3 w-3 mr-1" /> Activo
+                      </Badge>
+                    ) : (
+                      <Badge
+                        variant="secondary"
+                        style={{ backgroundColor: "#ef4444", color: "white" }}
+                      >
+                        <XCircle className="h-3 w-3 mr-1" /> Inactivo
+                      </Badge>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
