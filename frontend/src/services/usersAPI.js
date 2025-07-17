@@ -1,7 +1,7 @@
-import axios from "@/lib/axios";
+import axios from "@/components/utils/axios";
 import { getAuth } from "firebase/auth";
 
-// 🔐 Función para obtener token actual
+// 🔐 Función para obtener token actual y añadirlo como header
 const getAuthHeader = async () => {
   const currentUser = getAuth().currentUser;
   if (!currentUser) throw new Error("No autenticado");
@@ -13,41 +13,45 @@ const getAuthHeader = async () => {
   };
 };
 
-// 📥 Obtener lista de usuarios
-export const getUsers = async () => {
-  const config = await getAuthHeader();
-  const res = await axios.get("/admin/users", config);
-  return res.data;
-};
+const endpoint = "/admin/users";
 
-// ➕ Crear nuevo usuario
-export const createUser = async (userData) => {
-  const config = await getAuthHeader();
-  const res = await axios.post("/admin/users", userData, config);
-  return res.data;
-};
+export const usersAPI = {
+  // 📥 Obtener lista de usuarios
+  list: async () => {
+    const config = await getAuthHeader();
+    const res = await axios.get(endpoint, config);
+    return res.data;
+  },
 
-// ✏️ Actualizar usuario existente
-export const updateUser = async (id, userData) => {
-  const config = await getAuthHeader();
-  const res = await axios.put(`/admin/users/${id}`, userData, config);
-  return res.data;
-};
+  // ➕ Crear nuevo usuario
+  create: async (userData) => {
+    const config = await getAuthHeader();
+    const res = await axios.post(endpoint, userData, config);
+    return res.data;
+  },
 
-// ❌ Eliminar usuario
-export const deleteUser = async (id) => {
-  const config = await getAuthHeader();
-  const res = await axios.delete(`/admin/users/${id}`, config);
-  return res.data;
-};
+  // ✏️ Actualizar usuario existente
+  update: async (id, userData) => {
+    const config = await getAuthHeader();
+    const res = await axios.put(`${endpoint}/${id}`, userData, config);
+    return res.data;
+  },
 
-// 🔒 Cambiar contraseña de usuario
-export const changeUserPassword = async (email, new_password) => {
-  const config = await getAuthHeader();
-  const res = await axios.post(
-    "/admin/users/change-password",
-    { email, new_password },
-    config
-  );
-  return res.data;
+  // ❌ Eliminar usuario
+  delete: async (id) => {
+    const config = await getAuthHeader();
+    const res = await axios.delete(`${endpoint}/${id}`, config);
+    return res.data;
+  },
+
+  // 🔒 Cambiar contraseña de usuario
+  changePassword: async (email, newPassword) => {
+    const config = await getAuthHeader();
+    const res = await axios.post(
+      `${endpoint}/change-password`,
+      { email, new_password: newPassword },
+      config
+    );
+    return res.data;
+  },
 };

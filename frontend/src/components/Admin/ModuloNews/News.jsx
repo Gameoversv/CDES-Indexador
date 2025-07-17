@@ -1,5 +1,5 @@
 import React from "react";
-import AdminLayout from "@/components/AdminLayout";
+import AdminLayout from "@/components/Admin/Layout/AdminLayout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Newspaper } from "lucide-react";
 

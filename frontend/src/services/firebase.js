@@ -46,7 +46,7 @@
  * 
 */
 
-import { initializeApp } from 'firebase/app';
+import { initializeApp, getApps, getApp } from 'firebase/app'; // ✅ actualizado
 import { getAuth, connectAuthEmulator } from 'firebase/auth';
 import { getStorage, connectStorageEmulator } from 'firebase/storage';
 import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore';
@@ -252,8 +252,9 @@ const initializeFirebase = async () => {
     
     console.log('🚀 Inicializando Firebase...');
     
-    // Inicializar aplicación Firebase
-    app = initializeApp(firebaseConfig);
+    // ✅ Inicializar Firebase sin duplicar apps
+app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+
     
     // Inicializar servicios
     auth = getAuth(app);

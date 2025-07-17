@@ -12,9 +12,9 @@ import {
   Loader2
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { documentsAPI } from "../services/api";
+import { documentsAPI } from "../../../services/api";
 import { Button } from "@/components/ui/button";
-import AdminLayout from "@/components/AdminLayout";
+import AdminLayout from "@/components/Admin/Layout/AdminLayout";
 
 export default function DashboardPage() {
   const [totalDocs, setTotalDocs] = useState(0);
