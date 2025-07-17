@@ -1,4 +1,4 @@
-import { cn } from "@/lib/utils"
+import { cn } from "@/components/utils/utils";
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -14,10 +14,7 @@ import { useNavigate } from "react-router-dom";
 import { auth } from "@/services/firebase";
 import { createUserWithEmailAndPassword } from "firebase/auth";
 
-export function SignUpForm({
-  className,
-  ...props
-}) {
+function SignUpForm({ className, ...props }) {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -130,3 +127,5 @@ export function SignUpForm({
     </div>
   )
 }
+
+export default SignUpForm; // ✅ exportación por defecto

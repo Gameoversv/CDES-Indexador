@@ -229,10 +229,12 @@ app.include_router(
         403: {"description": "Prohibido - Permisos insuficientes"}
     }
 )
-# Incluir rutas de gestión de usuarios
 app.include_router(
     user_routes.router, 
-    tags=["Admin Users"])
+    prefix="/users",
+    tags=["Admin Users"]
+)
+
 
 
 # Incluir rutas de gestión de documentos
