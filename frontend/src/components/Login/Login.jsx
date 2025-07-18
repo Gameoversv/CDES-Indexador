@@ -1,50 +1,66 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { signInWithEmailAndPassword } from "firebase/auth";
-import { auth } from "../../services/firebase"; // ✅ correcta
+import { auth } from "@/services/firebase";
+import { cn } from "@/components/utils/utils";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
-
-
-function Login() {
+export default function Login({ className, ...props }) {
+  const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const navigate = useNavigate();
 
-  const handleLogin = async () => {
-    setLoading(true);
+  const handleSubmit = async (e) => {
+    e.preventDefault();
     setError("");
+    setLoading(true);
 
     try {
-      // ✅ Autenticación Firebase
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const token = await userCredential.user.getIdToken();
 
-      // ✅ Llamada al backend para obtener perfil
+      // 🔐 Consultar perfil en backend
       const res = await fetch("http://localhost:8000/users/me", {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
       });
 
       if (!res.ok) throw new Error("Fallo al obtener usuario");
 
       const data = await res.json();
 
-      // ✅ Guardar en localStorage
       localStorage.setItem("token", token);
       localStorage.setItem("user", JSON.stringify(data));
 
-      console.log("🔐 Usuario autenticado:", data);
-
+      // 🎯 Redirigir por rol
       const role = data.role;
-      if (role === "admin") {
-        navigate("/admin/dashboard");
-      } else {
-        navigate("/user/dashboard");
+      switch (role) {
+        case "admin":
+          navigate("/admin");
+          break;
+        case "secretaria":
+          navigate("/secretaria");
+          break;
+        case "supervisor":
+          navigate("/supervisor");
+          break;
+        default:
+          navigate("/dashboard");
       }
-
     } catch (err) {
-      console.error("❌ Error al iniciar sesión", err);
+      console.error("Error al iniciar sesión:", err);
       setError("Correo o contraseña inválidos.");
     } finally {
       setLoading(false);
@@ -52,53 +68,70 @@ function Login() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-cabra-black text-white px-4">
-      <div className="bg-cabra-dark p-8 rounded-xl shadow-xl w-full max-w-md border border-cabra-purple">
-        <h1 className="text-3xl font-bold mb-2 text-cabra-purple text-center tracking-wider">
-          La Cabra 990
-        </h1>
-        <h2 className="text-lg font-semibold mb-6 text-center text-cabra-steel">
-          Iniciar sesión
-        </h2>
-
-        <div className="mb-4">
-          <label className="block text-sm mb-1 text-cabra-steel">Correo</label>
-          <input
-            type="email"
-            className="w-full px-3 py-2 bg-cabra-gray text-white border border-cabra-steel rounded-lg focus:outline-none focus:ring-2 focus:ring-cabra-purple"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="correo@ejemplo.com"
-          />
+    <div className="flex min-h-screen w-full items-center justify-center p-6 md:p-10 bg-cabra-black text-white">
+      <div className="w-full max-w-sm">
+        <div className={cn("flex flex-col gap-6", className)} {...props}>
+          <Card className="bg-cabra-dark border border-cabra-purple">
+            <CardHeader>
+              <CardTitle className="text-cabra-purple text-2xl tracking-wide text-center">
+                Iniciar sesión
+              </CardTitle>
+              <CardDescription className="text-center text-cabra-steel">
+                Inicia sesión para acceder a tu cuenta
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleSubmit}>
+                <div className="flex flex-col gap-6">
+                  <div className="grid gap-3">
+                    <Label htmlFor="email">Correo electrónico</Label>
+                    <Input
+                      id="email"
+                      type="email"
+                      placeholder="correo@ejemplo.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div className="grid gap-3">
+                    <div className="flex items-center">
+                      <Label htmlFor="password">Contraseña</Label>
+                      <a
+                        href="#"
+                        className="ml-auto inline-block text-sm underline-offset-4 hover:underline"
+                      >
+                        ¿Olvidaste tu contraseña?
+                      </a>
+                    </div>
+                    <Input
+                      id="password"
+                      type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                    />
+                  </div>
+                  {error && (
+                    <div className="text-red-500 text-sm text-center">{error}</div>
+                  )}
+                  <div className="flex flex-col gap-3">
+                    <Button type="submit" className="w-full" disabled={loading}>
+                      {loading ? "Entrando..." : "Iniciar sesión"}
+                    </Button>
+                  </div>
+                </div>
+                <div className="mt-4 text-center text-sm">
+                  ¿No tienes una cuenta?{" "}
+                  <a href="/signup" className="underline underline-offset-4">
+                    Crear cuenta
+                  </a>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
         </div>
-
-        <div className="mb-4">
-          <label className="block text-sm mb-1 text-cabra-steel">
-            Contraseña
-          </label>
-          <input
-            type="password"
-            className="w-full px-3 py-2 bg-cabra-gray text-white border border-cabra-steel rounded-lg focus:outline-none focus:ring-2 focus:ring-cabra-purple"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="••••••••"
-          />
-        </div>
-
-        {error && (
-          <p className="text-red-500 text-sm mb-4 text-center">{error}</p>
-        )}
-
-        <button
-          onClick={handleLogin}
-          disabled={loading}
-          className="w-full bg-cabra-purple hover:bg-cabra-purple-dark py-2 rounded-lg font-semibold tracking-wide transition-colors duration-200"
-        >
-          {loading ? "Entrando..." : "Entrar"}
-        </button>
       </div>
     </div>
   );
 }
-
-export default Login;

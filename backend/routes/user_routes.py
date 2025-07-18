@@ -1,11 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr
 from typing import Literal
-from services.firebase_admin import auth
+from services.firebase_admin_tools import auth
 from services.firebase_service import verify_token, get_firestore_client
+from utils.audit_logger import log_event  # ✅ Importación correcta
+
 import time
 
-router = APIRouter(prefix="/admin/users")
+router = APIRouter()
 
 # ===========================================
 #             MODELOS DE DATOS
@@ -51,6 +53,10 @@ def create_user(data: UserCreate, token_data=Depends(verify_token)):
             display_name=data.display_name,
             disabled=(data.status != "active"),
         )
+        # 🔐 Asignar claim si es admin
+        if data.role == "admin":
+            auth.set_custom_user_claims(user_record.uid, {"admin": True})
+
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Firebase Auth error: {e}")
 
@@ -64,6 +70,14 @@ def create_user(data: UserCreate, token_data=Depends(verify_token)):
         "status": data.status
     })
 
+    # ✅ Registrar en logs
+    log_event(
+        event_type="user_created",
+        user_id=token_data["user_id"],
+        severity="INFO",
+        details={"email": data.email, "role": data.role}
+    )
+
     return {"message": "Usuario creado", "id": doc.id}
 
 @router.put("/{id}")
@@ -76,16 +90,20 @@ def update_user(id: str, data: UserUpdate, token_data=Depends(verify_token)):
 
     existing = doc.to_dict()
     email = existing.get("email")
-    if not email:
-        raise HTTPException(status_code=400, detail="Usuario sin email válido")
+    uid = existing.get("uid")
+    if not email or not uid:
+        raise HTTPException(status_code=400, detail="Usuario sin email o uid válido")
 
     try:
-        user_record = auth.get_user_by_email(email)
         auth.update_user(
-            user_record.uid,
+            uid,
             display_name=data.display_name,
             disabled=(data.status != "active")
         )
+        if data.role == "admin":
+            auth.set_custom_user_claims(uid, {"admin": True})
+        else:
+            auth.set_custom_user_claims(uid, {})
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Firebase Auth error: {e}")
 
@@ -94,6 +112,14 @@ def update_user(id: str, data: UserUpdate, token_data=Depends(verify_token)):
         "role": data.role,
         "status": data.status
     })
+
+    # ✅ Registrar en logs
+    log_event(
+        event_type="user_updated",
+        user_id=token_data["user_id"],
+        severity="INFO",
+        details={"user_id_updated": uid, "new_role": data.role}
+    )
 
     return {"message": "Usuario actualizado"}
 
@@ -105,15 +131,26 @@ def delete_user(id: str, token_data=Depends(verify_token)):
     if not doc.exists:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
 
-    email = doc.to_dict().get("email")
-    if email:
+    user_data = doc.to_dict()
+    email = user_data.get("email")
+    uid = user_data.get("uid")
+
+    if email and uid:
         try:
-            user_record = auth.get_user_by_email(email)
-            auth.delete_user(user_record.uid)
+            auth.delete_user(uid)
         except Exception:
             pass  # Puede que ya esté eliminado
 
     doc_ref.delete()
+
+    # ✅ Registrar en logs
+    log_event(
+        event_type="user_deleted",
+        user_id=token_data["user_id"],
+        severity="WARNING",
+        details={"email": email, "uid": uid}
+    )
+
     return {"message": "Usuario eliminado"}
 
 @router.post("/change-password")
@@ -129,5 +166,13 @@ def change_password(data: PasswordChangeRequest, token_data=Depends(verify_token
     doc = next(docs, None)
     if doc:
         doc.reference.update({"password": data.new_password})  # opcional
+
+    # ✅ Registrar en logs
+    log_event(
+        event_type="password_changed",
+        user_id=token_data["user_id"],
+        severity="INFO",
+        details={"email_target": data.email}
+    )
 
     return {"message": "Contraseña actualizada correctamente"}

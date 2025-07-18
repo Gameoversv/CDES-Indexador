@@ -6,7 +6,16 @@ import { cn } from "@/components/utils/utils";
 
 import { getEventTypeInfo, getSeverityInfo } from "@/components/utils/auditUtils";
 
-export default function AuditLogMobileCards({ logs, formatDate }) {
+export default function AuditLogMobileCards({ logs = [], formatDate }) {
+
+  if (!Array.isArray(logs) || logs.length === 0) {
+    return (
+      <div className="md:hidden text-center text-muted-foreground text-sm mt-4">
+        No hay registros disponibles.
+      </div>
+    );
+  }
+
   return (
     <div className="md:hidden space-y-3">
       {logs.map((log) => {

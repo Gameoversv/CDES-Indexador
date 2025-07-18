@@ -2,8 +2,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { FileText } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { getFileTypeColor } from "@/components/utils/fileUtils"; // ✅ nuevo import
 
-export default function PreviewFileDialog({ file, onClose, handleDownload, formatSize, formatDate, getFileTypeColor }) {
+export default function PreviewFileDialog({ file, onClose, handleDownload, formatSize, formatDate }) {
   return (
     <Dialog open={!!file} onOpenChange={onClose}>
       <DialogContent className="rounded-xl bg-white border border-gray-300">
