@@ -21,8 +21,13 @@ export default function AdminAudit() {
   });
   const [selectedLog, setSelectedLog] = useState(null);
 
-  useEffect(() => { loadLogs(); }, []);
-  useEffect(() => { applyFilters(); }, [logs, searchTerm, filters]);
+  useEffect(() => {
+    loadLogs();
+  }, []);
+
+  useEffect(() => {
+    applyFilters();
+  }, [logs, searchTerm, filters]);
 
   const loadLogs = async () => {
     setLoading(true);
@@ -41,7 +46,7 @@ export default function AdminAudit() {
     let filtered = [...logs];
 
     if (searchTerm) {
-      filtered = filtered.filter(log =>
+      filtered = filtered.filter((log) =>
         log.event_type?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         log.user_id?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         JSON.stringify(log.details).toLowerCase().includes(searchTerm.toLowerCase())
@@ -49,23 +54,33 @@ export default function AdminAudit() {
     }
 
     if (filters.eventType !== "all") {
-      filtered = filtered.filter(log => log.event_type === filters.eventType);
+      filtered = filtered.filter((log) => log.event_type === filters.eventType);
     }
 
     if (filters.severity !== "all") {
-      filtered = filtered.filter(log => log.severity === filters.severity);
+      filtered = filtered.filter((log) => log.severity === filters.severity);
     }
 
     if (filters.dateRange !== "all") {
       const now = new Date();
       const cutoff = new Date();
       switch (filters.dateRange) {
-        case "1h": cutoff.setHours(now.getHours() - 1); break;
-        case "24h": cutoff.setDate(now.getDate() - 1); break;
-        case "7d": cutoff.setDate(now.getDate() - 7); break;
-        case "30d": cutoff.setDate(now.getDate() - 30); break;
+        case "1h":
+          cutoff.setHours(now.getHours() - 1);
+          break;
+        case "24h":
+          cutoff.setDate(now.getDate() - 1);
+          break;
+        case "7d":
+          cutoff.setDate(now.getDate() - 7);
+          break;
+        case "30d":
+          cutoff.setDate(now.getDate() - 30);
+          break;
+        default:
+          break;
       }
-      filtered = filtered.filter(log => new Date(log.timestamp) >= cutoff);
+      filtered = filtered.filter((log) => new Date(log.timestamp) >= cutoff);
     }
 
     setFilteredLogs(filtered);
@@ -74,20 +89,22 @@ export default function AdminAudit() {
   const exportLogs = () => {
     const csv = [
       ["Fecha", "Usuario", "Evento", "Severidad", "Detalles"].join(","),
-      ...filteredLogs.map(log => [
-        new Date(log.timestamp).toISOString(),
-        log.user_id || "",
-        log.event_type || "",
-        log.severity || "",
-        JSON.stringify(log.details).replace(/"/g, '""')
-      ].join(","))
+      ...filteredLogs.map((log) =>
+        [
+          new Date(log.timestamp).toISOString(),
+          log.user_id || "",
+          log.event_type || "",
+          log.severity || "",
+          JSON.stringify(log.details).replace(/"/g, '""'),
+        ].join(",")
+      ),
     ].join("\n");
 
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `audit-logs-${new Date().toISOString().split('T')[0]}.csv`;
+    a.download = `audit-logs-${new Date().toISOString().split("T")[0]}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -96,12 +113,14 @@ export default function AdminAudit() {
     const total = filteredLogs.length;
     const byType = {};
     const bySeverity = {};
-    filteredLogs.forEach(log => {
+    filteredLogs.forEach((log) => {
       byType[log.event_type] = (byType[log.event_type] || 0) + 1;
-      bySeverity[log.severity || 'INFO'] = (bySeverity[log.severity || 'INFO'] || 0) + 1;
+      bySeverity[log.severity || "INFO"] = (bySeverity[log.severity || "INFO"] || 0) + 1;
     });
     return { total, byType, bySeverity };
   }, [filteredLogs]);
+
+  const formatDate = (ts) => new Date(ts).toLocaleString("es-DO");
 
   return (
     <AdminLayout>
@@ -112,14 +131,22 @@ export default function AdminAudit() {
               <Shield className="h-8 w-8" />
               Registros de Auditoría
             </h1>
-            <p className="text-muted-foreground">Monitoreo y análisis de actividades del sistema</p>
+            <p className="text-muted-foreground">
+              Monitoreo y análisis de actividades del sistema
+            </p>
           </div>
           <div className="flex gap-2">
-            <button onClick={loadLogs} className="btn-outline flex gap-2 items-center px-3 py-2">
+            <button
+              onClick={loadLogs}
+              className="btn-outline flex gap-2 items-center px-3 py-2"
+            >
               <RefreshCw className="h-4 w-4" />
               Actualizar
             </button>
-            <button onClick={exportLogs} className="btn flex gap-2 items-center px-3 py-2">
+            <button
+              onClick={exportLogs}
+              className="btn flex gap-2 items-center px-3 py-2"
+            >
               <Download className="h-4 w-4" />
               Exportar CSV
             </button>
@@ -141,7 +168,8 @@ export default function AdminAudit() {
               setSearchTerm={setSearchTerm}
             />
             <AuditLogsTable
-              filteredLogs={filteredLogs}
+              logs={filteredLogs}
+              formatDate={formatDate}
               setSelectedLog={setSelectedLog}
             />
             <AuditLogMobileCards

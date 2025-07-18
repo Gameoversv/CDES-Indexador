@@ -15,43 +15,55 @@ const getAuthHeader = async () => {
 
 const endpoint = "/admin/users";
 
+// 🧠 Funciones base
+const list = async () => {
+  const config = await getAuthHeader();
+  const res = await axios.get(endpoint, config);
+  return res.data;
+};
+
+const create = async (userData) => {
+  const config = await getAuthHeader();
+  const res = await axios.post(endpoint, userData, config);
+  return res.data;
+};
+
+const update = async (id, userData) => {
+  const config = await getAuthHeader();
+  const res = await axios.put(`${endpoint}/${id}`, userData, config);
+  return res.data;
+};
+
+const deleteUser = async (id) => {
+  const config = await getAuthHeader();
+  const res = await axios.delete(`${endpoint}/${id}`, config);
+  return res.data;
+};
+
+const changePassword = async (email, newPassword) => {
+  const config = await getAuthHeader();
+  const res = await axios.post(
+    `${endpoint}/change-password`,
+    { email, new_password: newPassword },
+    config
+  );
+  return res.data;
+};
+
+// ✅ Exportación agrupada
 export const usersAPI = {
-  // 📥 Obtener lista de usuarios
-  list: async () => {
-    const config = await getAuthHeader();
-    const res = await axios.get(endpoint, config);
-    return res.data;
-  },
+  list,
+  create,
+  update,
+  delete: deleteUser,
+  changePassword,
+};
 
-  // ➕ Crear nuevo usuario
-  create: async (userData) => {
-    const config = await getAuthHeader();
-    const res = await axios.post(endpoint, userData, config);
-    return res.data;
-  },
-
-  // ✏️ Actualizar usuario existente
-  update: async (id, userData) => {
-    const config = await getAuthHeader();
-    const res = await axios.put(`${endpoint}/${id}`, userData, config);
-    return res.data;
-  },
-
-  // ❌ Eliminar usuario
-  delete: async (id) => {
-    const config = await getAuthHeader();
-    const res = await axios.delete(`${endpoint}/${id}`, config);
-    return res.data;
-  },
-
-  // 🔒 Cambiar contraseña de usuario
-  changePassword: async (email, newPassword) => {
-    const config = await getAuthHeader();
-    const res = await axios.post(
-      `${endpoint}/change-password`,
-      { email, new_password: newPassword },
-      config
-    );
-    return res.data;
-  },
+// ✅ Exportaciones individuales
+export {
+  list as getUsers,
+  create as createUser,
+  update as updateUser,
+  deleteUser,
+  changePassword as changeUserPassword,
 };
