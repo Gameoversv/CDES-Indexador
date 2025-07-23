@@ -16,8 +16,8 @@ import AdminDashboard from "./components/Admin/Layout/AdminDashboard";
 import AdminUsers from "./components/Admin/ModuloUsuarios/AdminUsers";
 import AdminDocuments from "./components/Admin/ModuloDocuments/AdminDocuments";
 import AdminAudits from "./components/Admin/ModuloAudits/AdminAudit";
-import Library from "./components/Admin/ModuloLibrary/Library"; // ✅ correcto
-import News from "./components/Admin/ModuloNews/News";         // ✅ correcto
+import AdminLibrary from "./components/Admin/ModuloLibrary/AdminLibrary"; // ✅ corregido
+import News from "./components/Admin/ModuloNews/News";
 
 import "./App.css";
 
@@ -79,7 +79,7 @@ export default function App() {
             path="/admin/library"
             element={
               <PrivateRoute requireAdmin>
-                <Library />
+                <AdminLibrary />
               </PrivateRoute>
             }
           />
