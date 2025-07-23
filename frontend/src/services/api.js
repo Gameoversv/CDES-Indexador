@@ -166,3 +166,34 @@ export const usersAPI = {
 export const authAPI = {
   getCurrentUser: () => api.get("/users/me"),
 };
+
+// ===============================
+// API: Biblioteca Pública (solo frontend por ahora)
+// ===============================
+
+export const libraryAPI = {
+  list: () =>
+    api
+      .get("/documents/storage") // usa el mismo endpoint que documentos
+      .then((res) =>
+        // filtra solo los documentos públicos
+        (res.data?.files || []).filter((file) => file.publico === true)
+      ),
+
+  upload: (formData) =>
+    api.post("/documents/upload", formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+      timeout: UPLOAD_TIMEOUT,
+    }),
+
+  downloadByPath: (path) =>
+    api.get("/documents/download_by_path", {
+      params: { path },
+      responseType: "blob",
+    }),
+
+  deleteByPath: (path) =>
+    api.delete("/documents/delete_by_path", {
+      params: { path },
+    }),
+};
