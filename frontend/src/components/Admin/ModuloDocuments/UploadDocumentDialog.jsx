@@ -47,7 +47,8 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button className="gap-2 px-3 py-2 rounded-lg border border-gray-300 bg-blue-600 text-white hover:bg-blue-700">
+        <Button 
+        className="gap-2 px-3 py-2 rounded-lg border border-gray-300 bg-red-600 text-white hover:bg-red-700">
           <Upload className="h-4 w-4" />
           <span className="hidden sm:inline">Subir documento</span>
         </Button>
@@ -82,7 +83,7 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
           </div>
           <div className="flex justify-end gap-3">
             <Button variant="outline" onClick={() => setOpen(false)} className="border border-gray-300 text-gray-900">Cancelar</Button>
-            <Button type="submit" className="bg-blue-600 text-white hover:bg-blue-700">Subir documento</Button>
+            <Button type="submit" className="bg-red-600 text-white hover:bg-red-700">Subir documento</Button>
           </div>
         </form>
       </DialogContent>

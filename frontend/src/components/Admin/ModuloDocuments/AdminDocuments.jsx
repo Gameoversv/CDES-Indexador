@@ -2,11 +2,8 @@ import React, { useEffect, useState, useMemo } from "react";
 import AdminLayout from "@/components/Admin/Layout/AdminLayout";
 import { documentsAPI } from "@/services/api";
 import { toast } from "sonner";
-import {
-  Loader2,
-} from "lucide-react";
+import { Loader2 } from "lucide-react";
 
-// Componentes reutilizables separados
 import UploadDocumentDialog from "@/components/Admin/ModuloDocuments/UploadDocumentDialog";
 import PreviewFileDialog from "@/components/Admin/ModuloDocuments/PreviewFileDialog";
 import ConfirmDeleteDialog from "@/components/Admin/ModuloDocuments/ConfirmDeleteDialog";
@@ -19,13 +16,19 @@ export default function AdminDocuments() {
   const [files, setFiles] = useState([]);
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
-  const [sortBy, setSortBy] = useState("filename");
-  const [sortOrder, setSortOrder] = useState("asc");
+  const [typeContent, setTypeContent] = useState("all");
+  const [dateRange, setDateRange] = useState({ from: null, to: null });
+  const [sortBy, setSortBy] = useState("updated");
+  const [sortOrder, setSortOrder] = useState("desc");
   const [previewFile, setPreviewFile] = useState(null);
-  const [confirmDelete, setConfirmDelete] = useState({ open: false, file: null });
+  const [confirmDelete, setConfirmDelete] = useState({
+    open: false,
+    file: null,
+  });
   const [viewMode, setViewMode] = useState("list");
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [statType, setStatType] = useState("pdf"); // ✅ Nuevo
 
   useEffect(() => {
     fetchFiles();
@@ -42,11 +45,19 @@ export default function AdminDocuments() {
         toast.error("Formato de datos inválido.");
       }
     } catch (error) {
+      console.error(error);
       setFiles([]);
       toast.error("Error al obtener los archivos.");
     } finally {
       setLoading(false);
     }
+  };
+
+  const clearAllFilters = () => {
+    setSearch("");
+    setTypeFilter("all");
+    setTypeContent("all");
+    setDateRange({ from: null, to: null });
   };
 
   const formatSize = (bytes) => {
@@ -79,7 +90,8 @@ export default function AdminDocuments() {
 
   const sortedFiles = useMemo(() => {
     return [...files].sort((a, b) => {
-      let valA = a[sortBy], valB = b[sortBy];
+      let valA = a[sortBy],
+        valB = b[sortBy];
       if (sortBy === "updated") {
         valA = new Date(valA || 0);
         valB = new Date(valB || 0);
@@ -97,16 +109,32 @@ export default function AdminDocuments() {
   }, [files, sortBy, sortOrder]);
 
   const filteredFiles = useMemo(() => {
-    return sortedFiles.filter((f) =>
-      (f.filename || "").toLowerCase().includes(search.toLowerCase()) &&
-      (typeFilter === "all" || (f.filename || "").toLowerCase().endsWith(`.${typeFilter}`))
-    );
-  }, [sortedFiles, search, typeFilter]);
+    return sortedFiles.filter((f) => {
+      const matchesSearch = (f.filename || "")
+        .toLowerCase()
+        .includes(search.toLowerCase());
+      const matchesTypeFilter =
+        typeFilter === "all" ||
+        (f.filename || "").toLowerCase().endsWith(`.${typeFilter}`);
+      const matchesContentType =
+        typeContent === "all" || (f.tipo || "").toLowerCase() === typeContent;
+      const updatedAt = new Date(f.updated);
+      const inDateRange =
+        (!dateRange.from || updatedAt >= new Date(dateRange.from)) &&
+        (!dateRange.to || updatedAt <= new Date(dateRange.to));
+
+      return (
+        matchesSearch && matchesTypeFilter && matchesContentType && inDateRange
+      );
+    });
+  }, [sortedFiles, search, typeFilter, typeContent, dateRange]);
 
   const stats = {
     total: files.length,
     totalSize: formatSize(files.reduce((acc, f) => acc + (f.size || 0), 0)),
-    pdfs: files.filter(f => f.filename?.toLowerCase().endsWith(".pdf")).length,
+    filteredCount: files.filter((f) =>
+      f.filename?.toLowerCase().endsWith(`.${statType}`)
+    ).length, // ✅
   };
 
   const handleDownload = async (path, filename) => {
@@ -118,7 +146,7 @@ export default function AdminDocuments() {
       a.download = filename;
       a.click();
       URL.revokeObjectURL(url);
-    } catch (err) {
+    } catch {
       toast.error("Error al descargar el archivo");
     }
   };
@@ -129,7 +157,7 @@ export default function AdminDocuments() {
       await documentsAPI.deleteByPath(confirmDelete.file.path);
       toast.success("Archivo eliminado correctamente");
       fetchFiles();
-    } catch (error) {
+    } catch {
       toast.error("Error al eliminar archivo");
     } finally {
       setConfirmDelete({ open: false, file: null });
@@ -139,7 +167,9 @@ export default function AdminDocuments() {
   return (
     <AdminLayout>
       <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-bold text-gray-900">Gestión de Documentos</h2>
+        <h2 className="text-2xl font-bold text-gray-900">
+          Gestión de Documentos
+        </h2>
         <UploadDocumentDialog
           open={uploadModalOpen}
           setOpen={setUploadModalOpen}
@@ -147,16 +177,25 @@ export default function AdminDocuments() {
         />
       </div>
 
-      <DocumentStatsCard stats={stats} />
+      <DocumentStatsCard
+        stats={stats}
+        statType={statType}
+        setStatType={setStatType}
+      />
 
       <DocumentToolbar
         search={search}
         setSearch={setSearch}
         typeFilter={typeFilter}
         setTypeFilter={setTypeFilter}
-        fetchFiles={fetchFiles}
+        typeContent={typeContent}
+        setTypeContent={setTypeContent}
+        dateRange={dateRange}
+        setDateRange={setDateRange}
         viewMode={viewMode}
         setViewMode={setViewMode}
+        onRefresh={fetchFiles}
+        clearAllFilters={clearAllFilters}
       />
 
       {loading ? (
@@ -164,7 +203,9 @@ export default function AdminDocuments() {
           <Loader2 className="w-6 h-6 animate-spin" />
         </div>
       ) : filteredFiles.length === 0 ? (
-        <p className="text-center text-gray-500">No hay documentos para mostrar.</p>
+        <p className="text-center text-gray-500">
+          No hay documentos para mostrar.
+        </p>
       ) : viewMode === "list" ? (
         <DocumentsTable
           files={filteredFiles}

@@ -93,7 +93,7 @@ export default function DocumentsGrid({
                     variant="outline"
                     size="sm"
                     onClick={() => handleDownload(file.path, file.filename)}
-                    className="rounded-full p-1.5 border border-gray-300 bg-blue-600 text-white hover:bg-blue-700"
+                    className="rounded-full p-1.5 border border-gray-300 bg-red-600 text-white hover:bg-red-700"
                   >
                     <Download className="h-4 w-4" />
                   </Button>

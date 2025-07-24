@@ -1,6 +1,7 @@
+// tsconfig.node.json
 {
-  "files": [],
   "compilerOptions": {
+    "composite": true, // ✅ REQUERIDO
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"]
