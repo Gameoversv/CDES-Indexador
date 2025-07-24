@@ -61,7 +61,6 @@ const getFileTypeColor = (filename) => {
 export default function DocumentsTable({
   files,
   handleSort,
-  //sortBy,
   setPreviewFile,
   setConfirmDelete,
   handleDownload,
@@ -103,6 +102,9 @@ export default function DocumentsTable({
             <TableHead className="border-b border-gray-300 text-gray-900 font-semibold">
               Tipo
             </TableHead>
+            <TableHead className="border-b border-gray-300 text-gray-900 font-semibold">
+              Formato
+            </TableHead>
             <TableHead className="text-right border-b border-gray-300 text-gray-900 font-semibold">
               Acciones
             </TableHead>
@@ -122,15 +124,23 @@ export default function DocumentsTable({
                   </div>
                 </div>
               </TableCell>
-              <TableCell className="text-gray-900">{formatSize(file.size)}</TableCell>
+              <TableCell className="text-gray-900">
+                {formatSize(file.size)}
+              </TableCell>
               <TableCell className="text-gray-900">
                 <div className="flex items-center gap-1 text-sm text-gray-700">
                   <Calendar className="h-3 w-3" />
                   {formatDate(file.updated)}
                 </div>
               </TableCell>
+              <TableCell className="text-gray-900">
+                {file.tipo || "-"}
+              </TableCell>
               <TableCell>
-                <Badge variant="secondary" className={getFileTypeColor(file.filename)}>
+                <Badge
+                  variant="secondary"
+                  className={getFileTypeColor(file.filename)}
+                >
                   {file.filename?.split(".").pop()?.toUpperCase() || "FILE"}
                 </Badge>
               </TableCell>
@@ -156,7 +166,7 @@ export default function DocumentsTable({
                     variant="outline"
                     size="sm"
                     onClick={() => handleDownload(file.path, file.filename)}
-                    className="gap-1 px-3 border border-gray-300 bg-blue-600 text-white hover:bg-blue-700"
+                    className="gap-1 px-3 border border-gray-300 bg-red-600 text-white hover:bg-red-700"
                   >
                     <Download className="h-4 w-4" />
                   </Button>

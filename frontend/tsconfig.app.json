@@ -1,12 +1,21 @@
 {
   "compilerOptions": {
-    // ...
+    "target": "ESNext",
+    "module": "ESNext",
+    "jsx": "react-jsx",
+    "moduleResolution": "Node",
+    "strict": true,
+    "esModuleInterop": true,
+    "allowJs": true,
+    "checkJs": false,                       // ✅ Desactiva verificación estricta en .js
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,                         // ✅ No genera archivos de salida
+    "forceConsistentCasingInFileNames": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": [
-        "./src/*"
-      ]
+      "@/*": ["./src/*"]
     }
-    // ...
-  }
+  },
+  "include": ["src"]
 }
