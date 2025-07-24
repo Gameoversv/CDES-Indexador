@@ -10,8 +10,8 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "../../utils/utils";
 
 export default function LibraryTable({
-  files = [],              // ✅ Valor por defecto si no se pasa
-  onView = () => {},       // ✅ Funciones vacías por defecto
+  files = [],
+  onView = () => {},
   onDownload = () => {},
   onDelete = () => {},
   onSort = () => {},
@@ -21,6 +21,11 @@ export default function LibraryTable({
   const handleSort = (key) => {
     const order = key === sortKey && sortOrder === "asc" ? "desc" : "asc";
     onSort(key, order);
+  };
+
+  const getFormat = (filename = "") => {
+    const parts = filename.split(".");
+    return parts.length > 1 ? parts.pop().toLowerCase() : "desconocido";
   };
 
   return (
@@ -33,6 +38,7 @@ export default function LibraryTable({
               <ArrowUpDown className="inline h-4 w-4 ml-1" />
             </th>
             <th className="p-3">Tipo</th>
+            <th className="p-3">Formato</th>
             <th className="p-3">Apartado</th>
             <th className="p-3 cursor-pointer" onClick={() => handleSort("updated")}>
               Fecha
@@ -46,15 +52,25 @@ export default function LibraryTable({
             files.map((file, i) => (
               <tr key={file.path || i} className={cn(i % 2 === 0 ? "bg-white" : "bg-gray-50")}>
                 <td className="p-3 font-medium">{file.filename}</td>
+
                 <td className="p-3">
-                  <Badge variant="secondary">{file.type?.toUpperCase() || "PDF"}</Badge>
+                  <Badge variant="outline">{file.tipo || "Sin tipo"}</Badge>
                 </td>
+
+                <td className="p-3">
+                  <Badge variant="secondary">
+                    {getFormat(file.name).toUpperCase()}
+                  </Badge>
+                </td>
+
                 <td className="p-3">
                   <Badge variant="outline">{file.apartado || "Sin apartado"}</Badge>
                 </td>
+
                 <td className="p-3 text-muted-foreground">
                   {file.updated ? new Date(file.updated).toLocaleDateString() : "-"}
                 </td>
+
                 <td className="p-3 flex justify-end gap-2">
                   <Button size="icon" variant="outline" onClick={() => onView(file)}>
                     <Eye className="h-4 w-4" />
@@ -70,7 +86,7 @@ export default function LibraryTable({
             ))
           ) : (
             <tr>
-              <td colSpan="5" className="p-4 text-center text-muted-foreground">
+              <td colSpan="6" className="p-4 text-center text-muted-foreground">
                 No hay documentos disponibles.
               </td>
             </tr>
