@@ -9,7 +9,6 @@ import {
   changeUserPassword,
 } from "@/services/usersAPI";
 
-// Componentes separados
 import UserFormDialog from "@/components/Admin/ModuloUsuarios/UserFormDialog";
 import ChangePasswordDialog from "@/components/Admin/ModuloUsuarios/ChangePasswordDialog";
 import UserTable from "@/components/Admin/ModuloUsuarios/UserTable";
@@ -19,6 +18,7 @@ import UserSearchBar from "@/components/Admin/ModuloUsuarios/UserSearchBar";
 export default function Users() {
   const [users, setUsers] = useState([]);
   const [search, setSearch] = useState("");
+  const [roleFilter, setRoleFilter] = useState("all");
   const [modalOpen, setModalOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
@@ -145,20 +145,47 @@ export default function Users() {
     }
   };
 
-  const filtered = users.filter((u) =>
-    u.email.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = users.filter((u) => {
+    const matchesSearch =
+      u.email.toLowerCase().includes(search.toLowerCase()) ||
+      u.display_name.toLowerCase().includes(search.toLowerCase()) ||
+      u.role.toLowerCase().includes(search.toLowerCase());
+
+    const matchesRole = roleFilter === "all" || u.role === roleFilter;
+
+    return matchesSearch && matchesRole;
+  });
 
   const stats = {
-    total: users.length,
-    active: users.filter((u) => u.status === "active").length,
-    admins: users.filter((u) => u.role === "admin").length,
-  };
+  total: users.length,
+  active: users.filter((u) => u.status === "active").length,
+  admin: users.filter((u) => u.role === "admin").length,
+  secretaria: users.filter((u) => u.role === "secretaria").length,
+  supervisor: users.filter((u) => u.role === "supervisor").length,
+};
+
 
   return (
     <AdminLayout>
       <div className="p-6 space-y-6">
-        {/* Modal cambio de contraseña */}
+        {/* Encabezado */}
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-2xl font-bold text-gray-900">Gestión de Usuarios</h2>
+          <UserFormDialog
+            open={modalOpen}
+            setOpen={setModalOpen}
+            isEditing={isEditing}
+            formData={formData}
+            setFormData={setFormData}
+            onSubmit={handleCreateOrUpdate}
+            onOpenNew={() => {
+              resetForm();
+              setModalOpen(true);
+            }}
+          />
+        </div>
+
+        {/* Modales */}
         <ChangePasswordDialog
           open={passwordModalOpen}
           setOpen={setPasswordModalOpen}
@@ -168,25 +195,16 @@ export default function Users() {
           onSubmit={handlePasswordSubmit}
         />
 
-        {/* Botón de nuevo usuario y modal */}
-        <UserFormDialog
-          open={modalOpen}
-          setOpen={setModalOpen}
-          isEditing={isEditing}
-          formData={formData}
-          setFormData={setFormData}
-          onSubmit={handleCreateOrUpdate}
-          onOpenNew={() => {
-            resetForm();
-            setModalOpen(true);
-          }}
-        />
-
         {/* Estadísticas */}
         <UserStatsCards stats={stats} />
 
-        {/* Filtro de búsqueda */}
-        <UserSearchBar search={search} setSearch={setSearch} />
+        {/* Filtros */}
+        <UserSearchBar
+          search={search}
+          setSearch={setSearch}
+          roleFilter={roleFilter}
+          setRoleFilter={setRoleFilter}
+        />
 
         {/* Tabla */}
         <UserTable
