@@ -26,16 +26,17 @@ async def lifespan(app: FastAPI):
         firestore = get_firestore_client()
         firestore.collection("health_check").document("test").set({"status": "ok"})
     except Exception as e:
-        print(f"❌ Error iniciando Firebase: {e}")
+        print(f"Error iniciando Firebase: {e}")
 
     try:
         initialize_meilisearch()
+        print(f"Meilisearch ha inicializado correctamente en {settings.MEILISEARCH_HOST}")
     except Exception as e:
-        print(f"❌ Error iniciando Meilisearch: {e}")
+        print(f"Error iniciando Meilisearch: {e}")
 
     if settings.APP_ENV == "development":
         await _crear_usuario_admin_inicial()
-        await asignar_claim_admin_manual()  # ✅ Asignar admin manualmente a Wilkin
+        await asignar_claim_admin_manual()  # Asignar admin manualmente a Wilkin
 
     yield  # Backend listo
 
@@ -65,7 +66,7 @@ async def _crear_usuario_admin_inicial():
                 log_event(user.uid, 'ADMIN_CLAIM_UPDATED', {'email': admin_email})
 
     except Exception as e:
-        print(f"⚠️ Error creando admin inicial: {e}")
+        print(f"Error creando admin inicial: {e}")
 
 
 async def asignar_claim_admin_manual():
@@ -77,9 +78,9 @@ async def asignar_claim_admin_manual():
     try:
         user = get_auth_client().get_user_by_email(email)
         get_auth_client().set_custom_user_claims(user.uid, {"admin": True})
-        print(f"✅ Claim de administrador asignado correctamente a: {email}")
+        print(f"Claim de administrador asignado correctamente a: {email}")
     except Exception as e:
-        print(f"❌ Error al asignar claim a {email}: {e}")
+        print(f"Error al asignar claim a {email}: {e}")
 
 
 # ============================
@@ -115,37 +116,37 @@ app.add_middleware(
 # Rutas de la API
 # ============================
 
-app.include_router(auth_routes.router, prefix="/auth", tags=["🔐 Autenticación"])
-app.include_router(user_routes.router, prefix="/admin/users", tags=["👤 Usuarios"])
+app.include_router(auth_routes.router, prefix="/auth", tags=["Autenticación"])
+app.include_router(user_routes.router, prefix="/admin/users", tags=["Usuarios"])
 
-app.include_router(document_routes.router, prefix="/documents", tags=["📄 Documentos"])
-app.include_router(audit_routes.router, prefix="/audit", tags=["📊 Auditoría"])
+app.include_router(document_routes.router, prefix="/documents", tags=["Documentos"])
+app.include_router(audit_routes.router, prefix="/audit", tags=["Auditoría"])
 
 
 # ============================
 # Endpoints básicos
 # ============================
 
-@app.get("/", tags=["🏠 General"])
+@app.get("/", tags=["General"])
 async def root():
     return {
-        "message": "🚀 Bienvenido al Indexador de Documentos con Gemini AI",
+        "message": "Bienvenido al Indexador de Documentos con Gemini AI",
         "version": "1.0.0",
         "docs": "/docs",
-        "status": "✅ Operativo"
+        "status": "Operativo"
     }
 
 
-@app.get("/health", tags=["🏠 General"])
+@app.get("/health", tags=["General"])
 async def health_check():
     return {
         "status": "healthy",
-        "firebase": "✅",
-        "meilisearch": "✅"
+        "firebase": "ok",
+        "meilisearch": "ok"
     }
 
 
-@app.get("/users/me", tags=["👤 Usuarios"])
+@app.get("/users/me", tags=["Usuarios"])
 async def get_current_user(token_data=Depends(verify_token)):
     return token_data
 
@@ -156,7 +157,7 @@ async def get_current_user(token_data=Depends(verify_token)):
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    print(f"❌ Error en {request.url.path}: {exc}")
+    print(f"Error en {request.url.path}: {exc}")
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={
@@ -172,4 +173,4 @@ async def global_exception_handler(request: Request, exc: Exception):
 # ============================
 
 if __name__ == "__main__":
-    print("📖 Ejecuta con: uvicorn main:app --reload")
+    print("Ejecuta con: uvicorn main:app --reload")

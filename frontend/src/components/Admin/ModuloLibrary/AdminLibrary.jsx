@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo } from "react";
 import AdminLayout from "@/components/Admin/Layout/AdminLayout";
 import { libraryAPI, documentsAPI } from "@/services/api";
+import { toast } from "sonner";
+import { Loader2 } from "lucide-react";
 import LibraryToolbar from "./LibraryToolbar";
 import LibraryStatsCards from "./LibraryStatsCards";
 import LibraryTable from "./LibraryTable";
@@ -19,19 +21,34 @@ export default function AdminLibrary() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [sortBy, setSortBy] = useState({ field: "name", direction: "asc" });
   const [statType, setStatType] = useState("pdf");
+  const [loading, setLoading] = useState(true);
 
-  const fetchData = async () => {
+  // Obtener documentos usando Meilisearch con búsqueda en tiempo real
+  const fetchData = async (q = "") => {
+    setLoading(true);
     try {
-      const response = await libraryAPI.list();
-      setDocuments(response || []);
+      let data;
+      if (q) {
+        const res = await libraryAPI.search(q);
+        data = Array.isArray(res.data?.hits) ? res.data.hits : [];
+      } else {
+        data = await libraryAPI.list();
+      }
+      setDocuments(data || []);
     } catch (error) {
       console.error("Error al cargar documentos:", error);
+      toast.error(q ? "Error al buscar documentos." : "Error al cargar biblioteca.");
+      setDocuments([]);
+    } finally {
+      setLoading(false);
     }
   };
 
+  // Llamada inicial y en cambios de búsqueda (con debounce)
   useEffect(() => {
-    fetchData();
-  }, []);
+    const timer = setTimeout(() => fetchData(search), 300);
+    return () => clearTimeout(timer);
+  }, [search]);
 
   const clearAllFilters = () => {
     setSearch("");
@@ -40,15 +57,10 @@ export default function AdminLibrary() {
     setDateRange({ from: null, to: null });
   };
 
+  // Filtrado solo por formato, tipo y rango de fechas; la búsqueda por texto ya se hace en backend
   const filteredDocs = useMemo(() => {
     return documents
       .filter((doc) => {
-        const matchesSearch =
-          (doc.name || "").toLowerCase().includes(search.toLowerCase()) ||
-          (doc.summary || "").toLowerCase().includes(search.toLowerCase()) ||
-          (doc.keywords || "").toLowerCase().includes(search.toLowerCase()) ||
-          (doc.tipo || "").toLowerCase().includes(search.toLowerCase());
-
         const matchesFormat =
           typeFilter === "all" ||
           (doc.name || "").toLowerCase().endsWith(`.${typeFilter}`);
@@ -62,7 +74,7 @@ export default function AdminLibrary() {
           (!dateRange.from || updatedAt >= new Date(dateRange.from)) &&
           (!dateRange.to || updatedAt <= new Date(dateRange.to));
 
-        return matchesSearch && matchesFormat && matchesContent && inDateRange;
+        return matchesFormat && matchesContent && inDateRange;
       })
       .sort((a, b) => {
         const valA = a[sortBy.field]?.toString().toLowerCase() || "";
@@ -70,7 +82,7 @@ export default function AdminLibrary() {
         if (sortBy.direction === "asc") return valA.localeCompare(valB);
         return valB.localeCompare(valA);
       });
-  }, [documents, search, typeFilter, typeContent, dateRange, sortBy]);
+  }, [documents, typeFilter, typeContent, dateRange, sortBy]);
 
   const stats = {
     total: documents.length,
@@ -111,16 +123,37 @@ export default function AdminLibrary() {
           setTypeContent={setTypeContent}
           dateRange={dateRange}
           setDateRange={setDateRange}
-          onRefresh={fetchData}
+          // onRefresh vuelve a cargar con la búsqueda actual
+          onRefresh={() => fetchData(search)}
           clearAllFilters={clearAllFilters}
         />
 
         {/* Vista principal */}
-        {viewMode === "grid" ? (
+        {loading ? (
+          <div className="flex justify-center py-10">
+            <Loader2 className="w-6 h-6 animate-spin" />
+          </div>
+        ) : filteredDocs.length === 0 ? (
+          <p className="text-center text-gray-500">
+            No hay documentos para mostrar.
+          </p>
+        ) : viewMode === "grid" ? (
           <LibraryGridView
             documents={filteredDocs}
             onView={setSelectedDoc}
             onDelete={setShowDeleteDialog}
+            onDownload={(file) =>
+              documentsAPI.downloadByPath(file.storage_path).then((res) => {
+                const url = window.URL.createObjectURL(res.data);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = file.name || file.filename || "documento";
+                a.click();
+              }).catch(error => {
+                console.error("Error al descargar:", error);
+                toast.error("Error al descargar el documento");
+              })
+            }
           />
         ) : (
           <LibraryTable
@@ -128,12 +161,15 @@ export default function AdminLibrary() {
             onView={setSelectedDoc}
             onDelete={setShowDeleteDialog}
             onDownload={(file) =>
-              documentsAPI.downloadByPath(file.path).then((res) => {
+              documentsAPI.downloadByPath(file.storage_path).then((res) => {
                 const url = window.URL.createObjectURL(res.data);
                 const a = document.createElement("a");
                 a.href = url;
-                a.download = file.name;
+                a.download = file.name || file.filename || "documento";
                 a.click();
+              }).catch(error => {
+                console.error("Error al descargar:", error);
+                toast.error("Error al descargar el documento");
               })
             }
             sortKey={sortBy.field}

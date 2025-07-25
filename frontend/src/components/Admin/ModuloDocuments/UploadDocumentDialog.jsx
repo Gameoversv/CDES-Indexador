@@ -30,7 +30,7 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
       const formData = new FormData();
       formData.append("file", newFile);
       formData.append("apartado", apartado);
-      formData.append("publico", publico);
+      formData.append("is_public", publico);
       await documentsAPI.upload(formData);
       toast.success("Archivo subido correctamente.");
       setOpen(false);

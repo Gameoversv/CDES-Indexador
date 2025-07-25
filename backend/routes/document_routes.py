@@ -1,3 +1,10 @@
+"""
+Rutas de API para gestión de documentos
+
+Este módulo contiene todas las rutas relacionadas con la gestión de documentos,
+incluyendo la funcionalidad de biblioteca pública integrada.
+"""
+
 import os
 import json
 import uuid
@@ -6,26 +13,28 @@ from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Any, Optional
 
-from fastapi import APIRouter, UploadFile, File, HTTPException, status, Query, Depends
+from fastapi import APIRouter, UploadFile, File, HTTPException, status, Query, Depends, Form
 from fastapi.responses import StreamingResponse
 
-# Servicios internos
-from services.firebase_service import upload_file_to_storage, download_file_from_storage, list_files_in_storage
+# Importar el nuevo servicio de IA en lugar de gemini_service
+from services.ai_service import extract_metadata, is_supported_file, estimate_processing_time
+from services.firebase_service import (
+    upload_file_to_storage, 
+    download_file_from_storage, 
+    list_files_in_storage,
+    calculate_file_hash,
+    check_file_hash,
+    save_document_metadata,
+    log_event,
+    get_document_versions,
+    get_highest_version
+)
 from services.meilisearch_service import add_documents, search_documents
-from services.gemini_service import extract_metadata, is_supported_file, estimate_processing_time
-
-# Modelos y utilidades
 from models.document_model import DocumentMetadata
-from utils.audit_logger import log_event
+from utils.audit_logger import log_event as audit_log
 
-
-# ==================================================================================
-#                           CONFIGURACIÓN DEL ROUTER
-# ==================================================================================
-
-# Router principal para todas las rutas de documentos
 router = APIRouter(
-    prefix="",  # Se configura en main.py
+    prefix="",
     tags=["documentos"],
     responses={
         404: {"description": "Documento no encontrado"},
@@ -34,372 +43,308 @@ router = APIRouter(
     }
 )
 
-# ==================================================================================
-#                           CONFIGURACIÓN DE DIRECTORIOS
-# ==================================================================================
-
-# Directorio raíz del backend
-ROOT_DIR = Path(__file__).resolve().parents[1]  # .../backend
-
-# Directorio para almacenar metadatos localmente (backup y cache)
+# Configuración
+ROOT_DIR = Path(__file__).resolve().parents[1]
 LOCAL_METADATA_DIR = ROOT_DIR / ".." / "meilisearch-data" / "indexes" / "documents"
 LOCAL_METADATA_DIR.mkdir(parents=True, exist_ok=True)
 
-# Configuraciones de archivos
-MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB máximo
+MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
 ALLOWED_EXTENSIONS = {'.pdf', '.docx', '.pptx', '.xlsx', '.txt', '.md'}
 
 
-# ==================================================================================
-#                           FUNCIONES AUXILIARES
-# ==================================================================================
-
 def _validate_uploaded_file(file: UploadFile) -> None:
-    """
-    Valida un archivo subido antes del procesamiento.
-    
-    Verifica el tamaño, tipo y seguridad del archivo para
-    prevenir uploads maliciosos o problemáticos.
-    
-    Args:
-        file: Archivo subido por el usuario
-        
-    Raises:
-        HTTPException: Si el archivo no pasa las validaciones
-    """
-    # Validar que el archivo tenga nombre
+    """Valida un archivo subido."""
     if not file.filename:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="El archivo debe tener un nombre válido"
-        )
+        raise HTTPException(status_code=400, detail="El archivo debe tener un nombre válido")
     
-    # Validar extensión del archivo
     file_ext = Path(file.filename).suffix.lower()
     if file_ext not in ALLOWED_EXTENSIONS:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Tipo de archivo no soportado. Tipos permitidos: {', '.join(ALLOWED_EXTENSIONS)}"
-        )
+        raise HTTPException(status_code=400, detail=f"Tipo de archivo no soportado")
     
-    # Validar que el nombre no contenga caracteres peligrosos
     dangerous_chars = ['..', '/', '\\', '<', '>', ':', '"', '|', '?', '*']
     if any(char in file.filename for char in dangerous_chars):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="El nombre del archivo contiene caracteres no permitidos"
-        )
+        raise HTTPException(status_code=400, detail="Nombre de archivo inválido")
 
 
 def _save_metadata_locally(metadata: Dict[str, Any], filename: str) -> Path:
-    """
-    Guarda los metadatos del documento en el sistema de archivos local.
-    
-    Esto sirve como backup y para consultas rápidas sin depender
-    de servicios externos.
-    
-    Args:
-        metadata: Metadatos extraídos del documento
-        filename: Nombre original del archivo
-        
-    Returns:
-        Path: Ruta donde se guardaron los metadatos
-    """
-    # Crear nombre del archivo JSON basado en el archivo original
+    """Guarda metadatos localmente como backup."""
     json_filename = f"{Path(filename).stem}.json"
     json_path = LOCAL_METADATA_DIR / json_filename
     
-    # Guardar metadatos con formato legible
     with open(json_path, "w", encoding="utf-8") as file:
         json.dump(metadata, file, ensure_ascii=False, indent=2)
-    
-    # Mensaje de depuración - comentado para producción
-    # print(f"📁 Metadatos guardados en: {json_path.relative_to(ROOT_DIR.parent)}")
     
     return json_path
 
 
-def _generate_unique_filename(original_filename: str) -> str:
-    """
-    Genera un nombre único para evitar colisiones en el storage.
-    
-    Args:
-        original_filename: Nombre original del archivo
-        
-    Returns:
-        str: Nombre único manteniendo la extensión original
-    """
+def _generate_unique_filename(original_filename: str, version: int = 1) -> str:
+    """Genera nombre único para evitar colisiones."""
     path = Path(original_filename)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     unique_id = str(uuid.uuid4())[:8]
-    
-    return f"{path.stem}_{timestamp}_{unique_id}{path.suffix}"
+    version_suffix = f"_v{version}" if version > 1 else ""
+    return f"{path.stem}{version_suffix}_{timestamp}_{unique_id}{path.suffix}"
 
-
-# ==================================================================================
-#                           ENDPOINTS DE SUBIDA DE DOCUMENTOS
-# ==================================================================================
 
 @router.post("/upload", response_model=DocumentMetadata)
-async def upload_document(file: UploadFile = File(...)) -> DocumentMetadata:
-    """
-    Sube un documento y extrae automáticamente sus metadatos.
-    
-    Este endpoint orquesta todo el proceso de subida y análisis:
-    1. Valida el archivo subido
-    2. Lee el contenido del archivo
-    3. Sube el archivo a Firebase Storage
-    4. Extrae metadatos usando Gemini AI
-    5. Guarda metadatos localmente (backup)
-    6. Indexa el documento en Meilisearch
-    7. Registra la operación en logs de auditoría
-    
-    Args:
-        file: Archivo a subir (PDF, DOCX, PPTX, XLSX, TXT, MD)
-        
-    Returns:
-        DocumentMetadata: Metadatos completos del documento procesado
-        
-    Raises:
-        HTTPException 400: Si el archivo es inválido o está vacío
-        HTTPException 413: Si el archivo excede el tamaño máximo
-        HTTPException 500: Si hay errores durante el procesamiento
-        
-    Example:
-        # Desde el frontend con FormData
-        formData = new FormData();
-        formData.append('file', selectedFile);
-        
-        fetch('/api/documents/upload', {
-            method: 'POST',
-            body: formData
-        })
-    """
+async def upload_document(
+    file: UploadFile = File(...),
+    is_public: bool = Form(False),
+    user_id: str = Form("anonymous"),
+    # Metadatos adicionales opcionales
+    apartado: str = Form(None),
+    categoria: str = Form(None),
+    tags: str = Form(None)
+):
+    """Sube un documento y extrae automáticamente sus metadatos."""
     try:
-        # ===== VALIDACIÓN INICIAL DEL ARCHIVO =====
         _validate_uploaded_file(file)
         
-        # Estimar tiempo de procesamiento para el usuario
-        estimated_time = "desconocido"
-        if hasattr(file, 'size') and file.size:
-            estimated_time = f"{estimate_processing_time(file.size)} segundos"
-        
-        # Mensaje de depuración - comentado para producción
-        # print(f"📤 Iniciando subida: {file.filename} (tiempo estimado: {estimated_time})")
-        
-        # ===== LECTURA DEL CONTENIDO DEL ARCHIVO =====
         file_bytes = await file.read()
         
-        # Validar que el archivo no esté vacío
         if not file_bytes:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="El archivo está vacío"
-            )
+            raise HTTPException(status_code=400, detail="El archivo está vacío")
         
-        # Validar tamaño máximo
         if len(file_bytes) > MAX_FILE_SIZE:
+            raise HTTPException(status_code=413, detail=f"Archivo excede {MAX_FILE_SIZE // (1024*1024)}MB")
+        
+        # Verificar duplicados por hash
+        file_hash = calculate_file_hash(file_bytes)
+        existing_doc = check_file_hash(file_hash)
+        
+        if existing_doc:
             raise HTTPException(
-                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                detail=f"El archivo excede el tamaño máximo permitido ({MAX_FILE_SIZE // (1024*1024)}MB)"
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Archivo duplicado detectado"
             )
         
-        # ===== SUBIDA A FIREBASE STORAGE =====
-        # Detectar tipo MIME del archivo
-        content_type = file.content_type or mimetypes.guess_type(file.filename)[0] or "application/octet-stream"
+        # Generar ID y versión
+        file_id_base = Path(file.filename).stem
+        highest_version = get_highest_version(file_id_base)
+        version = highest_version + 1
+        parent_id = file_id_base if version > 1 else None
+        file_id = f"{file_id_base}_v{version}" if version > 1 else file_id_base
         
-        # Generar nombre único para evitar colisiones
-        unique_filename = _generate_unique_filename(file.filename)
+        # Generar nombre único
+        unique_filename = _generate_unique_filename(file.filename, version)
+        content_type = file.content_type or "application/octet-stream"
         
-        # Subir archivo a Firebase Storage con organización por fechas
-        storage_path = upload_file_to_storage(file_bytes, unique_filename, content_type)
-        
-        # ===== EXTRACCIÓN DE METADATOS CON GEMINI AI =====
-        # Extraer metadatos usando IA
+        # Extraer metadatos con IA
         extracted_metadata = extract_metadata(file_bytes, file.filename)
         
-        # Enriquecer metadatos con información adicional
+        # Subir a Firebase Storage
+        storage_path = upload_file_to_storage(file_bytes, unique_filename, content_type)
+        
+        # Metadatos adicionales personalizados
+        custom_metadata = {}
+        if apartado:
+            custom_metadata["apartado"] = apartado
+        if categoria:
+            custom_metadata["categoria"] = categoria
+        if tags:
+            custom_metadata["tags"] = tags.split(",") if isinstance(tags, str) else tags
+        
+        # Metadatos completos
         complete_metadata = {
-            **extracted_metadata,  # Metadatos de Gemini
+            **extracted_metadata,
+            "file_id": file_id,
+            "file_id_base": file_id_base,
             "storage_path": storage_path,
             "media_type": content_type,
             "original_filename": file.filename,
             "unique_filename": unique_filename,
-            "upload_timestamp": datetime.now().isoformat() + "Z",
-            "file_hash": str(hash(file_bytes)),  # Hash simple para verificación
-            "processing_time_estimate": estimated_time
+            "upload_timestamp": datetime.utcnow().isoformat() + "Z",
+            "file_hash": file_hash,
+            "processing_time_estimate": f"{estimate_processing_time(len(file_bytes))} segundos",
+            "public": is_public,
+            "publico": is_public,  # Compatibilidad con frontend
+            "version": version,
+            "parent_id": parent_id,
+            "uploader_id": user_id,
+            **custom_metadata
         }
         
-        # ===== PERSISTENCIA LOCAL DE METADATOS =====
-        # Guardar metadatos localmente como backup
-        metadata_path = _save_metadata_locally(complete_metadata, file.filename)
+        # Guardar metadatos
+        save_document_metadata(file_id, complete_metadata, file_hash, version, parent_id)
+        _save_metadata_locally(complete_metadata, file.filename)
         
-        # ===== INDEXADO EN MEILISEARCH =====
-        # Indexar documento para búsquedas
+        # Indexar en Meilisearch
         try:
             add_documents([complete_metadata])
-            # print(f"🔍 Documento indexado en Meilisearch: {file.filename}")
         except Exception as e:
-            # No fallar si Meilisearch no está disponible, pero registrar el error
-            # print(f"⚠️  Error indexando en Meilisearch: {e}")
-            pass
+            print(f"Error indexando en Meilisearch: {e}")
         
-        # ===== REGISTRO DE AUDITORÍA =====
-        log_event('system', 'DOCUMENT_UPLOADED', {
-            'filename': file.filename,
-            'storage_path': storage_path,
-            'file_size': len(file_bytes),
-            'content_type': content_type,
-            'processing_status': 'success'
+        # Registrar eventos
+        log_event(user_id, "UPLOAD", {
+            "file_id": file_id,
+            "filename": file.filename,
+            "version": version,
+            "public": is_public
         })
         
-        # ===== RESPUESTA EXITOSA =====
-        # print(f"✅ Documento procesado exitosamente: {complete_metadata['title']}")
+        audit_log(user_id, 'DOCUMENT_UPLOADED', {
+            'file_id': file_id,
+            'filename': file.filename,
+            'public': is_public
+        })
         
-        # Convertir a modelo Pydantic para validación y respuesta
         return DocumentMetadata(**complete_metadata)
         
     except HTTPException:
-        # Re-lanzar HTTPExceptions tal como están
         raise
     except Exception as e:
-        # Manejar errores inesperados
-        error_detail = f"Error procesando documento: {str(e)}"
-        
-        # Registrar error en auditoría
-        log_event('system', 'DOCUMENT_UPLOAD_ERROR', {
-            'filename': file.filename if file and file.filename else 'unknown',
-            'error': str(e),
-            'error_type': type(e).__name__
-        })
-        
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=error_detail
-        )
+        audit_log(user_id, 'DOCUMENT_UPLOAD_ERROR', {'error': str(e)})
+        raise HTTPException(status_code=500, detail=f"Error procesando documento: {str(e)}")
 
-
-# ==================================================================================
-#                           ENDPOINTS DE BÚSQUEDA DE DOCUMENTOS
-# ==================================================================================
 
 @router.get("/search")
 async def search_documents_endpoint(
-    query: str = Query(..., description="Términos de búsqueda", min_length=1),
-    limit: int = Query(default=20, ge=1, le=100, description="Número máximo de resultados"),
-    offset: int = Query(default=0, ge=0, description="Número de resultados a omitir")
+    query: str = Query(..., min_length=1),
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0)
 ) -> Dict[str, Any]:
-    """
-    Busca documentos por contenido usando búsqueda semántica.
-    
-    Utiliza Meilisearch para realizar búsquedas inteligentes que incluyen:
-    - Búsqueda por título, resumen y contenido
-    - Búsqueda por palabras clave
-    - Tolerancia a errores tipográficos
-    - Ranking por relevancia
-    - Filtros y facetas
-    
-    Args:
-        query: Términos de búsqueda (requerido)
-        limit: Máximo número de resultados a devolver (1-100)
-        offset: Número de resultados a omitir para paginación
-        
-    Returns:
-        Dict[str, Any]: Resultados de búsqueda con metadatos y estadísticas
-        
-    Example:
-        GET /api/documents/search?query=contrato&limit=10&offset=0
-    """
+    """Busca documentos por contenido usando búsqueda semántica."""
     try:
-        # Validar parámetros de entrada
-        if not query.strip():
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="La consulta de búsqueda no puede estar vacía"
-            )
-        
-        # Realizar búsqueda en Meilisearch
         search_results = search_documents(
             query=query.strip(),
             limit=limit,
             offset=offset
         )
         
-        # Registrar búsqueda en auditoría
-        log_event('system', 'DOCUMENT_SEARCH', {
+        audit_log('system', 'DOCUMENT_SEARCH', {
             'query': query,
-            'results_count': len(search_results.get('hits', [])),
-            'limit': limit,
-            'offset': offset
+            'results_count': len(search_results.get('hits', []))
         })
         
         return search_results
         
     except Exception as e:
-        # Manejar errores de búsqueda
-        log_event('system', 'SEARCH_ERROR', {
-            'query': query,
-            'error': str(e),
-            'error_type': type(e).__name__
-        })
+        audit_log('system', 'SEARCH_ERROR', {'error': str(e)})
+        raise HTTPException(status_code=500, detail=f"Error realizando búsqueda: {str(e)}")
+
+
+@router.get("/public")
+async def get_public_documents(
+    q: str = Query("", description="Término de búsqueda opcional"),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0)
+) -> Dict[str, Any]:
+    """Obtiene documentos públicos (funcionalidad de biblioteca pública)."""
+    try:
+        # Intentar con Meilisearch usando el filtro 'public'
+        try:
+            # Primero intentar con el campo "public"
+            filters = "public = true"
+            results = search_documents(
+                query=q.strip() if q else "",
+                limit=limit,
+                offset=offset,
+                filters=filters
+            )
+            
+            # Verificar si hay resultados, si no, intentar con 'publico'
+            if len(results.get('hits', [])) == 0:
+                filters = "publico = true"
+                results = search_documents(
+                    query=q.strip() if q else "",
+                    limit=limit,
+                    offset=offset,
+                    filters=filters
+                )
+            
+            # Si encontramos resultados, registrar y devolver
+            if len(results.get('hits', [])) > 0:
+                audit_log('system', 'PUBLIC_DOCUMENTS_QUERY', {
+                    'query': q,
+                    'results_count': len(results.get('hits', []))
+                })
+                return results
+                
+            # Si no hay resultados, usar el fallback local
+            return await get_public_documents_local(q, limit, offset)
+            
+        except Exception as search_error:
+            print(f"Error con Meilisearch, intentando fallback local: {search_error}")
+            return await get_public_documents_local(q, limit, offset)
         
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error realizando búsqueda: {str(e)}"
-        )
+    except Exception as meilisearch_error:
+        # Fallback: buscar en archivos locales
+        print(f"Error con Meilisearch, usando fallback local: {meilisearch_error}")
+        return await get_public_documents_local(q, limit, offset)
 
 
-# ==================================================================================
-#                           ENDPOINTS DE DESCARGA DE DOCUMENTOS
-# ==================================================================================
+@router.get("/public-local")
+async def get_public_documents_local(
+    q: str = Query(""),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0)
+) -> Dict[str, Any]:
+    """Busca documentos públicos en archivos locales (fallback)."""
+    try:
+        json_files = list(LOCAL_METADATA_DIR.glob("*.json"))
+        documents = []
+        
+        for json_path in json_files:
+            try:
+                with open(json_path, "r", encoding="utf-8") as file:
+                    metadata = json.load(file)
+                    if metadata.get("public") == True or metadata.get("publico") == True:
+                        documents.append(metadata)
+            except Exception as e:
+                print(f"Error leyendo {json_path}: {e}")
+                continue
+        
+        # Filtrar por búsqueda si se proporciona
+        if q:
+            q_lower = q.lower()
+            filtered_docs = []
+            for doc in documents:
+                if (q_lower in str(doc.get("title", "")).lower() or 
+                    q_lower in str(doc.get("summary", "")).lower() or
+                    any(q_lower in str(kw).lower() for kw in doc.get("keywords", []))):
+                    filtered_docs.append(doc)
+            documents = filtered_docs
+        
+        # Ordenar por fecha
+        documents.sort(key=lambda x: x.get("upload_timestamp", ""), reverse=True)
+        
+        # Paginar
+        total = len(documents)
+        paginated_docs = documents[offset:offset + limit]
+        
+        return {
+            "hits": paginated_docs,
+            "query": q,
+            "processingTimeMs": 0,
+            "limit": limit,
+            "offset": offset,
+            "estimatedTotalHits": total,
+            "source": "local_files"
+        }
+    except Exception as e:
+        audit_log('system', 'LOCAL_PUBLIC_SEARCH_ERROR', {'error': str(e)})
+        raise HTTPException(status_code=500, detail=f"Error en búsqueda local: {str(e)}")
+
 
 @router.get("/download/{file_stem}")
-async def download_document(file_stem: str) -> StreamingResponse:
-    """
-    Descarga un documento por su ID (nombre sin extensión).
-    
-    Busca los metadatos del documento localmente y descarga
-    el archivo desde Firebase Storage.
-    
-    Args:
-        file_stem: ID del documento (nombre sin extensión)
-        
-    Returns:
-        StreamingResponse: Archivo para descarga con headers apropiados
-        
-    Raises:
-        HTTPException 404: Si el documento no existe
-        HTTPException 500: Si hay errores durante la descarga
-    """
+async def download_document(file_stem: str):
+    """Descarga un documento por su ID."""
     try:
-        # Buscar metadatos del documento
         metadata_path = LOCAL_METADATA_DIR / f"{file_stem}.json"
         
         if not metadata_path.exists():
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Documento '{file_stem}' no encontrado"
-            )
+            raise HTTPException(status_code=404, detail=f"Documento no encontrado")
         
-        # Cargar metadatos del documento
         with open(metadata_path, "r", encoding="utf-8") as file:
             metadata = json.load(file)
         
-        # Descargar archivo desde Firebase Storage
         file_bytes = download_file_from_storage(metadata["storage_path"])
         
-        # Preparar headers para descarga
-        filename = metadata.get("original_filename", metadata.get("filename", f"{file_stem}.bin"))
+        filename = metadata.get("original_filename", f"{file_stem}.bin")
         content_type = metadata.get("media_type", "application/octet-stream")
         
-        # Registrar descarga en auditoría
-        log_event('system', 'DOCUMENT_DOWNLOADED', {
-            'file_stem': file_stem,
-            'filename': filename,
-            'storage_path': metadata["storage_path"]
-        })
+        audit_log('system', 'DOCUMENT_DOWNLOADED', {'file_stem': file_stem})
         
-        # Devolver archivo como stream
         return StreamingResponse(
             iter([file_bytes]),
             media_type=content_type,
@@ -407,172 +352,137 @@ async def download_document(file_stem: str) -> StreamingResponse:
         )
         
     except HTTPException:
-        # Re-lanzar HTTPExceptions
         raise
     except Exception as e:
-        # Manejar errores de descarga
-        log_event('system', 'DOWNLOAD_ERROR', {
-            'file_stem': file_stem,
-            'error': str(e),
-            'error_type': type(e).__name__
-        })
-        
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error descargando documento: {str(e)}"
-        )
+        audit_log('system', 'DOWNLOAD_ERROR', {'error': str(e)})
+        raise HTTPException(status_code=500, detail=f"Error descargando documento: {str(e)}")
 
 
 @router.get("/download_by_path")
-async def download_by_storage_path(
-    path: str = Query(..., description="Ruta completa del archivo en Firebase Storage")
-) -> StreamingResponse:
-    """
-    Descarga un documento directamente por su ruta en Firebase Storage.
-    
-    Este endpoint permite descargar archivos cuando se conoce
-    la ruta exacta en el storage, útil para integraciones externas.
-    
-    Args:
-        path: Ruta completa del archivo en Storage (ej: "documents/2024/01/file.pdf")
-        
-    Returns:
-        StreamingResponse: Archivo para descarga
-        
-    Raises:
-        HTTPException 404: Si el archivo no existe en Storage
-        HTTPException 400: Si la ruta es inválida
-    """
+async def download_by_storage_path(path: str = Query(...)):
+    """Descarga un documento por su ruta en Storage."""
     try:
-        # Validar que la ruta no esté vacía
         if not path.strip():
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="La ruta del archivo no puede estar vacía"
-            )
+            raise HTTPException(status_code=400, detail="Ruta no puede estar vacía")
         
-        # Sanitizar ruta para prevenir path traversal
         if ".." in path or path.startswith("/"):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Ruta de archivo no válida"
-            )
+            raise HTTPException(status_code=400, detail="Ruta inválida")
         
-        # Descargar archivo desde Firebase Storage
         file_bytes = download_file_from_storage(path)
-        
-        # Extraer nombre del archivo y detectar tipo MIME
         filename = Path(path).name
         content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
         
-        # Registrar descarga en auditoría
-        log_event('system', 'DOCUMENT_DOWNLOADED_BY_PATH', {
-            'storage_path': path,
-            'filename': filename
-        })
+        audit_log('system', 'DOCUMENT_DOWNLOADED_BY_PATH', {'path': path})
         
-        # Devolver archivo como stream
         return StreamingResponse(
             iter([file_bytes]),
             media_type=content_type,
             headers={"Content-Disposition": f'attachment; filename="{filename}"'}
         )
         
-    except HTTPException:
-        # Re-lanzar HTTPExceptions
-        raise
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Archivo no encontrado")
     except Exception as e:
-        # Manejar errores de descarga
-        log_event('system', 'DOWNLOAD_BY_PATH_ERROR', {
-            'storage_path': path,
-            'error': str(e),
-            'error_type': type(e).__name__
+        audit_log('system', 'DOWNLOAD_BY_PATH_ERROR', {'error': str(e)})
+        raise HTTPException(status_code=500, detail=f"Error descargando archivo: {str(e)}")
+
+
+@router.delete("/delete_by_path")
+async def delete_document_by_path(path: str = Query(...), user_id: str = Query("anonymous")):
+    """Elimina un documento por su ruta en Storage."""
+    try:
+        from services.firebase_service import delete_file_from_storage
+        
+        delete_file_from_storage(path)
+        
+        audit_log(user_id, 'DOCUMENT_DELETED_BY_PATH', {
+            'path': path,
+            'filename': Path(path).name
         })
         
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error descargando archivo: {str(e)}"
-        )
+        return {"message": "Archivo eliminado exitosamente", "path": path}
+        
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Archivo no encontrado")
+    except Exception as e:
+        audit_log(user_id, 'DELETE_BY_PATH_ERROR', {'error': str(e)})
+        raise HTTPException(status_code=500, detail=f"Error eliminando archivo: {str(e)}")
 
-
-# ==================================================================================
-#                           ENDPOINTS DE LISTADO Y NAVEGACIÓN
-# ==================================================================================
 
 @router.get("/list")
-async def list_all_documents() -> Dict[str, List[Dict[str, Any]]]:
-    """
-    Lista todos los documentos disponibles con sus metadatos.
-    
-    Carga todos los documentos desde el almacenamiento local
-    de metadatos y devuelve una lista completa.
-    
-    Returns:
-        Dict[str, List[Dict]]: Lista de documentos con metadatos
-    """
+async def list_all_documents(
+    public_only: bool = Query(False)
+) -> Dict[str, List[Dict[str, Any]]]:
+    """Lista todos los documentos disponibles."""
     try:
         documents = []
         
-        # Iterar sobre todos los archivos JSON de metadatos
         if LOCAL_METADATA_DIR.exists():
             for json_file in LOCAL_METADATA_DIR.glob("*.json"):
                 try:
                     with open(json_file, "r", encoding="utf-8") as file:
                         metadata = json.load(file)
-                        documents.append(metadata)
-                except Exception as e:
-                    # Omitir archivos JSON corruptos
-                    # print(f"⚠️  Error leyendo {json_file}: {e}")
+                        if not public_only or metadata.get("public", False):
+                            documents.append(metadata)
+                except Exception:
                     continue
         
-        # Ordenar documentos por fecha de subida (más recientes primero)
         documents.sort(
-            key=lambda doc: doc.get("upload_timestamp", doc.get("processing_timestamp", "")),
+            key=lambda doc: doc.get("upload_timestamp", ""),
             reverse=True
         )
         
-        # Registrar listado en auditoría
-        log_event('system', 'DOCUMENTS_LISTED', {
-            'total_documents': len(documents)
+        audit_log('system', 'DOCUMENTS_LISTED', {
+            'total_documents': len(documents),
+            'public_only': public_only
         })
         
         return {"documents": documents}
         
     except Exception as e:
-        # Manejar errores de listado
-        log_event('system', 'LIST_DOCUMENTS_ERROR', {
-            'error': str(e),
-            'error_type': type(e).__name__
-        })
-        
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error listando documentos: {str(e)}"
-        )
+        audit_log('system', 'LIST_DOCUMENTS_ERROR', {'error': str(e)})
+        raise HTTPException(status_code=500, detail=f"Error listando documentos: {str(e)}")
 
 
 @router.get("/storage")
-async def list_storage_files(
-    prefix: str = Query(default="documents/", description="Prefijo para filtrar archivos")
-) -> Dict[str, List[Dict[str, Any]]]:
-    """
-    Lista todos los archivos disponibles en Firebase Storage.
-    
-    Explora Firebase Storage y devuelve una lista de todos
-    los archivos disponibles bajo el prefijo especificado.
-    
-    Args:
-        prefix: Prefijo de ruta para filtrar archivos (default: "documents/")
-        
-    Returns:
-        Dict[str, List[str]]: Lista de rutas de archivos en Storage
-    """
+async def list_storage_files(prefix: str = Query(default="documents/")):
+    """Lista archivos en Firebase Storage."""
     try:
-        # Listar archivos en Firebase Storage
         storage_files = list_files_in_storage(prefix)
         
-        # Registrar exploración en auditoría
-        log_event('system', 'STORAGE_EXPLORED', {
+        # Enriquecer con metadatos si existen
+        for file in storage_files:
+            file_extension = Path(file["filename"]).suffix.lower()
+            
+            # Asignar tipo
+            if "pdf" in file_extension:
+                file["tipo"] = "PDF"
+            elif file_extension in [".doc", ".docx"]:
+                file["tipo"] = "Word"
+            elif file_extension in [".xls", ".xlsx"]:
+                file["tipo"] = "Excel"
+            elif file_extension in [".ppt", ".pptx"]:
+                file["tipo"] = "PowerPoint"
+            else:
+                file["tipo"] = "Documento"
+            
+            # Intentar cargar metadatos adicionales
+            file["publico"] = False
+            try:
+                file_id = Path(file["filename"]).stem
+                metadata_path = LOCAL_METADATA_DIR / f"{file_id}.json"
+                if metadata_path.exists():
+                    with open(metadata_path, "r", encoding="utf-8") as f:
+                        metadata = json.load(f)
+                        file["public"] = metadata.get("public", False)
+                        file["publico"] = metadata.get("public", False)
+                        file["apartado"] = metadata.get("apartado", "")
+                        file["title"] = metadata.get("title", file["filename"])
+                        file["summary"] = metadata.get("summary", "")
+            except Exception:
+                pass
+        
+        audit_log('system', 'STORAGE_EXPLORED', {
             'prefix': prefix,
             'files_count': len(storage_files)
         })
@@ -580,37 +490,36 @@ async def list_storage_files(
         return {"files": storage_files}
         
     except Exception as e:
-        # Manejar errores de exploración
-        log_event('system', 'STORAGE_EXPLORATION_ERROR', {
-            'prefix': prefix,
-            'error': str(e),
-            'error_type': type(e).__name__
-        })
+        audit_log('system', 'STORAGE_EXPLORATION_ERROR', {'error': str(e)})
+        raise HTTPException(status_code=500, detail=f"Error explorando storage: {str(e)}")
+
+
+@router.get("/{document_id}/versions")
+async def get_document_versions_endpoint(document_id: str):
+    """Obtiene todas las versiones de un documento."""
+    try:
+        versions = get_document_versions(document_id)
         
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error explorando storage: {str(e)}"
-        )
+        if not versions:
+            raise HTTPException(status_code=404, detail="Documento no encontrado")
+        
+        return {"file_id": document_id, "versions": versions}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error obteniendo versiones: {str(e)}")
 
-
-# ==================================================================================
-#                           ENDPOINTS ADICIONALES DE UTILIDAD
-# ==================================================================================
 
 @router.get("/stats")
-async def get_documents_statistics() -> Dict[str, Any]:
-    """
-    Obtiene estadísticas de los documentos almacenados.
-    
-    Returns:
-        Dict[str, Any]: Estadísticas del sistema de documentos
-    """
+async def get_documents_statistics():
+    """Obtiene estadísticas de documentos."""
     try:
         total_documents = 0
         total_size = 0
         file_types = {}
+        public_count = 0
         
-        # Analizar documentos locales
         if LOCAL_METADATA_DIR.exists():
             for json_file in LOCAL_METADATA_DIR.glob("*.json"):
                 try:
@@ -622,7 +531,10 @@ async def get_documents_statistics() -> Dict[str, Any]:
                         file_ext = metadata.get("file_extension", "unknown")
                         file_types[file_ext] = file_types.get(file_ext, 0) + 1
                         
-                except:
+                        if metadata.get("public", False):
+                            public_count += 1
+                            
+                except Exception:
                     continue
         
         stats = {
@@ -630,15 +542,13 @@ async def get_documents_statistics() -> Dict[str, Any]:
             "total_size_bytes": total_size,
             "total_size_mb": round(total_size / (1024 * 1024), 2),
             "file_types": file_types,
+            "public_documents": public_count,
+            "private_documents": total_documents - public_count,
             "average_size_mb": round((total_size / total_documents) / (1024 * 1024), 2) if total_documents > 0 else 0,
-            "storage_directory": str(LOCAL_METADATA_DIR),
-            "last_updated": datetime.now().isoformat() + "Z"
+            "last_updated": datetime.utcnow().isoformat() + "Z"
         }
         
         return stats
         
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error obteniendo estadísticas: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Error obteniendo estadísticas: {str(e)}")

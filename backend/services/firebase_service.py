@@ -1,406 +1,295 @@
 """
 Servicio de Firebase - Integración con Firebase Admin SDK
 
-Este módulo maneja toda la integración con los servicios de Firebase, incluyendo:
-
-- Firebase Authentication (autenticación de usuarios)
-- Cloud Firestore (base de datos NoSQL)
-- Cloud Storage (almacenamiento de archivos)
-- Administración de usuarios y roles
-
-Servicios integrados:
-- Authentication: Gestión de usuarios, tokens JWT, custom claims
-- Firestore: Base de datos NoSQL para metadatos y auditoría
-- Storage: Almacenamiento seguro de documentos con organización por fechas
-
-
+Este módulo maneja toda la integración con los servicios de Firebase,
+incluyendo funcionalidades de hashing y versionado de documentos.
 """
 
-import firebase_admin
-from firebase_admin import credentials, auth, firestore, storage
-from firebase_admin.exceptions import FirebaseError
-from config import settings
+import hashlib
 import os
 import uuid
 from datetime import datetime
 from typing import Dict, List, Any, Optional
+
+import firebase_admin
+from firebase_admin import credentials, auth, firestore, storage
+from firebase_admin.exceptions import FirebaseError
 from fastapi import Request, HTTPException
-from firebase_admin import auth as firebase_auth
 
+from config import settings
 
-# ==================================================================================
-#                           INICIALIZACIÓN DE FIREBASE
-# ==================================================================================
+# Variables globales
+_firebase_initialized = False
+_firebase_app = None
 
 def initialize_firebase() -> None:
-    """
-    Inicializa el SDK de Firebase Admin con las credenciales del proyecto.
-    Esta función se ejecuta una sola vez al iniciar la aplicación.
-    """
-    if firebase_admin._apps:
-        print("🔥 Firebase ya estaba inicializado")
+    """Inicializa Firebase Admin SDK de forma segura."""
+    global _firebase_initialized, _firebase_app
+    
+    if _firebase_initialized and _firebase_app:
         return
-
+    
     try:
-        print("🚀 Iniciando inicialización de Firebase Admin...")
-
-        service_account_path = os.path.abspath(settings.FIREBASE_SERVICE_ACCOUNT_KEY_PATH)
-        print(f"📄 Ruta al archivo de servicio: {service_account_path}")
+        base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        service_account_path = os.path.join(base_path, settings.FIREBASE_SERVICE_ACCOUNT_KEY_PATH)
 
         if not os.path.exists(service_account_path):
-            raise FileNotFoundError(
-                f"❌ Archivo de credenciales no encontrado: {service_account_path}"
-            )
+            raise FileNotFoundError(f"Archivo de credenciales no encontrado: {service_account_path}")
 
-        cred = credentials.Certificate(service_account_path)
+        if not firebase_admin._apps:
+            cred = credentials.Certificate(service_account_path)
+            _firebase_app = firebase_admin.initialize_app(cred, {
+                'storageBucket': settings.FIREBASE_STORAGE_BUCKET
+            })
+        else:
+            _firebase_app = firebase_admin.get_app()
 
-        print("📦 Inicializando Firebase con bucket:", settings.FIREBASE_STORAGE_BUCKET)
+        _firebase_initialized = True
+        print("Firebase inicializado correctamente")
 
-        firebase_admin.initialize_app(cred, {
-            'storageBucket': 'indexador-demo-gemini.appspot.com'
-        })
-
-        print("✅ Firebase Admin inicializado correctamente")
-
-    except FileNotFoundError as e:
-        print(f"❌ {e}")
-        raise
-    except FirebaseError as e:
-        print(f"🔥 Error de Firebase: {e}")
-        raise
     except Exception as e:
-        print(f"💥 Error inesperado en inicialización de Firebase: {e}")
-        raise
-
-
-
-# ==================================================================================
-#                           FUNCIONES DE ACCESO A SERVICIOS
-# ==================================================================================
+        raise Exception(f"Error inicializando Firebase: {e}")
 
 def get_firestore_client():
-    """
-    Obtiene un cliente autenticado para Cloud Firestore.
-    
-    Firestore es la base de datos NoSQL de Firebase. Se utiliza para:
-    - Almacenar metadatos de documentos
-    - Registros de auditoría
-    - Configuraciones de la aplicación
-    - Datos de usuarios
-    
-    Returns:
-        firestore.Client: Cliente autenticado de Firestore
-        
-    Example:
-        db = get_firestore_client()
-        doc_ref = db.collection('documents').document('doc_id')
-        doc_ref.set({'title': 'Mi documento'})
-    """
+    """Obtiene el cliente de Firestore."""
     initialize_firebase()
     return firestore.client()
 
-
 def get_auth_client():
-    """
-    Obtiene un cliente autenticado para Firebase Authentication.
-    
-    Firebase Auth se utiliza para:
-    - Verificar tokens JWT
-    - Gestionar usuarios
-    - Asignar roles mediante custom claims
-    - Validar permisos
-    
-    Returns:
-        auth: Cliente de Firebase Authentication
-        
-    Example:
-        auth_client = get_auth_client()
-        user = auth_client.get_user(uid)
-        auth_client.set_custom_user_claims(uid, {'admin': True})
-    """
+    """Obtiene el cliente de Auth."""
     initialize_firebase()
     return auth
 
-
 def get_storage_bucket():
+    """Obtiene el bucket de Storage."""
     initialize_firebase()
-    bucket_name = settings.FIREBASE_STORAGE_BUCKET or 'indexador-demo-gemini.appspot.com'
-    return storage.bucket(name=bucket_name)
-
-
-
-# ==================================================================================
-#                           FUNCIONES DE GESTIÓN DE ARCHIVOS
-# ==================================================================================
+    # Explicitly specify bucket name in case default is not set correctly
+    return storage.bucket(settings.FIREBASE_STORAGE_BUCKET)
 
 def _dated_blob_path(filename: str) -> str:
-    """
-    Genera una ruta organizada por fecha para almacenar archivos.
-    
-    Crea una estructura jerárquica basada en la fecha actual:
-    documents/YYYY/MM/DD/filename
-    
-    Esta organización permite:
-    - Fácil navegación temporal
-    - Distribución equilibrada de archivos
-    - Búsqueda eficiente por fechas
-    - Mantenimiento y limpieza organizados
-    
-    Args:
-        filename: Nombre del archivo original
-        
-    Returns:
-        str: Ruta completa con estructura de fechas
-        
-    Example:
-        path = _dated_blob_path("documento.pdf")
-        # Resultado: "documents/2024/06/05/documento.pdf"
-    """
+    """Genera una ruta con fecha para el archivo."""
     today = datetime.now()
-    return (
-        f"documents/"
-        f"{today.year:04d}/"      # Año con 4 dígitos
-        f"{today.month:02d}/"     # Mes con cero a la izquierda
-        f"{today.day:02d}/"       # Día con cero a la izquierda
-        f"{filename}"
-    )
+    return f"documents/{today.year:04d}/{today.month:02d}/{today.day:02d}/{filename}"
 
+def calculate_file_hash(file_bytes: bytes) -> str:
+    """Calcula el hash SHA256 de un archivo."""
+    sha256 = hashlib.sha256()
+    sha256.update(file_bytes)
+    return sha256.hexdigest()
+
+def check_file_hash(file_hash: str) -> Optional[Dict[str, Any]]:
+    """Verifica si un hash de archivo ya existe."""
+    try:
+        db = get_firestore_client()
+        docs = db.collection("documents").where("hash", "==", file_hash).limit(1).stream()
+        for doc in docs:
+            data = doc.to_dict()
+            return {"file_id": doc.id, **data}
+        return None
+    except Exception as e:
+        print(f"Error verificando hash: {e}")
+        return None
+
+def get_highest_version(file_id_base: str) -> int:
+    """Obtiene la versión más alta de un documento."""
+    try:
+        db = get_firestore_client()
+        docs = db.collection("documents").where("file_id_base", "==", file_id_base).stream()
+        
+        max_version = 0
+        for doc in docs:
+            doc_data = doc.to_dict()
+            version = doc_data.get("version", 1)
+            if version > max_version:
+                max_version = version
+        
+        return max_version
+    except Exception as e:
+        print(f"Error obteniendo versión: {e}")
+        return 0
+
+def save_document_metadata(
+    file_id: str,
+    metadata: Dict[str, Any],
+    file_hash: str,
+    version: int,
+    parent_id: Optional[str] = None
+) -> None:
+    """Guarda metadatos de documento en Firestore."""
+    try:
+        db = get_firestore_client()
+        doc_ref = db.collection("documents").document(file_id)
+        
+        doc_data = {
+            **metadata,
+            "file_id": file_id,
+            "hash": file_hash,
+            "version": version,
+            "parent_id": parent_id,
+            "created_at": datetime.utcnow().isoformat() + "Z",
+            "updated_at": datetime.utcnow().isoformat() + "Z"
+        }
+        
+        doc_ref.set(doc_data)
+        
+        # Si es una nueva versión, actualizar el documento padre
+        if parent_id and version > 1:
+            parent_ref = db.collection("documents").document(parent_id)
+            parent_doc = parent_ref.get()
+            if parent_doc.exists:
+                versions = parent_doc.to_dict().get("versions", [])
+                versions.append({
+                    "version": version,
+                    "file_id": file_id,
+                    "created_at": doc_data["created_at"]
+                })
+                parent_ref.update({"versions": versions})
+                
+    except Exception as e:
+        print(f"Error guardando metadatos: {e}")
+        raise
+
+def log_event(user_id: str, action: str, details: Dict[str, Any]) -> None:
+    """Registra un evento en Firestore."""
+    try:
+        db = get_firestore_client()
+        event_ref = db.collection("events").document()
+        event_ref.set({
+            "user_id": user_id,
+            "action": action,
+            "details": details,
+            "timestamp": datetime.utcnow().isoformat() + "Z"
+        })
+    except Exception as e:
+        print(f"Error registrando evento: {e}")
+
+def get_document_versions(file_id_base: str) -> List[Dict[str, Any]]:
+    """Obtiene todas las versiones de un documento."""
+    try:
+        db = get_firestore_client()
+        docs = db.collection("documents").where("file_id_base", "==", file_id_base).stream()
+        
+        versions = []
+        for doc in docs:
+            doc_data = doc.to_dict()
+            versions.append({
+                "version": doc_data.get("version", 1),
+                "file_id": doc.id,
+                "created_at": doc_data.get("created_at"),
+                "file_size": doc_data.get("file_size_bytes"),
+                "hash": doc_data.get("hash")
+            })
+        
+        return sorted(versions, key=lambda x: x["version"])
+    except Exception as e:
+        print(f"Error obteniendo versiones: {e}")
+        return []
 
 def upload_file_to_storage(
     file_bytes: bytes,
     filename: str,
     content_type: Optional[str] = None,
 ) -> str:
-    """
-    Sube un archivo a Cloud Storage con organización automática por fechas.
-    
-    Esta función:
-    1. Organiza el archivo en una estructura de fechas
-    2. Sube el contenido al bucket configurado
-    3. Establece el tipo de contenido apropiado
-    4. Devuelve la ruta del archivo para referencias futuras
-    
-    Args:
-        file_bytes: Contenido del archivo en bytes
-        filename: Nombre original del archivo
-        content_type: Tipo MIME del archivo (se detecta automáticamente si no se especifica)
-        
-    Returns:
-        str: Ruta interna del archivo en Storage (blob path)
-        
-    Example:
-        with open('documento.pdf', 'rb') as f:
-            blob_path = upload_file_to_storage(
-                file_bytes=f.read(),
-                filename='documento.pdf',
-                content_type='application/pdf'
-            )
-        # blob_path: "documents/2024/06/05/documento.pdf"
-        
-    Raises:
-        Exception: Si hay errores durante la subida
-    """
+    """Sube un archivo a Firebase Storage."""
     try:
-        # Obtener referencia al bucket
         bucket = get_storage_bucket()
-        
-        # Generar ruta con estructura de fechas
         blob_path = _dated_blob_path(filename)
-        
-        # Crear referencia al archivo en Storage
         blob = bucket.blob(blob_path)
-        
-        # Subir el archivo con el tipo de contenido especificado
         blob.upload_from_string(file_bytes, content_type=content_type)
-        
-        # Mensaje de depuración - comentado para producción
-        # print(f"✅ Archivo '{filename}' subido a Storage → {blob_path}")
-        
         return blob_path
-        
     except Exception as e:
-        raise Exception(f"Error subiendo archivo '{filename}' a Storage: {e}")
-
+        raise Exception(f"Error subiendo archivo: {e}")
 
 def download_file_from_storage(blob_path: str) -> bytes:
-    """
-    Descarga un archivo desde Cloud Storage.
-    
-    Args:
-        blob_path: Ruta interna del archivo en Storage
-        
-    Returns:
-        bytes: Contenido del archivo en bytes
-        
-    Example:
-        file_content = download_file_from_storage("documents/2024/06/05/documento.pdf")
-        with open('descargado.pdf', 'wb') as f:
-            f.write(file_content)
-            
-    Raises:
-        Exception: Si el archivo no existe o hay errores de descarga
-    """
+    """Descarga un archivo desde Firebase Storage."""
     try:
         bucket = get_storage_bucket()
         blob = bucket.blob(blob_path)
-        
-        # Verificar que el archivo existe
-        if not blob.exists():
-            raise FileNotFoundError(f"Archivo no encontrado en Storage: {blob_path}")
-        
-        return blob.download_as_bytes()
-        
-    except FileNotFoundError:
-        # Re-lanzar FileNotFoundError tal como está
-        raise
-    except Exception as e:
-        raise Exception(f"Error descargando archivo desde Storage: {e}")
-
-
-def list_files_in_storage(prefix: str = "documents/") -> List[Dict[str, Any]]:
-    """
-    Lista archivos en Cloud Storage con metadatos.
-    """
-    try:
-        print(f"📁 Iniciando listado de archivos con prefijo: {prefix}")
-        bucket = get_storage_bucket()
-        print(f"✅ Bucket obtenido: {bucket.name}")
-        
-        files = []
-
-        for blob in bucket.list_blobs(prefix=prefix):
-            if blob.name.endswith("/"):
-                continue
-
-            file_info = {
-                "path": blob.name,
-                "filename": os.path.basename(blob.name),
-                "size": blob.size or 0,
-                "updated": blob.updated.isoformat() if blob.updated else None,
-                "content_type": blob.content_type or "application/octet-stream"
-            }
-            files.append(file_info)
-
-        print(f"📦 Total de archivos listados: {len(files)}")
-        return files
-
-    except Exception as e:
-        print(f"❌ Error en list_files_in_storage: {e}")
-        raise Exception(f"Error listando archivos en Storage: {e}")
-
-
-
-def delete_file_from_storage(blob_path: str) -> None:
-    """
-    Elimina un archivo de Cloud Storage.
-    
-    Args:
-        blob_path: Ruta interna del archivo en Storage
-        
-    Raises:
-        Exception: Si hay errores durante la eliminación
-    """
-    try:
-        bucket = get_storage_bucket()
-        blob = bucket.blob(blob_path)
-        
-        # Verificar que el archivo existe antes de eliminarlo
         if not blob.exists():
             raise FileNotFoundError(f"Archivo no encontrado: {blob_path}")
-        
-        blob.delete()
-        
-        # Mensaje de depuración - comentado para producción
-        # print(f"🗑️ Archivo eliminado de Storage: {blob_path}")
-        
-    except FileNotFoundError:
-        # Re-lanzar FileNotFoundError tal como está
-        raise
+        return blob.download_as_bytes()
     except Exception as e:
-        raise Exception(f"Error eliminando archivo de Storage: {e}")
+        raise Exception(f"Error descargando archivo: {e}")
 
+def list_files_in_storage(prefix: str = "documents/") -> List[Dict[str, Any]]:
+    """Lista archivos en Firebase Storage."""
+    try:
+        bucket = get_storage_bucket()
+        files = []
+        
+        for blob in bucket.list_blobs(prefix=prefix):
+            if not blob.name.endswith("/"):
+                files.append({
+                    "path": blob.name,
+                    "filename": os.path.basename(blob.name),
+                    "size": blob.size or 0,
+                    "updated": blob.updated.isoformat() if blob.updated else None,
+                    "content_type": blob.content_type or "application/octet-stream"
+                })
+                
+        return files
+    except Exception as e:
+        raise Exception(f"Error listando archivos: {e}")
 
-# ==================================================================================
-#                           FUNCIONES DE GESTIÓN DE USUARIOS
-# ==================================================================================
+def delete_file_from_storage(blob_path: str) -> None:
+    """Elimina un archivo de Firebase Storage."""
+    try:
+        bucket = get_storage_bucket()
+        blob = bucket.blob(blob_path)
+        if not blob.exists():
+            raise FileNotFoundError(f"Archivo no encontrado: {blob_path}")
+        blob.delete()
+    except Exception as e:
+        raise Exception(f"Error eliminando archivo: {e}")
 
 async def create_admin_user(email: str, password: str) -> Dict[str, Any]:
+    """Crea un usuario administrador."""
     try:
         auth_client = get_auth_client()
-
-        # Crear usuario con email y contraseña
         user = auth_client.create_user(
             email=email,
             password=password,
             email_verified=True
         )
-
-        # Asignar custom claim de administrador
         auth_client.set_custom_user_claims(user.uid, {'admin': True})
-
-        # Guardar el usuario en Firestore
+        
         firestore_client = get_firestore_client()
         firestore_client.collection("users").document(user.uid).set({
             "uid": user.uid,
             "email": email,
             "role": "admin",
-            "status": "active",
             "created_at": datetime.now().isoformat()
         })
-
+        
         return {
             "uid": user.uid,
             "email": email,
             "admin": True,
             "created_at": datetime.now().isoformat()
         }
-
-    except FirebaseError as e:
-        if "EMAIL_EXISTS" in str(e):
-            raise Exception(f"El email '{email}' ya está registrado en Firebase")
-        else:
-            raise Exception(f"Error de Firebase creando usuario admin: {e}")
     except Exception as e:
-        raise Exception(f"Error inesperado creando usuario admin: {e}")
-
+        raise Exception(f"Error creando usuario admin: {e}")
 
 def verify_token(request: Request):
-    """
-    Middleware / Dependency de FastAPI para verificar tokens de Firebase.
-
-    Esta función debe usarse como Depends(verify_token) en tus endpoints protegidos.
-    """
+    """Middleware para verificar tokens de Firebase."""
     auth_header = request.headers.get("Authorization")
     if not auth_header or not auth_header.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Token de autorización faltante")
-
+        raise HTTPException(status_code=401, detail="Token faltante")
+    
     id_token = auth_header.split("Bearer ")[1]
-
+    
     try:
-        decoded_token = firebase_auth.verify_id_token(id_token)
+        auth_client = get_auth_client()
+        decoded_token = auth_client.verify_id_token(id_token)
         return decoded_token
-    except InvalidIdTokenError:
-        raise HTTPException(status_code=401, detail="Token inválido")
     except Exception:
-        raise HTTPException(status_code=401, detail="Error verificando el token")
+        raise HTTPException(status_code=401, detail="Token inválido")
 
 def get_user_info(uid: str) -> Dict[str, Any]:
-    """
-    Obtiene información completa de un usuario por su UID.
-    
-    Args:
-        uid: ID único del usuario
-        
-    Returns:
-        Dict: Información del usuario incluyendo custom claims
-        
-    Raises:
-        Exception: Si el usuario no existe o hay errores
-    """
+    """Obtiene información de un usuario."""
     try:
         auth_client = get_auth_client()
         user = auth_client.get_user(uid)
-        
         return {
             "uid": user.uid,
             "email": user.email,
@@ -410,67 +299,5 @@ def get_user_info(uid: str) -> Dict[str, Any]:
             "creation_time": user.user_metadata.creation_timestamp,
             "last_sign_in": user.user_metadata.last_sign_in_timestamp
         }
-        
-    except FirebaseError as e:
-        if "USER_NOT_FOUND" in str(e):
-            raise Exception(f"Usuario no encontrado: {uid}")
-        else:
-            raise Exception(f"Error obteniendo información del usuario: {e}")
-
-
-# ==================================================================================
-#                           SCRIPT DE DESARROLLO
-# ==================================================================================
-
-if __name__ == "__main__":
-    """
-    Script de desarrollo para crear un administrador inicial.
-    
-    ⚠️ ADVERTENCIA: Este script es solo para desarrollo inicial.
-    En producción, comentar o eliminar esta sección.
-    
-    Ejecuta: python firebase_service.py
-    """
-    import asyncio
-    
-    async def setup_initial_admin():
-        """
-        Función interactiva para crear un administrador inicial.
-        """
-        print("🔥 Configuración inicial de administrador Firebase")
-        print("=" * 50)
-        print("⚠️  Solo usar en desarrollo inicial")
-        print()
-        
-        try:
-            # Solicitar credenciales del administrador
-            admin_email = input("📧 Email del administrador: ").strip()
-            admin_password = input("🔐 Contraseña del administrador: ").strip()
-            
-            # Validaciones básicas
-            if not admin_email or "@" not in admin_email:
-                print("❌ Email inválido")
-                return
-                
-            if len(admin_password) < 6:
-                print("❌ La contraseña debe tener al menos 6 caracteres")
-                return
-            
-            # Crear usuario administrador
-            user_info = await create_admin_user(admin_email, admin_password)
-            
-            print(f"✅ Usuario admin creado exitosamente:")
-            print(f"   📧 Email: {user_info['email']}")
-            print(f"   🆔 UID: {user_info['uid']}")
-            print()
-            print("⚠️  IMPORTANTE:")
-            print("   1. Cambia la contraseña desde la aplicación")
-            print("   2. El usuario debe cerrar sesión y volver a iniciar")
-            print("   3. Comenta este script en producción")
-            
-        except Exception as e:
-            print(f"❌ Error: {e}")
-    
-    # Ejecutar solo si se llama directamente
-    # En producción, comentar la siguiente línea:
-    # asyncio.run(setup_initial_admin())
+    except Exception as e:
+        raise Exception(f"Error obteniendo usuario: {e}")

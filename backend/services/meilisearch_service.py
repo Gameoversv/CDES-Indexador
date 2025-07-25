@@ -47,10 +47,12 @@ INDEX_CONFIG = {
     ],
     "filterableAttributes": [             # Campos que se pueden usar para filtrar
         "file_extension",                 # Extensión del archivo (.pdf, .docx, etc.)
-        "file_size_bytes",               # Tamaño del archivo en bytes
-        "date",                          # Fecha del documento
-        "created_at",                    # Fecha de indexación
-        "keywords"                       # Palabras clave (para filtros facetados)
+        "file_size_bytes",                # Tamaño del archivo en bytes
+        "date",                           # Fecha del documento
+        "created_at",                     # Fecha de indexación
+        "keywords",                       # Palabras clave (para filtros facetados)
+        "public",                         # Visibilidad pública
+        "publico"                         # Campo alias en español
     ],
     "sortableAttributes": [               # Campos por los que se puede ordenar
         "date",                          # Fecha del documento
@@ -60,14 +62,16 @@ INDEX_CONFIG = {
     ],
     "displayedAttributes": [             # Campos devueltos en los resultados
         "id",
-        "title", 
+        "title",
         "summary",
         "keywords",
         "filename",
         "file_extension",
         "file_size_bytes",
         "date",
-        "created_at"
+        "created_at",
+        "public",                         # Indicador de visibilidad pública
+        "publico"                        # Campo alias en español
     ]
 }
 
@@ -92,9 +96,9 @@ def initialize_meilisearch() -> None:
     """
     global client
     
-    # Si ya está inicializado, no hacer nada
+    # Si ya está inicializado, actualizar configuración del índice
     if client is not None:
-        # print("🔍 Meilisearch ya está inicializado")
+        _configurar_indice()
         return
 
     try:
@@ -149,7 +153,7 @@ def initialize_meilisearch() -> None:
 
         # ===== CREAR ÍNDICE SI NO EXISTE =====
         if INDEX_NAME not in existing_index_names:
-            # print(f"🔧 Creando índice '{INDEX_NAME}'...")
+            print(f"Creando índice '{INDEX_NAME}'...")
             
             # Crear índice con configuración inicial
             index_creation = client.create_index(
@@ -164,13 +168,13 @@ def initialize_meilisearch() -> None:
             # Configurar atributos del índice
             _configurar_indice()
             
-            # print(f"✅ Índice '{INDEX_NAME}' creado y configurado")
+            print(f"Índice '{INDEX_NAME}' creado y configurado")
         else:
             # El índice ya existe, verificar/actualizar configuración
-            # print(f"📋 Índice '{INDEX_NAME}' ya existe, verificando configuración...")
+            print(f"Índice '{INDEX_NAME}' ya existe, verificando configuración...")
             _configurar_indice()
 
-        # print("✅ Meilisearch inicializado correctamente")
+        print("Meilisearch inicializado correctamente")
 
     except MeilisearchError as e:
         # Error específico de Meilisearch
@@ -215,10 +219,10 @@ def _configurar_indice() -> None:
         task = index.update_displayed_attributes(INDEX_CONFIG["displayedAttributes"])
         client.wait_for_task(task.task_uid)
         
-        # print(f"✅ Configuración del índice '{INDEX_NAME}' actualizada")
+        # print(f"Configuración del índice '{INDEX_NAME}' actualizada")
         
     except Exception as e:
-        print(f"⚠️  Advertencia: No se pudo configurar el índice completamente: {e}")
+        print(f"Advertencia: No se pudo configurar el índice completamente: {e}")
 
 
 def get_client() -> Client:
@@ -278,7 +282,7 @@ def add_documents(documents: List[Dict[str, Any]]) -> None:
     initialize_meilisearch()
     
     if not documents:
-        # print("⚠️  No hay documentos para indexar")
+        # print("Advertencia: No hay documentos para indexar")
         return
     
     try:
@@ -293,7 +297,7 @@ def add_documents(documents: List[Dict[str, Any]]) -> None:
         get_client().wait_for_task(task.task_uid)
         
         # Mensaje de depuración - comentado para producción
-        # print(f"✅ {len(documents)} documento(s) indexado(s) en Meilisearch")
+        # print(f"{len(documents)} documento(s) indexado(s) en Meilisearch")
         
     except MeilisearchError as e:
         raise RuntimeError(f"Error indexando documentos: {e.message if hasattr(e, 'message') else str(e)}") from e
@@ -318,7 +322,7 @@ def delete_document(document_id: str) -> None:
         task = index.delete_document(document_id)
         get_client().wait_for_task(task.task_uid)
         
-        # print(f"✅ Documento '{document_id}' eliminado del índice")
+        # print(f"Documento '{document_id}' eliminado del índice")
         
     except Exception as e:
         raise RuntimeError(f"Error eliminando documento '{document_id}': {str(e)}") from e
@@ -411,7 +415,7 @@ def search_documents(
         results = index.search(query, search_options)
         
         # Mensaje de depuración - comentado para producción
-        # print(f"🔍 Búsqueda realizada: '{query}' -> {results.get('estimatedTotalHits', 0)} resultados")
+        # print(f"Búsqueda realizada: '{query}' -> {results.get('estimatedTotalHits', 0)} resultados")
         
         return results
         
@@ -458,7 +462,7 @@ def clear_index() -> None:
     """
     Elimina todos los documentos del índice.
     
-    ⚠️ ADVERTENCIA: Esta operación no se puede deshacer.
+    ADVERTENCIA: Esta operación no se puede deshacer.
     Solo usar durante desarrollo o mantenimiento.
     
     Raises:
@@ -471,7 +475,7 @@ def clear_index() -> None:
         task = index.delete_all_documents()
         get_client().wait_for_task(task.task_uid)
         
-        print(f"⚠️  Todos los documentos han sido eliminados del índice '{INDEX_NAME}'")
+        print(f"Advertencia: Todos los documentos han sido eliminados del índice '{INDEX_NAME}'")
         
     except Exception as e:
         raise RuntimeError(f"Error limpiando el índice: {str(e)}") from e
@@ -481,7 +485,7 @@ def reset_index() -> None:
     """
     Elimina y recrea completamente el índice.
     
-    ⚠️ ADVERTENCIA: Esta operación elimina todos los datos y configuraciones.
+    ADVERTENCIA: Esta operación elimina todos los datos y configuraciones.
     Solo usar durante desarrollo o para resolver problemas graves.
     
     Raises:
@@ -497,7 +501,7 @@ def reset_index() -> None:
         try:
             task = client.delete_index(INDEX_NAME)
             client.wait_for_task(task.task_uid)
-            print(f"🗑️  Índice '{INDEX_NAME}' eliminado")
+            print(f"Índice '{INDEX_NAME}' eliminado")
         except:
             # El índice puede no existir, continuar
             pass
@@ -512,7 +516,7 @@ def reset_index() -> None:
         # Reconfigurar
         _configurar_indice()
         
-        print(f"✅ Índice '{INDEX_NAME}' recreado y configurado")
+        print(f"Índice '{INDEX_NAME}' recreado y configurado")
         
     except Exception as e:
         raise RuntimeError(f"Error recreando el índice: {str(e)}") from e
@@ -530,28 +534,28 @@ if __name__ == "__main__":
     python meilisearch_service.py
     """
     
-    print("🔍 Probando conexión con Meilisearch...")
+    print("Probando conexión con Meilisearch...")
     print("=" * 50)
     
     try:
         # Inicializar cliente
         initialize_meilisearch()
-        print("✅ Conexión establecida correctamente")
+        print("Conexión establecida correctamente")
         
         # Obtener estadísticas
         stats = get_index_stats()
-        print(f"📊 Documentos indexados: {stats.get('numberOfDocuments', 0)}")
-        print(f"📊 Estado del índice: {'Indexando' if stats.get('isIndexing', False) else 'Listo'}")
+        print(f"Documentos indexados: {stats.get('numberOfDocuments', 0)}")
+        print(f"Estado del índice: {'Indexando' if stats.get('isIndexing', False) else 'Listo'}")
         
         # Realizar búsqueda de prueba
         results = search_documents("", limit=5)
-        print(f"🔍 Total de documentos disponibles: {results.get('estimatedTotalHits', 0)}")
+        print(f"Total de documentos disponibles: {results.get('estimatedTotalHits', 0)}")
         
-        print("\n✅ Todas las pruebas pasaron exitosamente")
+        print("\nTodas las pruebas pasaron exitosamente")
         
     except Exception as e:
-        print(f"\n❌ Error en las pruebas: {e}")
-        print("\n📖 Pasos para solucionar:")
+        print(f"\nError en las pruebas: {e}")
+        print("\nPasos para solucionar:")
         print("   1. Verifica que Meilisearch esté ejecutándose")
         print("   2. Confirma la URL en MEILISEARCH_HOST")
         print("   3. Verifica la clave maestra si es necesaria")

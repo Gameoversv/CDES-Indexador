@@ -36,6 +36,7 @@ const clearAuthData = () => {
   localStorage.removeItem("idToken");
   localStorage.removeItem("userClaims");
   localStorage.removeItem("userProfile");
+  localStorage.removeItem("user");
 };
 
 // ===============================
@@ -107,22 +108,43 @@ export const checkApiHealth = async () => {
 // ===============================
 
 export const documentsAPI = {
+  // Listar archivos en storage
   listStorage: () => api.get("/documents/storage"),
+  
+  // Subir documento
   upload: (formData) =>
     api.post("/documents/upload", formData, {
       headers: { "Content-Type": "multipart/form-data" },
       timeout: UPLOAD_TIMEOUT,
     }),
+    
+  // Descargar por ruta
   downloadByPath: (path) =>
     api.get("/documents/download_by_path", {
       params: { path },
       responseType: "blob",
     }),
+    
+  // Eliminar por ruta
   deleteByPath: (path) =>
     api.delete("/documents/delete_by_path", {
       params: { path },
     }),
-  search: (query) => api.get("/documents/search", { params: { q: query } }),
+    
+  // Búsqueda
+  search: (query) => api.get("/documents/search", { params: { query } }),
+  
+  // Descargar por ID
+  download: (id) =>
+    api.get(`/documents/download/${id}`, {
+      responseType: "blob",
+    }),
+    
+  // Obtener metadatos de documento
+  getDocument: (id) => api.get(`/documents/${id}`),
+  
+  // Listar todos los documentos
+  list: () => api.get("/documents/list"),
 };
 
 // ===============================
@@ -155,8 +177,7 @@ export const usersAPI = {
   create: (data) => api.post("/admin/users", data),
   update: (uid, data) => api.put(`/admin/users/${uid}`, data),
   delete: (uid) => api.delete(`/admin/users/${uid}`),
-  changePassword: (uid, newPassword) =>
-    api.post(`/admin/users/${uid}/change-password`, { password: newPassword }),
+  changePassword: (data) => api.post("/admin/users/change-password", data),
 };
 
 // ===============================
@@ -164,36 +185,53 @@ export const usersAPI = {
 // ===============================
 
 export const authAPI = {
-  getCurrentUser: () => api.get("/users/me"),
+  getCurrentUser: () => api.get("/auth/me"),
+  getProfile: () => api.get("/auth/profile"),
+  test: () => api.get("/auth/test"),
 };
 
 // ===============================
-// API: Biblioteca Pública (solo frontend por ahora)
+// API: Biblioteca Pública
 // ===============================
 
 export const libraryAPI = {
-  list: () =>
+  // Listar todos los documentos públicos (sin búsqueda)
+  list: (limit = 20, offset = 0) =>
     api
-      .get("/documents/storage") // usa el mismo endpoint que documentos
-      .then((res) =>
-        // filtra solo los documentos públicos
-        (res.data?.files || []).filter((file) => file.publico === true)
-      ),
+      .get(`/documents/public?limit=${limit}&offset=${offset}`)
+      .then((res) => {
+        return res.data?.hits || [];
+      })
+      .catch(error => {
+        console.error("Error cargando documentos públicos:", error);
+        // Intentar con endpoint local si falla
+        return api
+          .get(`/documents/public-local?limit=${limit}&offset=${offset}`)
+          .then((res) => res.data?.hits || []);
+      }),
 
-  upload: (formData) =>
-    api.post("/documents/upload", formData, {
-      headers: { "Content-Type": "multipart/form-data" },
-      timeout: UPLOAD_TIMEOUT,
+  // Búsqueda en documentos públicos con Meilisearch
+  search: (query, limit = 20, offset = 0) => 
+    api.get("/documents/public", { 
+      params: { 
+        q: query,
+        limit,
+        offset
+      }
     }),
 
-  downloadByPath: (path) =>
-    api.get("/documents/download_by_path", {
-      params: { path },
-      responseType: "blob",
-    }),
+  // Subir documento (reutiliza la misma función)
+  upload: (formData) => documentsAPI.upload(formData),
 
-  deleteByPath: (path) =>
-    api.delete("/documents/delete_by_path", {
-      params: { path },
-    }),
+  // Descargar por ruta
+  downloadByPath: (path) => documentsAPI.downloadByPath(path),
+
+  // Eliminar por ruta
+  deleteByPath: (path) => documentsAPI.deleteByPath(path),
+  
+  // Eliminar documento por ID
+  deleteDocument: (id) => api.delete(`/documents/${id}`),
 };
+
+// Export default
+export default api;

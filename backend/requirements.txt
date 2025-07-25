@@ -1,15 +1,17 @@
 fastapi==0.110.2
 uvicorn[standard]==0.29.0
 python-dotenv==1.0.1
-pydantic==2.7.1
+pydantic>=2.9.0
+pydantic_settings
 firebase-admin==6.4.0
 google-generativeai==0.3.2
+openai>=0.27.0
 meilisearch==0.30.0
 python-multipart==0.0.9
+pydantic[email]
 
 # Extracción de texto
 pdfplumber==0.11.0
 python-docx==1.1.0
 python-pptx==0.6.23
 openpyxl==3.1.2
-pydantic_settings
