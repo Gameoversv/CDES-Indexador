@@ -53,7 +53,7 @@ def create_user(data: UserCreate, token_data=Depends(verify_token)):
             display_name=data.display_name,
             disabled=(data.status != "active"),
         )
-        # 🔐 Asignar claim si es admin
+        # Asignar claim si es admin
         if data.role == "admin":
             auth.set_custom_user_claims(user_record.uid, {"admin": True})
 
@@ -70,7 +70,7 @@ def create_user(data: UserCreate, token_data=Depends(verify_token)):
         "status": data.status
     })
 
-    # ✅ Registrar en logs
+    # Registrar en logs
     log_event(
         event_type="user_created",
         user_id=token_data["user_id"],
@@ -113,7 +113,7 @@ def update_user(id: str, data: UserUpdate, token_data=Depends(verify_token)):
         "status": data.status
     })
 
-    # ✅ Registrar en logs
+    # Registrar en logs
     log_event(
         event_type="user_updated",
         user_id=token_data["user_id"],
@@ -143,7 +143,7 @@ def delete_user(id: str, token_data=Depends(verify_token)):
 
     doc_ref.delete()
 
-    # ✅ Registrar en logs
+    # Registrar en logs
     log_event(
         event_type="user_deleted",
         user_id=token_data["user_id"],
@@ -167,7 +167,7 @@ def change_password(data: PasswordChangeRequest, token_data=Depends(verify_token
     if doc:
         doc.reference.update({"password": data.new_password})  # opcional
 
-    # ✅ Registrar en logs
+    # Registrar en logs
     log_event(
         event_type="password_changed",
         user_id=token_data["user_id"],

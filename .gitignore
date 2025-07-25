@@ -1,14 +1,14 @@
 # Meilisearch
 meilisearch-data/
+meilisearch-server/
 
 # Dependencies
 node_modules/
 */node_modules/
 
-# Environment variables
-.env
-.env*.local
-!.env.example
+# Virtual environments
+venv/
+.venv/
 
 # Build artifacts
 dist/
@@ -50,6 +50,3 @@ __pycache__/
 
 # Executables
 *.exe
-
-# Service account keys
-backend/firebase-service-account.json

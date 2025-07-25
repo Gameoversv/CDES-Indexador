@@ -139,7 +139,7 @@ def log_event(
     except Exception as e:
         # Manejar errores de logging sin fallar la operación principal
         # Mensajes de depuración - comentados para producción
-        # print(f"❌ Error registrando evento de auditoría: {e}")
+        # print(f"Error registrando evento de auditoría: {e}")
         # print(f"   Evento: {event_type}, Usuario: {user_id}")
         
         # Intentar registrar el error de logging como último recurso
@@ -164,7 +164,7 @@ def log_event(
             
         except:
             # Si esto también falla, no hay mucho más que hacer
-            # print("❌❌ Error crítico: No se pudo registrar ni el evento original ni el error")
+            # print("Error crítico: No se pudo registrar ni el evento original ni el error")
             pass
         
         return None
@@ -568,7 +568,7 @@ def cleanup_old_logs(days_to_keep: int = DEFAULT_RETENTION_DAYS) -> Dict[str, An
     """
     Limpia logs de auditoría más antiguos que el período especificado.
     
-    ⚠️ IMPORTANTE: Esta operación elimina datos permanentemente.
+    IMPORTANTE: Esta operación elimina datos permanentemente.
     Debe usarse con precaución y después de crear backups si es necesario.
     
     Args:

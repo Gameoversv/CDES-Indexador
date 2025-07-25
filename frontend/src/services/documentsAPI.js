@@ -1,9 +1,15 @@
 import { api, UPLOAD_TIMEOUT } from "./api";
 
 export const documentsAPI = {
-  upload: (file, onProgress = null) => {
-    const formData = new FormData();
-    formData.append("file", file);
+  upload: (formData, onProgress = null) => {
+    // Si formData ya es un FormData, usarlo directamente
+    // Si es un File, crear un FormData (para compatibilidad con código existente)
+    if (!(formData instanceof FormData)) {
+      const fileFormData = new FormData();
+      fileFormData.append("file", formData);
+      formData = fileFormData;
+    }
+    
     return api.post("/documents/upload", formData, {
       headers: { "Content-Type": "multipart/form-data" },
       timeout: UPLOAD_TIMEOUT,

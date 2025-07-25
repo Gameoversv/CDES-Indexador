@@ -65,16 +65,13 @@ export default function LibraryToolbar({
 }) {
   return (
     <div className="flex flex-wrap gap-4 items-end mb-6">
-      {/* Buscar */}
-      <div className="flex flex-col justify-end">
-        <label className="text-sm font-medium text-gray-700">Buscar</label>
-        <Input
-          placeholder="por nombre, contenido o palabras clave..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-[220px]"
-        />
-      </div>
+      {/* Buscar - diseño igual al del módulo de documentos */}
+      <Input
+        placeholder="Buscar por nombre, contenido o palabras clave..."
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        className="w-[220px]"
+      />
 
       {/* Tipo */}
       <div className="flex flex-col justify-end">

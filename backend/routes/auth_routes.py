@@ -33,7 +33,7 @@ async def get_me(token_data=Depends(verify_firebase_token)):
     }
 
 
-# ✅ Funciones auxiliares consistentes
+# Funciones auxiliares consistentes
 
 def get_current_user(token_data=Depends(verify_firebase_token)):
     return token_data
