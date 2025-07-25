@@ -33,6 +33,13 @@ export default function AdminLibrary() {
     fetchData();
   }, []);
 
+  const clearAllFilters = () => {
+    setSearch("");
+    setTypeFilter("all");
+    setTypeContent("all");
+    setDateRange({ from: null, to: null });
+  };
+
   const filteredDocs = useMemo(() => {
     return documents
       .filter((doc) => {
@@ -86,7 +93,11 @@ export default function AdminLibrary() {
         </div>
 
         {/* Estadísticas */}
-        <LibraryStatsCards stats={stats} statType={statType} setStatType={setStatType} />
+        <LibraryStatsCards
+          stats={stats}
+          statType={statType}
+          setStatType={setStatType}
+        />
 
         {/* Filtros */}
         <LibraryToolbar
@@ -101,7 +112,7 @@ export default function AdminLibrary() {
           dateRange={dateRange}
           setDateRange={setDateRange}
           onRefresh={fetchData}
-          hideUpload={true}
+          clearAllFilters={clearAllFilters}
         />
 
         {/* Vista principal */}
@@ -114,7 +125,7 @@ export default function AdminLibrary() {
         ) : (
           <LibraryTable
             files={filteredDocs}
-            onPreview={setSelectedDoc}
+            onView={setSelectedDoc}
             onDelete={setShowDeleteDialog}
             onDownload={(file) =>
               documentsAPI.downloadByPath(file.path).then((res) => {
@@ -125,8 +136,11 @@ export default function AdminLibrary() {
                 a.click();
               })
             }
-            sortBy={sortBy}
-            setSortBy={setSortBy}
+            sortKey={sortBy.field}
+            sortOrder={sortBy.direction}
+            onSort={(field, direction) =>
+              setSortBy({ field, direction })
+            }
           />
         )}
 
