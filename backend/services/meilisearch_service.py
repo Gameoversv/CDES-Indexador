@@ -1,66 +1,50 @@
-"""
-Servicio de Meilisearch - Motor de Búsqueda para Documentos
-
-Este módulo gestiona toda la integración con Meilisearch, un motor de búsqueda
-rápido y tolerante a errores tipográficos. Se encarga de:
-
-- Inicialización y configuración del cliente Meilisearch
-- Creación y gestión de índices de búsqueda
-- Indexación de documentos y metadatos
-- Operaciones de búsqueda con filtros y facetas
-- Manejo robusto de errores de conectividad
-
-Características principales:
-- Búsqueda instantánea mientras escribes
-- Tolerancia a errores tipográficos
-- Soporte para múltiples idiomas
-- Búsqueda por facetas y filtros
-- Resultados ordenados por relevancia
-
-
-"""
-
+import json
+import os
+from pathlib import Path
 from typing import List, Dict, Any, Optional
+from datetime import datetime
+
 from meilisearch import Client
 from meilisearch.errors import MeilisearchError
 from config import settings
 
-# ==================================================================================
-#                           CONFIGURACIÓN GLOBAL
-# ==================================================================================
-
-# Cliente global de Meilisearch (inicializado una sola vez)
 client: Optional[Client] = None
 
-# Nombre del índice principal para documentos
 INDEX_NAME = "documents"
 
-# Configuración del índice de documentos
+BASE_DIR = Path(__file__).resolve().parents[1]
+LOCAL_DATA_PATH = BASE_DIR.parent / "meilisearch-data" / "indexes" / "documents"
+
+_meilisearch_available = False
+
 INDEX_CONFIG = {
-    "primaryKey": "id",                    # Campo único para cada documento
-    "searchableAttributes": [             # Campos en los que se puede buscar
-        "title",                          # Título del documento
-        "summary",                        # Resumen generado por IA
-        "keywords",                       # Palabras clave extraídas
-        "filename",                       # Nombre del archivo original
-        "text_content"                    # Contenido de texto (si está disponible)
+    "primaryKey": "id",
+    "searchableAttributes": [
+        "title",
+        "summary",
+        "keywords",
+        "filename",
+        "text_content"
     ],
-    "filterableAttributes": [             # Campos que se pueden usar para filtrar
-        "file_extension",                 # Extensión del archivo (.pdf, .docx, etc.)
-        "file_size_bytes",                # Tamaño del archivo en bytes
-        "date",                           # Fecha del documento
-        "created_at",                     # Fecha de indexación
-        "keywords",                       # Palabras clave (para filtros facetados)
-        "public",                         # Visibilidad pública
-        "publico"                         # Campo alias en español
+    "filterableAttributes": [
+        "file_extension",
+        "file_size_bytes",
+        "date",
+        "created_at",
+        "keywords",
+        "public",
+        "publico",
+        "apartado",
+        "uploader_id"
     ],
-    "sortableAttributes": [               # Campos por los que se puede ordenar
-        "date",                          # Fecha del documento
-        "created_at",                    # Fecha de indexación
-        "file_size_bytes",               # Tamaño del archivo
-        "title"                          # Título alfabéticamente
+    "sortableAttributes": [
+        "date",
+        "created_at",
+        "file_size_bytes",
+        "title",
+        "upload_timestamp"
     ],
-    "displayedAttributes": [             # Campos devueltos en los resultados
+    "displayedAttributes": [
         "id",
         "title",
         "summary",
@@ -70,494 +54,391 @@ INDEX_CONFIG = {
         "file_size_bytes",
         "date",
         "created_at",
-        "public",                         # Indicador de visibilidad pública
-        "publico"                        # Campo alias en español
+        "public",
+        "publico",
+        "apartado",
+        "storage_path",
+        "upload_timestamp"
     ]
 }
 
-
-# ==================================================================================
-#                           FUNCIONES DE INICIALIZACIÓN
-# ==================================================================================
+def check_meilisearch_health() -> bool:
+    global _meilisearch_available
+    
+    if client is None:
+        _meilisearch_available = False
+        return False
+    
+    try:
+        health_status = client.health()
+        if health_status and health_status.get('status') == 'available':
+            _meilisearch_available = True
+            return True
+    except:
+        pass
+    
+    try:
+        version = client.get_version()
+        if version:
+            _meilisearch_available = True
+            return True
+    except:
+        pass
+    
+    try:
+        client.get_indexes()
+        _meilisearch_available = True
+        return True
+    except:
+        pass
+    
+    _meilisearch_available = False
+    return False
 
 def initialize_meilisearch() -> None:
-    """
-    Inicializa el cliente global de Meilisearch y configura el índice de documentos.
+    global client, _meilisearch_available
     
-    Esta función se ejecuta al iniciar la aplicación y se encarga de:
-    1. Crear la conexión con el servidor Meilisearch
-    2. Verificar la conectividad y autenticación
-    3. Crear el índice de documentos si no existe
-    4. Configurar los atributos del índice (búsqueda, filtros, ordenación)
-    
-    Raises:
-        RuntimeError: Si no se puede conectar a Meilisearch o la configuración es inválida
-        MeilisearchError: Si hay errores específicos de Meilisearch
-    """
-    global client
-    
-    # Si ya está inicializado, actualizar configuración del índice
-    if client is not None:
-        _configurar_indice()
-        return
-
     try:
-        # ===== CREAR CLIENTE DE MEILISEARCH =====
         client = Client(
             url=settings.MEILISEARCH_HOST,
             api_key=settings.MEILISEARCH_MASTER_KEY or None
         )
         
-        # ===== VERIFICAR CONECTIVIDAD =====
-        # Intentar obtener la lista de índices para verificar la conexión
-        try:
-            indices_response = client.get_indexes()
-        except Exception as exc:
-            raise RuntimeError(
-                f"No se pudo conectar a Meilisearch en {settings.MEILISEARCH_HOST}. "
-                f"Verifica que el servidor esté ejecutándose y la configuración sea correcta. "
-                f"Error: {exc}"
-            ) from exc
-
-        # ===== PROCESAR RESPUESTA DE ÍNDICES =====
-        # Meilisearch puede devolver diferentes formatos según la versión
-        if isinstance(indices_response, dict):
-            # Formato con wrapper {"results": [...]}
-            if "results" in indices_response:
-                existing_indices = indices_response["results"]
-            # Formato de error {"message": "...", "code": "..."}
-            elif "message" in indices_response:
-                raise RuntimeError(
-                    f"Error de autenticación en Meilisearch: {indices_response['message']} "
-                    f"(código: {indices_response.get('code', 'desconocido')}). "
-                    f"Verifica la clave maestra MEILISEARCH_MASTER_KEY."
-                )
-            else:
-                raise RuntimeError(f"Respuesta inesperada de Meilisearch: {indices_response}")
-                
-        elif isinstance(indices_response, list):
-            # Formato directo como lista
-            existing_indices = indices_response
+        if check_meilisearch_health():
+            print("Meilisearch está disponible")
+            _ensure_index_exists()
         else:
-            raise RuntimeError(f"Formato de respuesta desconocido: {type(indices_response)}")
-
-        # ===== OBTENER NOMBRES DE ÍNDICES EXISTENTES =====
-        existing_index_names = []
-        for index_info in existing_indices:
-            if isinstance(index_info, dict):
-                # Objeto dict con información del índice
-                existing_index_names.append(index_info.get("uid", ""))
-            else:
-                # Objeto con atributo uid
-                existing_index_names.append(getattr(index_info, "uid", ""))
-
-        # ===== CREAR ÍNDICE SI NO EXISTE =====
-        if INDEX_NAME not in existing_index_names:
-            print(f"Creando índice '{INDEX_NAME}'...")
+            print("Meilisearch no está disponible. Usando modo fallback.")
             
-            # Crear índice con configuración inicial
-            index_creation = client.create_index(
-                uid=INDEX_NAME,
-                options={"primaryKey": INDEX_CONFIG["primaryKey"]}
-            )
-            
-            # Esperar a que se complete la creación del índice
-            # (Meilisearch procesa esto de forma asíncrona)
-            client.wait_for_task(index_creation.task_uid)
-            
-            # Configurar atributos del índice
-            _configurar_indice()
-            
-            print(f"Índice '{INDEX_NAME}' creado y configurado")
-        else:
-            # El índice ya existe, verificar/actualizar configuración
-            print(f"Índice '{INDEX_NAME}' ya existe, verificando configuración...")
-            _configurar_indice()
-
-        print("Meilisearch inicializado correctamente")
-
-    except MeilisearchError as e:
-        # Error específico de Meilisearch
-        raise RuntimeError(
-            f"Error de Meilisearch: {e.message if hasattr(e, 'message') else str(e)}. "
-            f"Código: {e.code if hasattr(e, 'code') else 'desconocido'}"
-        ) from e
     except Exception as e:
-        # Error general
-        raise RuntimeError(f"Error inesperado inicializando Meilisearch: {str(e)}") from e
+        print(f"Error inicializando Meilisearch: {e}")
+        print("El sistema funcionará en modo fallback usando archivos locales")
+        _meilisearch_available = False
 
 
-def _configurar_indice() -> None:
-    """
-    Configura los atributos del índice de documentos.
-    
-    Esta función auxiliar aplica toda la configuración necesaria al índice:
-    - Atributos en los que se puede buscar
-    - Atributos que se pueden usar para filtrar
-    - Atributos por los que se puede ordenar
-    - Atributos que se devuelven en los resultados
-    """
-    if client is None:
-        raise RuntimeError("Cliente de Meilisearch no inicializado")
-    
-    index = client.index(INDEX_NAME)
-    
-    try:
-        # Configurar atributos de búsqueda
-        task = index.update_searchable_attributes(INDEX_CONFIG["searchableAttributes"])
-        client.wait_for_task(task.task_uid)
-        
-        # Configurar atributos filtrables
-        task = index.update_filterable_attributes(INDEX_CONFIG["filterableAttributes"])
-        client.wait_for_task(task.task_uid)
-        
-        # Configurar atributos ordenables
-        task = index.update_sortable_attributes(INDEX_CONFIG["sortableAttributes"])
-        client.wait_for_task(task.task_uid)
-        
-        # Configurar atributos mostrados
-        task = index.update_displayed_attributes(INDEX_CONFIG["displayedAttributes"])
-        client.wait_for_task(task.task_uid)
-        
-        # print(f"Configuración del índice '{INDEX_NAME}' actualizada")
-        
-    except Exception as e:
-        print(f"Advertencia: No se pudo configurar el índice completamente: {e}")
-
-
-def get_client() -> Client:
-    """
-    Obtiene el cliente global de Meilisearch.
-    
-    Returns:
-        Client: Cliente autenticado de Meilisearch
-        
-    Raises:
-        RuntimeError: Si el cliente no ha sido inicializado
-    """
-    if client is None:
-        raise RuntimeError(
-            "El cliente de Meilisearch no ha sido inicializado. "
-            "Llama a initialize_meilisearch() primero."
-        )
-    return client
-
-
-# ==================================================================================
-#                           FUNCIONES DE INDEXACIÓN
-# ==================================================================================
-
-def add_documents(documents: List[Dict[str, Any]]) -> None:
-    """
-    Añade o actualiza documentos en el índice de Meilisearch.
-    
-    Esta función toma una lista de documentos con metadatos y los indexa
-    para que puedan ser encontrados mediante búsquedas. Si un documento
-    con el mismo ID ya existe, será actualizado.
-    
-    Args:
-        documents: Lista de diccionarios con los metadatos de los documentos.
-                  Cada documento debe tener al menos un campo 'id' único.
-                  
-    Ejemplo:
-        documents = [
-            {
-                "id": "doc_123",
-                "title": "Mi Documento",
-                "summary": "Resumen del contenido...",
-                "keywords": ["palabra1", "palabra2"],
-                "filename": "documento.pdf",
-                "file_extension": ".pdf",
-                "file_size_bytes": 1024000,
-                "date": "2024-01-15",
-                "created_at": "2024-06-05T22:00:00Z"
-            }
-        ]
-        
-    Raises:
-        RuntimeError: Si el cliente no está inicializado
-        MeilisearchError: Si hay errores durante la indexación
-    """
-    # Asegurar que el cliente está inicializado
-    initialize_meilisearch()
-    
-    if not documents:
-        # print("Advertencia: No hay documentos para indexar")
+def _ensure_index_exists() -> None:
+    if not _meilisearch_available or client is None:
         return
     
     try:
-        # Obtener el índice de documentos
-        index = get_client().index(INDEX_NAME)
+        existing_indices = client.get_indexes()
+        index_names = []
         
-        # Añadir documentos al índice
-        task = index.add_documents(documents)
+        if isinstance(existing_indices, dict) and "results" in existing_indices:
+            index_names = [idx.uid for idx in existing_indices["results"]]
+        elif isinstance(existing_indices, list):
+            index_names = [idx.uid for idx in existing_indices]
         
-        # Esperar a que se complete la indexación
-        # (Opcional: quitar esto para operación asíncrona)
-        get_client().wait_for_task(task.task_uid)
+        if INDEX_NAME not in index_names:
+            print(f"Creando índice '{INDEX_NAME}'...")
+            task = client.create_index(uid=INDEX_NAME, options={"primaryKey": "id"})
+            client.wait_for_task(task.task_uid)
+            
+        _configure_index()
         
-        # Mensaje de depuración - comentado para producción
-        # print(f"{len(documents)} documento(s) indexado(s) en Meilisearch")
-        
-    except MeilisearchError as e:
-        raise RuntimeError(f"Error indexando documentos: {e.message if hasattr(e, 'message') else str(e)}") from e
     except Exception as e:
-        raise RuntimeError(f"Error inesperado indexando documentos: {str(e)}") from e
+        print(f"Error configurando índice: {e}")
 
 
-def delete_document(document_id: str) -> None:
-    """
-    Elimina un documento específico del índice.
-    
-    Args:
-        document_id: ID único del documento a eliminar
-        
-    Raises:
-        RuntimeError: Si hay errores durante la eliminación
-    """
-    initialize_meilisearch()
+def _configure_index() -> None:
+    if not _meilisearch_available or client is None:
+        return
     
     try:
-        index = get_client().index(INDEX_NAME)
-        task = index.delete_document(document_id)
-        get_client().wait_for_task(task.task_uid)
+        index = client.index(INDEX_NAME)
         
-        # print(f"Documento '{document_id}' eliminado del índice")
-        
+        for config_type, attributes in [
+            ("searchable", INDEX_CONFIG["searchableAttributes"]),
+            ("filterable", INDEX_CONFIG["filterableAttributes"]),
+            ("sortable", INDEX_CONFIG["sortableAttributes"]),
+            ("displayed", INDEX_CONFIG["displayedAttributes"])
+        ]:
+            try:
+                if config_type == "searchable":
+                    task = index.update_searchable_attributes(attributes)
+                elif config_type == "filterable":
+                    task = index.update_filterable_attributes(attributes)
+                elif config_type == "sortable":
+                    task = index.update_sortable_attributes(attributes)
+                elif config_type == "displayed":
+                    task = index.update_displayed_attributes(attributes)
+                    
+                client.wait_for_task(task.task_uid, timeout_ms=5000)
+            except:
+                pass
+                
     except Exception as e:
-        raise RuntimeError(f"Error eliminando documento '{document_id}': {str(e)}") from e
+        print(f"Error en configuración del índice: {e}")
 
 
-# ==================================================================================
-#                           FUNCIONES DE BÚSQUEDA
-# ==================================================================================
+def add_documents(documents: List[Dict[str, Any]]) -> bool:
+    if not documents:
+        return True
+    
+    if not check_meilisearch_health():
+        print(f"Meilisearch no disponible. {len(documents)} documento(s) guardado(s) solo localmente.")
+        return False
+    
+    try:
+        index = client.index(INDEX_NAME)
+        
+        for doc in documents:
+            if 'id' not in doc and 'file_id' in doc:
+                doc['id'] = doc['file_id']
+        
+        task = index.add_documents(documents)
+        
+        try:
+            client.wait_for_task(task.task_uid, timeout_ms=30000)
+            print(f"{len(documents)} documento(s) indexado(s) en Meilisearch")
+            return True
+        except:
+            # Si el timeout expira, asumir éxito (indexación asíncrona)
+            print(f"{len(documents)} documento(s) enviado(s) a Meilisearch (procesamiento en segundo plano)")
+            return True
+            
+    except Exception as e:
+        print(f"Error indexando en Meilisearch: {e}")
+        return False
+
+
+def delete_document(document_id: str) -> bool:
+    if not check_meilisearch_health():
+        return False
+    
+    try:
+        index = client.index(INDEX_NAME)
+        task = index.delete_document(document_id)
+        client.wait_for_task(task.task_uid, timeout_ms=5000)
+        return True
+    except:
+        return False
+        
+def update_documents(documents: List[Dict[str, Any]]) -> bool:
+    if not documents:
+        return True
+        
+    if not check_meilisearch_health():
+        print(f"Meilisearch no disponible. {len(documents)} documento(s) no actualizados.")
+        return False
+        
+    try:
+        index = client.index(INDEX_NAME)
+        
+        for doc in documents:
+            if 'id' not in doc and 'file_id' in doc:
+                doc['id'] = doc['file_id']
+                
+        task = index.update_documents(documents)
+        
+        try:
+            client.wait_for_task(task.task_uid, timeout_ms=30000)
+            print(f"{len(documents)} documento(s) actualizado(s) en Meilisearch")
+            return True
+        except:
+            # Si el timeout expira, asumir éxito (indexación asíncrona)
+            print(f"{len(documents)} documento(s) enviado(s) a actualizar en Meilisearch (procesamiento en segundo plano)")
+            return True
+            
+    except Exception as e:
+        print(f"Error actualizando documentos en Meilisearch: {e}")
+        return False
+
 
 def search_documents(
-    query: str, 
+    query: str = "",
     limit: int = 20,
     offset: int = 0,
     filters: Optional[str] = None,
     sort: Optional[List[str]] = None
 ) -> Dict[str, Any]:
-    """
-    Realiza una búsqueda en el índice de documentos.
+    if check_meilisearch_health():
+        try:
+            return _search_meilisearch(query, limit, offset, filters, sort)
+        except Exception as e:
+            print(f"Error en búsqueda Meilisearch: {e}")
     
-    Esta función proporciona capacidades avanzadas de búsqueda incluyendo:
-    - Búsqueda de texto libre tolerante a errores
-    - Filtros por atributos específicos
-    - Ordenación personalizada
-    - Paginación de resultados
-    - Resaltado de términos encontrados
+    print("Usando búsqueda local (fallback)")
+    return _search_local_fallback(query, limit, offset, filters, sort)
+
+
+def _search_meilisearch(
+    query: str,
+    limit: int,
+    offset: int,
+    filters: Optional[str],
+    sort: Optional[List[str]]
+) -> Dict[str, Any]:
+    search_options = {
+        "limit": limit,
+        "offset": offset
+    }
     
-    Args:
-        query: Término o frase a buscar. Puede estar vacío para obtener todos los documentos.
-        limit: Número máximo de resultados a devolver (máximo 1000)
-        offset: Número de resultados a omitir (para paginación)
-        filters: Filtros en formato de Meilisearch (ej: "file_extension = .pdf")
-        sort: Lista de campos por los que ordenar (ej: ["date:desc", "title:asc"])
-        
-    Returns:
-        dict: Respuesta de Meilisearch con los resultados de la búsqueda
-              - hits: Lista de documentos encontrados
-              - query: Consulta original
-              - processingTimeMs: Tiempo de procesamiento
-              - limit: Límite aplicado
-              - offset: Offset aplicado
-              - estimatedTotalHits: Número estimado total de resultados
-              
-    Ejemplo:
-        # Búsqueda simple
-        resultados = search_documents("inteligencia artificial")
-        
-        # Búsqueda con filtros
-        resultados = search_documents(
-            query="contrato",
-            filters="file_extension = .pdf AND file_size_bytes > 100000",
-            sort=["date:desc"],
-            limit=10
-        )
-        
-    Raises:
-        RuntimeError: Si hay errores durante la búsqueda
-        ValueError: Si los parámetros son inválidos
-    """
-    # Validar parámetros
-    if limit <= 0 or limit > 1000:
-        raise ValueError("El límite debe estar entre 1 y 1000")
-    if offset < 0:
-        raise ValueError("El offset no puede ser negativo")
+    if filters:
+        search_options["filter"] = filters
     
-    # Asegurar que el cliente está inicializado
-    initialize_meilisearch()
+    if sort:
+        search_options["sort"] = sort
     
+    search_options["attributesToHighlight"] = ["title", "summary"]
+    search_options["highlightPreTag"] = "<mark>"
+    search_options["highlightPostTag"] = "</mark>"
+    
+    index = client.index(INDEX_NAME)
+    results = index.search(query, search_options)
+    
+    results["source"] = "meilisearch"
+    
+    return results
+
+
+def _search_local_fallback(
+    query: str,
+    limit: int,
+    offset: int,
+    filters: Optional[str],
+    sort: Optional[List[str]]
+) -> Dict[str, Any]:
     try:
-        # Construir opciones de búsqueda
-        search_options = {
+        documents = []
+        
+        if LOCAL_DATA_PATH.exists():
+            for json_file in LOCAL_DATA_PATH.glob("*.json"):
+                try:
+                    with open(json_file, 'r', encoding='utf-8') as f:
+                        doc = json.load(f)
+                        documents.append(doc)
+                except Exception as e:
+                    print(f"Error leyendo {json_file}: {e}")
+                    continue
+        
+        filtered_docs = _apply_local_filters(documents, filters)
+        
+        if query:
+            filtered_docs = _apply_local_search(filtered_docs, query)
+        
+        if sort:
+            filtered_docs = _apply_local_sort(filtered_docs, sort)
+        
+        total = len(filtered_docs)
+        paginated = filtered_docs[offset:offset + limit]
+        
+        return {
+            "hits": paginated,
+            "query": query,
+            "processingTimeMs": 0,
             "limit": limit,
-            "offset": offset
+            "offset": offset,
+            "estimatedTotalHits": total,
+            "source": "local_fallback"
         }
         
-        # Añadir filtros si se proporcionan
-        if filters:
-            search_options["filter"] = filters
-            
-        # Añadir ordenación si se proporciona
-        if sort:
-            search_options["sort"] = sort
-            
-        # Configurar resaltado de términos
-        search_options["attributesToHighlight"] = ["title", "summary"]
-        search_options["highlightPreTag"] = "<mark>"
-        search_options["highlightPostTag"] = "</mark>"
-        
-        # Realizar búsqueda
-        index = get_client().index(INDEX_NAME)
-        results = index.search(query, search_options)
-        
-        # Mensaje de depuración - comentado para producción
-        # print(f"Búsqueda realizada: '{query}' -> {results.get('estimatedTotalHits', 0)} resultados")
-        
-        return results
-        
-    except MeilisearchError as e:
-        raise RuntimeError(f"Error en la búsqueda: {e.message if hasattr(e, 'message') else str(e)}") from e
     except Exception as e:
-        raise RuntimeError(f"Error inesperado en la búsqueda: {str(e)}") from e
+        print(f"Error en búsqueda local: {e}")
+        return {
+            "hits": [],
+            "query": query,
+            "processingTimeMs": 0,
+            "limit": limit,
+            "offset": offset,
+            "estimatedTotalHits": 0,
+            "source": "local_fallback",
+            "error": str(e)
+        }
+
+
+def _apply_local_filters(documents: List[Dict], filters: Optional[str]) -> List[Dict]:
+    if not filters:
+        return documents
+    
+    filtered = []
+    
+    for doc in documents:
+        try:
+            if "public = true" in filters and doc.get("public") != True:
+                continue
+            elif "public = false" in filters and doc.get("public") != False:
+                continue
+            
+            if "apartado = " in filters:
+                import re
+                match = re.search(r'apartado = "([^"]+)"', filters)
+                if match and doc.get("apartado") != match.group(1):
+                    continue
+            
+            if "file_extension = " in filters:
+                import re
+                match = re.search(r'file_extension = \.(\w+)', filters)
+                if match and not doc.get("file_extension", "").endswith(f".{match.group(1)}"):
+                    continue
+            
+            filtered.append(doc)
+            
+        except:
+            filtered.append(doc)
+    
+    return filtered
+
+
+def _apply_local_search(documents: List[Dict], query: str) -> List[Dict]:
+    query_lower = query.lower()
+    results = []
+    
+    for doc in documents:
+        searchable_text = " ".join([
+            str(doc.get("title", "")),
+            str(doc.get("summary", "")),
+            str(doc.get("filename", "")),
+            " ".join(doc.get("keywords", []))
+        ]).lower()
+        
+        if query_lower in searchable_text:
+            results.append(doc)
+    
+    return results
+
+
+def _apply_local_sort(documents: List[Dict], sort_fields: List[str]) -> List[Dict]:
+    sorted_docs = documents.copy()
+    
+    for sort_field in reversed(sort_fields):
+        field = sort_field.replace(":desc", "").replace(":asc", "")
+        reverse = ":desc" in sort_field
+        
+        sorted_docs.sort(
+            key=lambda x: x.get(field, ""),
+            reverse=reverse
+        )
+    
+    return sorted_docs
 
 
 def get_index_stats() -> Dict[str, Any]:
-    """
-    Obtiene estadísticas del índice de documentos.
-    
-    Returns:
-        dict: Estadísticas del índice incluyendo:
-              - numberOfDocuments: Número total de documentos indexados
-              - isIndexing: Si el índice está procesando documentos
-              - fieldDistribution: Distribución de campos
-              
-    Raises:
-        RuntimeError: Si hay errores obteniendo las estadísticas
-    """
-    initialize_meilisearch()
-    
-    try:
-        index = get_client().index(INDEX_NAME)
-        stats = index.get_stats()
-        
-        # Añadir información adicional útil
-        stats["index_name"] = INDEX_NAME
-        stats["last_updated"] = "2024-06-05T22:00:00Z"  # En producción, usar timestamp real
-        
-        return stats
-        
-    except Exception as e:
-        raise RuntimeError(f"Error obteniendo estadísticas del índice: {str(e)}") from e
-
-
-# ==================================================================================
-#                           FUNCIONES DE MANTENIMIENTO
-# ==================================================================================
-
-def clear_index() -> None:
-    """
-    Elimina todos los documentos del índice.
-    
-    ADVERTENCIA: Esta operación no se puede deshacer.
-    Solo usar durante desarrollo o mantenimiento.
-    
-    Raises:
-        RuntimeError: Si hay errores durante la operación
-    """
-    initialize_meilisearch()
-    
-    try:
-        index = get_client().index(INDEX_NAME)
-        task = index.delete_all_documents()
-        get_client().wait_for_task(task.task_uid)
-        
-        print(f"Advertencia: Todos los documentos han sido eliminados del índice '{INDEX_NAME}'")
-        
-    except Exception as e:
-        raise RuntimeError(f"Error limpiando el índice: {str(e)}") from e
-
-
-def reset_index() -> None:
-    """
-    Elimina y recrea completamente el índice.
-    
-    ADVERTENCIA: Esta operación elimina todos los datos y configuraciones.
-    Solo usar durante desarrollo o para resolver problemas graves.
-    
-    Raises:
-        RuntimeError: Si hay errores durante la operación
-    """
-    global client
-    
-    if client is None:
-        raise RuntimeError("Cliente no inicializado")
-    
-    try:
-        # Eliminar índice existente
+    if check_meilisearch_health():
         try:
-            task = client.delete_index(INDEX_NAME)
-            client.wait_for_task(task.task_uid)
-            print(f"Índice '{INDEX_NAME}' eliminado")
+            index = client.index(INDEX_NAME)
+            stats = index.get_stats()
+            stats["source"] = "meilisearch"
+            return stats
         except:
-            # El índice puede no existir, continuar
             pass
-        
-        # Recrear índice
-        task = client.create_index(
-            uid=INDEX_NAME,
-            options={"primaryKey": INDEX_CONFIG["primaryKey"]}
-        )
-        client.wait_for_task(task.task_uid)
-        
-        # Reconfigurar
-        _configurar_indice()
-        
-        print(f"Índice '{INDEX_NAME}' recreado y configurado")
-        
-    except Exception as e:
-        raise RuntimeError(f"Error recreando el índice: {str(e)}") from e
-
-
-# ==================================================================================
-#                           SCRIPT DE PRUEBAS
-# ==================================================================================
-
-if __name__ == "__main__":
-    """
-    Script de pruebas para verificar la funcionalidad de Meilisearch.
-    
-    Ejecuta este archivo directamente para probar la conexión:
-    python meilisearch_service.py
-    """
-    
-    print("Probando conexión con Meilisearch...")
-    print("=" * 50)
     
     try:
-        # Inicializar cliente
-        initialize_meilisearch()
-        print("Conexión establecida correctamente")
-        
-        # Obtener estadísticas
-        stats = get_index_stats()
-        print(f"Documentos indexados: {stats.get('numberOfDocuments', 0)}")
-        print(f"Estado del índice: {'Indexando' if stats.get('isIndexing', False) else 'Listo'}")
-        
-        # Realizar búsqueda de prueba
-        results = search_documents("", limit=5)
-        print(f"Total de documentos disponibles: {results.get('estimatedTotalHits', 0)}")
-        
-        print("\nTodas las pruebas pasaron exitosamente")
-        
-    except Exception as e:
-        print(f"\nError en las pruebas: {e}")
-        print("\nPasos para solucionar:")
-        print("   1. Verifica que Meilisearch esté ejecutándose")
-        print("   2. Confirma la URL en MEILISEARCH_HOST")
-        print("   3. Verifica la clave maestra si es necesaria")
-        print(f"   4. URL configurada: {settings.MEILISEARCH_HOST}")
-        print(f"   5. Clave configurada: {'Sí' if settings.MEILISEARCH_MASTER_KEY else 'No'}")
+        doc_count = len(list(LOCAL_DATA_PATH.glob("*.json"))) if LOCAL_DATA_PATH.exists() else 0
+        return {
+            "numberOfDocuments": doc_count,
+            "isIndexing": False,
+            "source": "local_fallback"
+        }
+    except:
+        return {
+            "numberOfDocuments": 0,
+            "isIndexing": False,
+            "source": "error"
+        }
+
+
+def is_available() -> bool:
+    return _meilisearch_available
+
+initialize_meilisearch()

@@ -1,192 +1,57 @@
-"""
-Servicio de IA Multi-proveedor - Extracción Inteligente de Metadatos
-
-Este módulo proporciona una interfaz unificada para múltiples proveedores
-de IA (Google Gemini, OpenAI, DeepSeek) para el análisis y extracción
-automática de metadatos de documentos.
-"""
-
 from __future__ import annotations
 
-import io
 import json
 import re
 import hashlib
+import io
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Callable, Any, Optional
+from typing import Dict, Any, Optional
 from abc import ABC, abstractmethod
 
-import pdfplumber
-from docx import Document as DocxDocument
+from docx import Document
+from openpyxl import load_workbook
 from pptx import Presentation
-import openpyxl
 
+import google.generativeai as genai
 from openai import OpenAI
-from google.generativeai import GenerativeModel, configure
 
 from config import settings
 
-# Extensiones permitidas
-ALLOWED_EXTENSIONS = {'.pdf', '.docx', '.pptx', '.xlsx', '.txt', '.md'}
+ALLOWED_EXTENSIONS = {'.pdf', '.docx', '.pptx', '.xlsx', '.txt', '.md', '.png', '.jpg', '.jpeg', '.mp3', '.mp4'}
 
-# Diccionarios de handlers
-_EXTRACTION_HANDLERS: Dict[str, Callable[[bytes], str]] = {}
 _AI_PROVIDERS: Dict[str, type["AIService"]] = {}
 
-
-# ==================================================================================
-#                    FUNCIONES DE EXTRACCIÓN DE TEXTO
-# ==================================================================================
-
-def _text_from_pdf(file_bytes: bytes) -> str:
-    """Extrae texto de un archivo PDF."""
-    try:
-        with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
-            pages_text = []
-            for page in pdf.pages:
-                text = page.extract_text(x_tolerance=1, y_tolerance=1)
-                if text:
-                    pages_text.append(text.strip())
-            return "\n\n".join(pages_text)
-    except Exception:
-        return ""
-
-def _text_from_docx(file_bytes: bytes) -> str:
-    """Extrae texto de un documento Word."""
-    try:
-        doc = DocxDocument(io.BytesIO(file_bytes))
-        paragraphs = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
-        return "\n\n".join(paragraphs)
-    except Exception:
-        return ""
-
-def _text_from_pptx(file_bytes: bytes) -> str:
-    """Extrae texto de una presentación PowerPoint."""
-    try:
-        presentation = Presentation(io.BytesIO(file_bytes))
-        slides_content = []
-        
-        for slide_num, slide in enumerate(presentation.slides, 1):
-            slide_texts = []
-            for shape in slide.shapes:
-                if hasattr(shape, "text") and shape.text.strip():
-                    slide_texts.append(shape.text.strip())
-            
-            if slide_texts:
-                slide_content = f"--- Diapositiva {slide_num} ---\n" + "\n".join(slide_texts)
-                slides_content.append(slide_content)
-                
-        return "\n\n".join(slides_content)
-    except Exception:
-        return ""
-
-def _text_from_xlsx(file_bytes: bytes) -> str:
-    """Extrae texto de una hoja de cálculo Excel."""
-    try:
-        workbook = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
-        sheets_content = []
-        
-        for sheet in workbook.worksheets:
-            sheet_title = f"--- Hoja: {sheet.title} ---"
-            rows_content = []
-            
-            for row in sheet.iter_rows(values_only=True):
-                row_values = [str(cell).strip() for cell in row if cell is not None and str(cell).strip()]
-                if row_values:
-                    rows_content.append(" | ".join(row_values))
-            
-            if rows_content:
-                sheet_content = sheet_title + "\n" + "\n".join(rows_content)
-                sheets_content.append(sheet_content)
-                
-        return "\n\n".join(sheets_content)
-    except Exception:
-        return ""
-
-# Registrar handlers
-_EXTRACTION_HANDLERS.update({
-    ".pdf": _text_from_pdf,
-    ".docx": _text_from_docx,
-    ".pptx": _text_from_pptx,
-    ".xlsx": _text_from_xlsx,
-})
-
-
-# ==================================================================================
-#                    CLASES DE SERVICIOS DE IA
-# ==================================================================================
-
-def _extract_text_content(file_bytes: bytes, file_extension: str) -> str:
-    """Extrae texto del archivo según su tipo."""
-    ext = file_extension.lower().strip()
-    handler = _EXTRACTION_HANDLERS.get(ext)
-    
-    if handler:
-        try:
-            extracted_text = handler(file_bytes)
-            if extracted_text.strip():
-                return extracted_text
-        except Exception:
-            pass
-    
-    # Fallback: intentar decodificar como texto
-    try:
-        for encoding in ['utf-8', 'latin-1', 'cp1252']:
-            try:
-                decoded_text = file_bytes.decode(encoding, errors='ignore')
-                if decoded_text.strip():
-                    return decoded_text
-            except:
-                continue
-        return file_bytes.decode('utf-8', errors='ignore')
-    except Exception:
-        return "Contenido no extraíble - archivo binario"
-
+def is_large_file(file_size_bytes: int) -> bool:
+    return file_size_bytes > 20 * 1024 * 1024
 
 class AIService(ABC):
-    """Clase base abstracta para servicios de IA."""
-    
     def __init__(self):
-        self.max_text_length = settings.MAX_TEXT_LENGTH
         self.max_summary_words = settings.MAX_SUMMARY_WORDS
         self.max_keywords = settings.MAX_KEYWORDS
         self.api_timeout = settings.API_TIMEOUT
         self.model_name = "unknown"
     
-    def _create_analysis_prompt(self, text_content: str) -> str:
-        """Crea el prompt para análisis de documentos."""
+    def _create_analysis_prompt(self) -> str:
         return f"""
-Eres un asistente experto en análisis y extracción de metadatos de documentos profesionales.
+Analiza este documento y extrae los siguientes metadatos en formato JSON estricto:
 
-TAREA: Analiza el documento y extrae los metadatos en formato JSON estricto.
-
-INSTRUCCIONES:
-1. "title": Extrae el título principal o tema central.
+1. "title": Título principal o tema central del documento.
 2. "summary": Resumen conciso de máximo {self.max_summary_words} palabras.
 3. "keywords": Entre 5 y {self.max_keywords} palabras clave relevantes.
 4. "date": Fecha más significativa en formato YYYY-MM-DD o "Fecha no encontrada".
 
-FORMATO DE SALIDA:
-- Responde ÚNICAMENTE con el objeto JSON
-- NO incluyas bloques de código markdown
-- NO añadas texto explicativo
-
-DOCUMENTO:
-{text_content[:self.max_text_length]}
+IMPORTANTE: Responde ÚNICAMENTE con el objeto JSON, sin bloques de código markdown ni texto adicional.
 """
     
     def _parse_response(self, raw_response: str) -> Dict[str, Any]:
-        """Parsea la respuesta del servicio de IA."""
         try:
-            # Intentar parsear directo
             data = json.loads(raw_response.strip())
             if isinstance(data, dict):
                 return data
         except json.JSONDecodeError:
             pass
         
-        # Buscar JSON en la respuesta
         json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', raw_response, re.DOTALL)
         if json_match:
             try:
@@ -196,7 +61,6 @@ DOCUMENTO:
             except json.JSONDecodeError:
                 pass
         
-        # Buscar JSON entre llaves
         start_brace = raw_response.find('{')
         end_brace = raw_response.rfind('}')
         
@@ -208,7 +72,6 @@ DOCUMENTO:
             except json.JSONDecodeError:
                 pass
         
-        # Fallback
         return {
             "title": "Error de parseo",
             "summary": "No se pudo extraer el resumen.",
@@ -217,26 +80,17 @@ DOCUMENTO:
         }
     
     @abstractmethod
-    def _call_ai(self, text_content: str) -> Dict[str, Any]:
-        """Realiza la llamada al servicio de IA."""
+    def _process_file(self, file_bytes: bytes, filename: str) -> Dict[str, Any]:
         pass
     
     def extract_metadata(self, file_bytes: bytes, filename: str) -> Dict[str, Any]:
-        """Extrae metadatos del archivo."""
         try:
             path = Path(filename)
             file_extension = path.suffix.lower()
             file_id = path.stem
             
-            # Extraer texto
-            text_content = _extract_text_content(file_bytes, file_extension)
-            if not text_content.strip():
-                text_content = f"Archivo de tipo {file_extension} sin contenido extraíble."
+            ai_metadata = self._process_file(file_bytes, filename)
             
-            # Llamar a IA
-            ai_metadata = self._call_ai(text_content)
-            
-            # Calcular hash
             file_hash = hashlib.sha256(file_bytes).hexdigest()
             
             return {
@@ -250,7 +104,6 @@ DOCUMENTO:
                 "date": ai_metadata["date"],
                 "processing_timestamp": datetime.now().isoformat() + "Z",
                 "ai_model": self.model_name,
-                "text_length": len(text_content),
                 "file_hash": file_hash
             }
         except Exception as e:
@@ -260,7 +113,7 @@ DOCUMENTO:
                 "file_extension": Path(filename).suffix.lower(),
                 "file_size_bytes": len(file_bytes),
                 "title": f"Error procesando {filename}",
-                "summary": "No se pudieron extraer metadatos.",
+                "summary": "No se pudieron extraer metadatos debido a un error.",
                 "keywords": [],
                 "date": "Fecha no encontrada",
                 "processing_timestamp": datetime.now().isoformat() + "Z",
@@ -270,21 +123,100 @@ DOCUMENTO:
 
 
 class GeminiService(AIService):
-    """Servicio de Google Gemini."""
-    
     def __init__(self):
         super().__init__()
         self.model_name = "gemini-1.5-flash-latest"
-        configure(api_key=settings.GEMINI_API_KEY)
-        self.client = GenerativeModel(self.model_name)
-    
-    def _call_ai(self, text_content: str) -> Dict[str, Any]:
+        genai.configure(api_key=settings.GEMINI_API_KEY)
+        self.model = genai.GenerativeModel(self.model_name)
+
+    def _extract_text_from_office_doc(self, file_bytes: bytes, extension: str) -> str:
+        text_content = []
         try:
-            prompt = self._create_analysis_prompt(text_content)
-            response = self.client.generate_content(
-                prompt,
-                request_options={"timeout": self.api_timeout}
-            )
+            bytes_io = io.BytesIO(file_bytes)
+            if extension == '.docx':
+                doc = Document(bytes_io)
+                for para in doc.paragraphs:
+                    text_content.append(para.text)
+            elif extension == '.xlsx':
+                workbook = load_workbook(filename=bytes_io, read_only=True)
+                for sheet in workbook.worksheets:
+                    for row in sheet.iter_rows():
+                        for cell in row:
+                            if cell.value:
+                                text_content.append(str(cell.value))
+            elif extension == '.pptx':
+                prs = Presentation(bytes_io)
+                for slide in prs.slides:
+                    for shape in slide.shapes:
+                        if hasattr(shape, "text"):
+                            text_content.append(shape.text)
+            return "\n".join(text_content)
+        except Exception as e:
+            print(f"No se pudo extraer texto para {extension}: {e}")
+            return ""
+
+    def _upload_to_gemini(self, file_bytes: bytes, filename: str, mime_type: str) -> genai.File:
+        uploaded_file = genai.upload_file(
+            path=None,
+            display_name=filename,
+            mime_type=mime_type,
+            file=file_bytes
+        )
+        
+        while uploaded_file.state.name == "PROCESSING":
+            import time
+            time.sleep(1)
+            uploaded_file = genai.get_file(uploaded_file.name)
+        
+        if uploaded_file.state.name == "FAILED":
+            raise ValueError(f"Error subiendo archivo a Gemini: {uploaded_file.state.name}")
+            
+        return uploaded_file
+    
+    def _get_mime_type(self, filename: str) -> str:
+        ext = Path(filename).suffix.lower()
+        mime_types = {
+            '.pdf': 'application/pdf',
+            '.txt': 'text/plain',
+            '.md': 'text/markdown',
+            '.png': 'image/png',
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.mp3': 'audio/mpeg',
+            '.mp4': 'video/mp4',
+        }
+        return mime_types.get(ext, 'application/octet-stream')
+    
+    def _process_file(self, file_bytes: bytes, filename: str) -> Dict[str, Any]:
+        try:
+            prompt = self._create_analysis_prompt()
+            
+            extension = Path(filename).suffix.lower()
+            unsupported_office_ext = ['.docx', '.xlsx', '.pptx']
+            
+            if extension in unsupported_office_ext:
+                print(f"Convirtiendo archivo Office '{filename}' a texto.")
+                extracted_text = self._extract_text_from_office_doc(file_bytes, extension)
+                if not extracted_text:
+                    raise ValueError(f"El archivo '{filename}' está vacío o no se pudo extraer texto.")
+                
+                file_bytes_for_ai = extracted_text.encode('utf-8')
+                mime_type = 'text/plain'
+            else:
+                file_bytes_for_ai = file_bytes
+                mime_type = self._get_mime_type(filename)
+
+            if is_large_file(len(file_bytes_for_ai)):
+                uploaded_file = self._upload_to_gemini(file_bytes_for_ai, filename, mime_type)
+                response = self.model.generate_content([uploaded_file, prompt])
+                genai.delete_file(uploaded_file.name)
+            else:
+                file_data = {
+                    "mime_type": mime_type,
+                    "data": file_bytes_for_ai
+                }
+                response = self.model.generate_content([file_data, prompt])
+            
             raw_text = response.text
             parsed_data = self._parse_response(raw_text)
             
@@ -295,6 +227,7 @@ class GeminiService(AIService):
                 "date": str(parsed_data.get("date", "Fecha no encontrada")).strip(),
             }
         except Exception as e:
+            print(f"Error en _process_file: {e}")
             return {
                 "title": "Error de procesamiento con Gemini",
                 "summary": f"Error: {str(e)}",
@@ -302,26 +235,42 @@ class GeminiService(AIService):
                 "date": "Fecha no encontrada",
             }
 
-
 class OpenAIService(AIService):
-    """Servicio de OpenAI."""
-    
     def __init__(self):
         super().__init__()
         self.model_name = "gpt-4o-mini"
         self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
     
-    def _call_ai(self, text_content: str) -> Dict[str, Any]:
+    def _process_file(self, file_bytes: bytes, filename: str) -> Dict[str, Any]:
         try:
-            prompt = self._create_analysis_prompt(text_content)
+            import base64
+            
+            file_base64 = base64.b64encode(file_bytes).decode('utf-8')
+            
+            prompt = self._create_analysis_prompt()
+            
+            messages = [
+                {
+                    "role": "system", 
+                    "content": "Eres un asistente experto en análisis de documentos."
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": f"Archivo: {filename}\n\n{prompt}"
+                        }
+                    ]
+                }
+            ]
+            
             response = self.client.chat.completions.create(
                 model=self.model_name,
-                messages=[
-                    {"role": "system", "content": "Eres un asistente experto en análisis de documentos."},
-                    {"role": "user", "content": prompt}
-                ],
+                messages=messages,
                 timeout=self.api_timeout
             )
+            
             raw_text = response.choices[0].message.content
             parsed_data = self._parse_response(raw_text)
             
@@ -341,8 +290,6 @@ class OpenAIService(AIService):
 
 
 class DeepSeekService(AIService):
-    """Servicio de DeepSeek."""
-    
     def __init__(self):
         super().__init__()
         self.model_name = "deepseek-chat"
@@ -351,19 +298,29 @@ class DeepSeekService(AIService):
             base_url="https://api.deepseek.com"
         )
     
-    def _call_ai(self, text_content: str) -> Dict[str, Any]:
+    def _process_file(self, file_bytes: bytes, filename: str) -> Dict[str, Any]:
         try:
-            prompt = self._create_analysis_prompt(text_content)
+            prompt = self._create_analysis_prompt()
+            
+            messages = [
+                {
+                    "role": "system",
+                    "content": "Eres un asistente experto en análisis de documentos."
+                },
+                {
+                    "role": "user",
+                    "content": f"Archivo: {filename}\n\n{prompt}\n\nNOTA: El archivo ha sido proporcionado pero no puedo acceder directamente a su contenido binario. Por favor, proporciona metadatos genéricos basados en el nombre del archivo."
+                }
+            ]
+            
             response = self.client.chat.completions.create(
                 model=self.model_name,
-                messages=[
-                    {"role": "system", "content": "Eres un asistente experto en análisis de documentos."},
-                    {"role": "user", "content": prompt}
-                ],
+                messages=messages,
                 max_tokens=1000,
                 temperature=0.7,
                 timeout=self.api_timeout
             )
+            
             raw_text = response.choices[0].message.content
             parsed_data = self._parse_response(raw_text)
             
@@ -382,7 +339,6 @@ class DeepSeekService(AIService):
             }
 
 
-# Registrar proveedores
 _AI_PROVIDERS.update({
     "google": GeminiService,
     "openai": OpenAIService,
@@ -390,12 +346,7 @@ _AI_PROVIDERS.update({
 })
 
 
-# ==================================================================================
-#                    FUNCIONES PÚBLICAS
-# ==================================================================================
-
 def get_ai_service() -> AIService:
-    """Obtiene el servicio de IA configurado."""
     try:
         provider = settings.AI_PROVIDER.lower()
         service_class = _AI_PROVIDERS.get(provider)
@@ -411,23 +362,23 @@ def get_ai_service() -> AIService:
 
 
 def extract_metadata(file_bytes: bytes, filename: str) -> Dict[str, Any]:
-    """Función principal para extraer metadatos."""
     try:
         service = get_ai_service()
         return service.extract_metadata(file_bytes, filename)
     except Exception as e:
-        print(f"Error extrayendo metadatos: {e}")
-        
-        # Fallback sin IA
+        print(f"Error extrayendo metadatos con IA: {e}")
         path = Path(filename)
+        file_extension = path.suffix.lower()
+        file_id = path.stem
+        
         return {
-            "id": path.stem,
+            "id": file_id,
             "filename": filename,
-            "file_extension": path.suffix.lower(),
+            "file_extension": file_extension,
             "file_size_bytes": len(file_bytes),
             "title": f"Documento: {filename}",
-            "summary": "Metadatos extraídos sin IA",
-            "keywords": [path.suffix.replace(".", ""), "documento"],
+            "summary": "Metadatos extraídos sin IA debido a error de configuración",
+            "keywords": [file_extension.replace(".", ""), "documento"],
             "date": datetime.now().strftime("%Y-%m-%d"),
             "processing_timestamp": datetime.now().isoformat() + "Z",
             "ai_model": "fallback",
@@ -437,18 +388,15 @@ def extract_metadata(file_bytes: bytes, filename: str) -> Dict[str, Any]:
 
 
 def get_supported_extensions() -> list[str]:
-    """Devuelve las extensiones soportadas."""
     return list(ALLOWED_EXTENSIONS)
 
 
 def is_supported_file(filename: str) -> bool:
-    """Verifica si un archivo es soportado."""
     file_extension = Path(filename).suffix.lower()
     return file_extension in ALLOWED_EXTENSIONS
 
 
 def estimate_processing_time(file_size_bytes: int) -> int:
-    """Estima el tiempo de procesamiento."""
     if file_size_bytes < 100_000:
         return 5
     elif file_size_bytes < 1_000_000:

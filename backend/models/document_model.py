@@ -35,6 +35,7 @@ class DocumentMetadata(BaseModel):
     - Metadatos extraídos por IA (Gemini)
     - Ubicación en el almacenamiento
     - Fechas de procesamiento
+    - Información de versiones y relaciones entre documentos
     
     El modelo utiliza Pydantic v2 para validación automática y está optimizado
     para ser utilizado tanto en respuestas de API como en indexación de búsqueda.
@@ -117,6 +118,26 @@ class DocumentMetadata(BaseModel):
         description="Ruta del archivo en Cloud Storage",
         example="documents/2024/06/05/contrato_empresa_2024.pdf"
     )
+    
+    # ===== INFORMACIÓN DE VERSIONES =====
+    version: int = Field(
+        default=1,
+        description="Número de versión del documento",
+        ge=1,
+        example=1
+    )
+    
+    parent_id: Optional[str] = Field(
+        default=None,
+        description="ID del documento principal (solo para versiones > 1)",
+        example="informe_anual_2024"
+    )
+    
+    versions: Optional[List[str]] = Field(
+        default=[],
+        description="Lista de IDs de las versiones del documento (solo para la versión principal)",
+        example=["informe_anual_2024_v2", "informe_anual_2024_v3"]
+    )
 
     # ===== CONFIGURACIÓN DE PYDANTIC V2 =====
     model_config = {
@@ -136,7 +157,9 @@ class DocumentMetadata(BaseModel):
                 "keywords": ["informe", "anual", "resultados", "actividades", "2024"],
                 "date": "2024-12-31",
                 "storage_path": "documents/2024/06/05/informe_anual_2024.pdf",
-                "media_type": "application/pdf"
+                "media_type": "application/pdf",
+                "version": 1,
+                "versions": ["informe_anual_2024_v2", "informe_anual_2024_v3"]
             }
         }
     }
