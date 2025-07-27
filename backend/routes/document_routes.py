@@ -1,10 +1,3 @@
-"""
-Rutas de API para gestión de documentos
-
-Este módulo contiene todas las rutas relacionadas con la gestión de documentos,
-incluyendo la funcionalidad de biblioteca pública integrada.
-"""
-
 import os
 import json
 import uuid
@@ -16,7 +9,6 @@ from typing import Dict, List, Any, Optional
 from fastapi import APIRouter, UploadFile, File, HTTPException, status, Query, Depends, Form
 from fastapi.responses import StreamingResponse
 
-# Importar el nuevo servicio de IA en lugar de gemini_service
 from services.ai_service import extract_metadata, is_supported_file, estimate_processing_time
 from services.firebase_service import (
     upload_file_to_storage, 
@@ -26,7 +18,8 @@ from services.firebase_service import (
     check_file_hash,
     save_document_metadata,
     log_event,
-    get_document_versions,
+    get_document_by_filename,
+    get_document_by_stem,
     get_highest_version
 )
 from services.meilisearch_service import add_documents, search_documents
@@ -43,17 +36,15 @@ router = APIRouter(
     }
 )
 
-# Configuración
 ROOT_DIR = Path(__file__).resolve().parents[1]
 LOCAL_METADATA_DIR = ROOT_DIR / ".." / "meilisearch-data" / "indexes" / "documents"
 LOCAL_METADATA_DIR.mkdir(parents=True, exist_ok=True)
 
-MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
+MAX_FILE_SIZE = 50 * 1024 * 1024
 ALLOWED_EXTENSIONS = {'.pdf', '.docx', '.pptx', '.xlsx', '.txt', '.md'}
 
 
 def _validate_uploaded_file(file: UploadFile) -> None:
-    """Valida un archivo subido."""
     if not file.filename:
         raise HTTPException(status_code=400, detail="El archivo debe tener un nombre válido")
     
@@ -67,7 +58,6 @@ def _validate_uploaded_file(file: UploadFile) -> None:
 
 
 def _save_metadata_locally(metadata: Dict[str, Any], filename: str) -> Path:
-    """Guarda metadatos localmente como backup."""
     json_filename = f"{Path(filename).stem}.json"
     json_path = LOCAL_METADATA_DIR / json_filename
     
@@ -77,26 +67,15 @@ def _save_metadata_locally(metadata: Dict[str, Any], filename: str) -> Path:
     return json_path
 
 
-def _generate_unique_filename(original_filename: str, version: int = 1) -> str:
-    """Genera nombre único para evitar colisiones."""
-    path = Path(original_filename)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    unique_id = str(uuid.uuid4())[:8]
-    version_suffix = f"_v{version}" if version > 1 else ""
-    return f"{path.stem}{version_suffix}_{timestamp}_{unique_id}{path.suffix}"
-
-
 @router.post("/upload", response_model=DocumentMetadata)
 async def upload_document(
     file: UploadFile = File(...),
     is_public: bool = Form(False),
     user_id: str = Form("anonymous"),
-    # Metadatos adicionales opcionales
     apartado: str = Form(None),
     categoria: str = Form(None),
     tags: str = Form(None)
 ):
-    """Sube un documento y extrae automáticamente sus metadatos."""
     try:
         _validate_uploaded_file(file)
         
@@ -108,7 +87,6 @@ async def upload_document(
         if len(file_bytes) > MAX_FILE_SIZE:
             raise HTTPException(status_code=413, detail=f"Archivo excede {MAX_FILE_SIZE // (1024*1024)}MB")
         
-        # Verificar duplicados por hash
         file_hash = calculate_file_hash(file_bytes)
         existing_doc = check_file_hash(file_hash)
         
@@ -118,24 +96,26 @@ async def upload_document(
                 detail=f"Archivo duplicado detectado"
             )
         
-        # Generar ID y versión
-        file_id_base = Path(file.filename).stem
-        highest_version = get_highest_version(file_id_base)
-        version = highest_version + 1
-        parent_id = file_id_base if version > 1 else None
-        file_id = f"{file_id_base}_v{version}" if version > 1 else file_id_base
+        # Implementación del sistema de versionado
+        # Determinar si es una nueva versión basada en el nombre base
+        file_stem = Path(file.filename).stem
+        existing_document = get_document_by_stem(file_stem)
         
-        # Generar nombre único
-        unique_filename = _generate_unique_filename(file.filename, version)
+        version = 1
+        parent_id = None
+        file_id = file_stem
+        
+        if existing_document:
+            # Es una nueva versión
+            highest_version = get_highest_version(file_stem)
+            version = highest_version + 1
+            parent_id = file_stem
+            file_id = f"{file_stem}_v{version}"
+        
         content_type = file.content_type or "application/octet-stream"
-        
-        # Extraer metadatos con IA
         extracted_metadata = extract_metadata(file_bytes, file.filename)
+        storage_path = upload_file_to_storage(file_bytes, file.filename, content_type)
         
-        # Subir a Firebase Storage
-        storage_path = upload_file_to_storage(file_bytes, unique_filename, content_type)
-        
-        # Metadatos adicionales personalizados
         custom_metadata = {}
         if apartado:
             custom_metadata["apartado"] = apartado
@@ -144,48 +124,53 @@ async def upload_document(
         if tags:
             custom_metadata["tags"] = tags.split(",") if isinstance(tags, str) else tags
         
-        # Metadatos completos
         complete_metadata = {
             **extracted_metadata,
             "file_id": file_id,
-            "file_id_base": file_id_base,
             "storage_path": storage_path,
             "media_type": content_type,
             "original_filename": file.filename,
-            "unique_filename": unique_filename,
             "upload_timestamp": datetime.utcnow().isoformat() + "Z",
             "file_hash": file_hash,
             "processing_time_estimate": f"{estimate_processing_time(len(file_bytes))} segundos",
             "public": is_public,
-            "publico": is_public,  # Compatibilidad con frontend
-            "version": version,
-            "parent_id": parent_id,
             "uploader_id": user_id,
             **custom_metadata
         }
         
-        # Guardar metadatos
+        # Guardar en Firebase con versión
         save_document_metadata(file_id, complete_metadata, file_hash, version, parent_id)
+        
+        # Guardar JSON localmente
         _save_metadata_locally(complete_metadata, file.filename)
         
-        # Indexar en Meilisearch
-        try:
-            add_documents([complete_metadata])
-        except Exception as e:
-            print(f"Error indexando en Meilisearch: {e}")
+        # Intentar indexar en Meilisearch
+        indexing_success = add_documents([complete_metadata])
+        
+        # Si es una nueva versión, actualizar el documento principal en Meilisearch
+        if version > 1 and parent_id:
+            parent_doc = get_document_by_stem(parent_id)
+            if parent_doc and indexing_success:
+                from services.meilisearch_service import update_documents
+                update_documents([parent_doc])
         
         # Registrar eventos
         log_event(user_id, "UPLOAD", {
             "file_id": file_id,
             "filename": file.filename,
+            "public": is_public,
             "version": version,
-            "public": is_public
+            "parent_id": parent_id,
+            "indexed_in_meilisearch": indexing_success
         })
         
         audit_log(user_id, 'DOCUMENT_UPLOADED', {
             'file_id': file_id,
             'filename': file.filename,
-            'public': is_public
+            'public': is_public,
+            'version': version,
+            'parent_id': parent_id,
+            'indexed': indexing_success
         })
         
         return DocumentMetadata(**complete_metadata)
@@ -197,30 +182,39 @@ async def upload_document(
         raise HTTPException(status_code=500, detail=f"Error procesando documento: {str(e)}")
 
 
+from services.meilisearch_service import search_documents, is_available as is_meilisearch_available
+
 @router.get("/search")
-async def search_documents_endpoint(
-    query: str = Query(..., min_length=1),
-    limit: int = Query(default=20, ge=1, le=100),
-    offset: int = Query(default=0, ge=0)
-) -> Dict[str, Any]:
-    """Busca documentos por contenido usando búsqueda semántica."""
+async def search_library(
+    q: str = Query(...),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0)
+):
+    """
+    Busca en la biblioteca con fallback automático.
+    """
     try:
-        search_results = search_documents(
-            query=query.strip(),
+        # La función search_documents ya maneja el fallback
+        results = search_documents(
+            query=q,
             limit=limit,
-            offset=offset
+            offset=offset,
+            filters="public = true"  # Solo documentos públicos en biblioteca
         )
         
-        audit_log('system', 'DOCUMENT_SEARCH', {
-            'query': query,
-            'results_count': len(search_results.get('hits', []))
-        })
+        # Informar al frontend sobre la fuente de datos
+        results["meilisearch_available"] = is_meilisearch_available()
         
-        return search_results
+        return results
         
     except Exception as e:
-        audit_log('system', 'SEARCH_ERROR', {'error': str(e)})
-        raise HTTPException(status_code=500, detail=f"Error realizando búsqueda: {str(e)}")
+        return {
+            "hits": [],
+            "query": q,
+            "error": str(e),
+            "meilisearch_available": False,
+            "source": "error"
+        }
 
 
 @router.get("/public")
@@ -229,48 +223,42 @@ async def get_public_documents(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0)
 ) -> Dict[str, Any]:
-    """Obtiene documentos públicos (funcionalidad de biblioteca pública)."""
+    """
+    Obtiene documentos públicos con fallback automático.
+    """
     try:
-        # Intentar con Meilisearch usando el filtro 'public'
-        try:
-            # Primero intentar con el campo "public"
-            filters = "public = true"
-            results = search_documents(
-                query=q.strip() if q else "",
-                limit=limit,
-                offset=offset,
-                filters=filters
-            )
-            
-            # Verificar si hay resultados, si no, intentar con 'publico'
-            if len(results.get('hits', [])) == 0:
-                filters = "publico = true"
-                results = search_documents(
-                    query=q.strip() if q else "",
-                    limit=limit,
-                    offset=offset,
-                    filters=filters
-                )
-            
-            # Si encontramos resultados, registrar y devolver
-            if len(results.get('hits', [])) > 0:
-                audit_log('system', 'PUBLIC_DOCUMENTS_QUERY', {
-                    'query': q,
-                    'results_count': len(results.get('hits', []))
-                })
-                return results
-                
-            # Si no hay resultados, usar el fallback local
-            return await get_public_documents_local(q, limit, offset)
-            
-        except Exception as search_error:
-            print(f"Error con Meilisearch, intentando fallback local: {search_error}")
-            return await get_public_documents_local(q, limit, offset)
+        # Usar la función search_documents que ya tiene fallback integrado
+        filters = "public = true"
+        results = search_documents(
+            query=q.strip() if q else "",
+            limit=limit,
+            offset=offset,
+            filters=filters
+        )
         
-    except Exception as meilisearch_error:
-        # Fallback: buscar en archivos locales
-        print(f"Error con Meilisearch, usando fallback local: {meilisearch_error}")
-        return await get_public_documents_local(q, limit, offset)
+        # Registrar evento si hay resultados
+        if len(results.get('hits', [])) > 0:
+            audit_log('system', 'PUBLIC_DOCUMENTS_QUERY', {
+                'query': q,
+                'results_count': len(results.get('hits', [])),
+                'source': results.get('source', 'unknown')
+            })
+        
+        return results
+        
+    except Exception as e:
+        audit_log('system', 'PUBLIC_SEARCH_ERROR', {'error': str(e)})
+        # En caso de error total, devolver estructura vacía
+        return {
+            "hits": [],
+            "query": q,
+            "processingTimeMs": 0,
+            "limit": limit,
+            "offset": offset,
+            "estimatedTotalHits": 0,
+            "source": "error",
+            "error": str(e)
+        }
 
 
 @router.get("/public-local")
@@ -279,7 +267,6 @@ async def get_public_documents_local(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0)
 ) -> Dict[str, Any]:
-    """Busca documentos públicos en archivos locales (fallback)."""
     try:
         json_files = list(LOCAL_METADATA_DIR.glob("*.json"))
         documents = []
@@ -288,13 +275,12 @@ async def get_public_documents_local(
             try:
                 with open(json_path, "r", encoding="utf-8") as file:
                     metadata = json.load(file)
-                    if metadata.get("public") == True or metadata.get("publico") == True:
+                    if metadata.get("public") == True:
                         documents.append(metadata)
             except Exception as e:
                 print(f"Error leyendo {json_path}: {e}")
                 continue
         
-        # Filtrar por búsqueda si se proporciona
         if q:
             q_lower = q.lower()
             filtered_docs = []
@@ -305,10 +291,8 @@ async def get_public_documents_local(
                     filtered_docs.append(doc)
             documents = filtered_docs
         
-        # Ordenar por fecha
         documents.sort(key=lambda x: x.get("upload_timestamp", ""), reverse=True)
         
-        # Paginar
         total = len(documents)
         paginated_docs = documents[offset:offset + limit]
         
@@ -326,9 +310,37 @@ async def get_public_documents_local(
         raise HTTPException(status_code=500, detail=f"Error en búsqueda local: {str(e)}")
 
 
+@router.get("/versions/{file_stem}")
+async def get_document_versions(file_stem: str):
+    try:
+        # Obtener el documento principal
+        base_document = get_document_by_stem(file_stem)
+        if not base_document:
+            raise HTTPException(status_code=404, detail=f"Documento no encontrado")
+        
+        # Preparar la respuesta con la versión base
+        versions = [base_document]
+        
+        # Agregar todas las versiones
+        version_ids = base_document.get("versions", [])
+        for version_id in version_ids:
+            version_doc = get_document_by_stem(version_id)
+            if version_doc:
+                versions.append(version_doc)
+        
+        # Ordenar por número de versión
+        versions.sort(key=lambda x: x.get("version", 1))
+        
+        return {
+            "document_id": file_stem,
+            "total_versions": len(versions),
+            "versions": versions
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error obteniendo versiones: {str(e)}")
+
 @router.get("/download/{file_stem}")
 async def download_document(file_stem: str):
-    """Descarga un documento por su ID."""
     try:
         metadata_path = LOCAL_METADATA_DIR / f"{file_stem}.json"
         
@@ -360,7 +372,6 @@ async def download_document(file_stem: str):
 
 @router.get("/download_by_path")
 async def download_by_storage_path(path: str = Query(...)):
-    """Descarga un documento por su ruta en Storage."""
     try:
         if not path.strip():
             raise HTTPException(status_code=400, detail="Ruta no puede estar vacía")
@@ -389,7 +400,6 @@ async def download_by_storage_path(path: str = Query(...)):
 
 @router.delete("/delete_by_path")
 async def delete_document_by_path(path: str = Query(...), user_id: str = Query("anonymous")):
-    """Elimina un documento por su ruta en Storage."""
     try:
         from services.firebase_service import delete_file_from_storage
         
@@ -413,7 +423,6 @@ async def delete_document_by_path(path: str = Query(...), user_id: str = Query("
 async def list_all_documents(
     public_only: bool = Query(False)
 ) -> Dict[str, List[Dict[str, Any]]]:
-    """Lista todos los documentos disponibles."""
     try:
         documents = []
         
@@ -445,16 +454,13 @@ async def list_all_documents(
 
 
 @router.get("/storage")
-async def list_storage_files(prefix: str = Query(default="documents/")):
-    """Lista archivos en Firebase Storage."""
+async def list_storage_files(prefix: str = Query(default="")):
     try:
         storage_files = list_files_in_storage(prefix)
         
-        # Enriquecer con metadatos si existen
         for file in storage_files:
             file_extension = Path(file["filename"]).suffix.lower()
             
-            # Asignar tipo
             if "pdf" in file_extension:
                 file["tipo"] = "PDF"
             elif file_extension in [".doc", ".docx"]:
@@ -466,8 +472,7 @@ async def list_storage_files(prefix: str = Query(default="documents/")):
             else:
                 file["tipo"] = "Documento"
             
-            # Intentar cargar metadatos adicionales
-            file["publico"] = False
+            file["public"] = False
             try:
                 file_id = Path(file["filename"]).stem
                 metadata_path = LOCAL_METADATA_DIR / f"{file_id}.json"
@@ -475,7 +480,6 @@ async def list_storage_files(prefix: str = Query(default="documents/")):
                     with open(metadata_path, "r", encoding="utf-8") as f:
                         metadata = json.load(f)
                         file["public"] = metadata.get("public", False)
-                        file["publico"] = metadata.get("public", False)
                         file["apartado"] = metadata.get("apartado", "")
                         file["title"] = metadata.get("title", file["filename"])
                         file["summary"] = metadata.get("summary", "")
@@ -496,9 +500,8 @@ async def list_storage_files(prefix: str = Query(default="documents/")):
 
 @router.get("/{document_id}/versions")
 async def get_document_versions_endpoint(document_id: str):
-    """Obtiene todas las versiones de un documento."""
     try:
-        versions = get_document_versions(document_id)
+        versions = get_document_by_filename(document_id)
         
         if not versions:
             raise HTTPException(status_code=404, detail="Documento no encontrado")
@@ -513,7 +516,6 @@ async def get_document_versions_endpoint(document_id: str):
 
 @router.get("/stats")
 async def get_documents_statistics():
-    """Obtiene estadísticas de documentos."""
     try:
         total_documents = 0
         total_size = 0

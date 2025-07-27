@@ -1,29 +1,23 @@
-"""
-Servicio de Firebase - Integración con Firebase Admin SDK
-
-Este módulo maneja toda la integración con los servicios de Firebase,
-incluyendo funcionalidades de hashing y versionado de documentos.
-"""
+from __future__ import annotations
 
 import hashlib
 import os
-import uuid
 from datetime import datetime
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, BinaryIO
+import re
 
 import firebase_admin
 from firebase_admin import credentials, auth, firestore, storage
 from firebase_admin.exceptions import FirebaseError
+from google.cloud.firestore_v1.base_query import FieldFilter
 from fastapi import Request, HTTPException
 
 from config import settings
 
-# Variables globales
 _firebase_initialized = False
 _firebase_app = None
 
 def initialize_firebase() -> None:
-    """Inicializa Firebase Admin SDK de forma segura."""
     global _firebase_initialized, _firebase_app
     
     if _firebase_initialized and _firebase_app:
@@ -51,19 +45,15 @@ def initialize_firebase() -> None:
         raise Exception(f"Error inicializando Firebase: {e}")
 
 def get_firestore_client():
-    """Obtiene el cliente de Firestore."""
     initialize_firebase()
     return firestore.client()
 
 def get_auth_client():
-    """Obtiene el cliente de Auth."""
     initialize_firebase()
     return auth
 
 def get_storage_bucket():
-    """Obtiene el bucket de Storage."""
     initialize_firebase()
-    # Explicitly specify bucket name in case default is not set correctly
     return storage.bucket(settings.FIREBASE_STORAGE_BUCKET)
 
 def _dated_blob_path(filename: str) -> str:
@@ -72,16 +62,17 @@ def _dated_blob_path(filename: str) -> str:
     return f"documents/{today.year:04d}/{today.month:02d}/{today.day:02d}/{filename}"
 
 def calculate_file_hash(file_bytes: bytes) -> str:
-    """Calcula el hash SHA256 de un archivo."""
     sha256 = hashlib.sha256()
     sha256.update(file_bytes)
     return sha256.hexdigest()
 
 def check_file_hash(file_hash: str) -> Optional[Dict[str, Any]]:
-    """Verifica si un hash de archivo ya existe."""
     try:
         db = get_firestore_client()
-        docs = db.collection("documents").where("hash", "==", file_hash).limit(1).stream()
+        docs = db.collection("documents").where(
+            filter=FieldFilter("hash", "==", file_hash)
+        ).limit(1).stream()
+        
         for doc in docs:
             data = doc.to_dict()
             return {"file_id": doc.id, **data}
@@ -90,32 +81,77 @@ def check_file_hash(file_hash: str) -> Optional[Dict[str, Any]]:
         print(f"Error verificando hash: {e}")
         return None
 
-def get_highest_version(file_id_base: str) -> int:
-    """Obtiene la versión más alta de un documento."""
+def get_file_version(filename: str) -> int:
     try:
-        db = get_firestore_client()
-        docs = db.collection("documents").where("file_id_base", "==", file_id_base).stream()
+        bucket = get_storage_bucket()
+        base_name = os.path.splitext(filename)[0]
+        extension = os.path.splitext(filename)[1]
+        
+        version_pattern = re.compile(rf"^{re.escape(base_name)}(?:_v(\d+))?{re.escape(extension)}$")
         
         max_version = 0
-        for doc in docs:
-            doc_data = doc.to_dict()
-            version = doc_data.get("version", 1)
-            if version > max_version:
-                max_version = version
+        blob_exists = False
         
-        return max_version
+        for blob in bucket.list_blobs():
+            match = version_pattern.match(blob.name)
+            if match:
+                blob_exists = True
+                version_str = match.group(1)
+                if version_str:
+                    version = int(version_str)
+                    max_version = max(max_version, version)
+                else:
+                    max_version = max(max_version, 1)
+        
+        if blob_exists:
+            return max_version + 1
+        else:
+            return 0
+            
     except Exception as e:
-        print(f"Error obteniendo versión: {e}")
+        print(f"Error obteniendo versión del archivo: {e}")
         return 0
+
+def generate_versioned_filename(original_filename: str) -> str:
+    version = get_file_version(original_filename)
+    
+    if version == 0:
+        return original_filename
+    else:
+        base_name = os.path.splitext(original_filename)[0]
+        extension = os.path.splitext(original_filename)[1]
+        return f"{base_name}_v{version}{extension}"
+
+def update_parent_document_versions(parent_id: str, version_id: str) -> None:
+    try:
+        db = get_firestore_client()
+        parent_ref = db.collection("documents").document(parent_id)
+        parent_doc = parent_ref.get()
+        
+        if not parent_doc.exists:
+            print(f"Documento padre {parent_id} no encontrado")
+            return
+        
+        parent_data = parent_doc.to_dict()
+        versions = parent_data.get("versions", [])
+        
+        if version_id not in versions:
+            versions.append(version_id)
+            parent_ref.update({
+                "versions": versions,
+                "updated_at": datetime.utcnow().isoformat() + "Z"
+            })
+            
+    except Exception as e:
+        print(f"Error actualizando versiones del documento padre: {e}")
 
 def save_document_metadata(
     file_id: str,
     metadata: Dict[str, Any],
     file_hash: str,
-    version: int,
+    version: int = 1,
     parent_id: Optional[str] = None
 ) -> None:
-    """Guarda metadatos de documento en Firestore."""
     try:
         db = get_firestore_client()
         doc_ref = db.collection("documents").document(file_id)
@@ -125,32 +161,29 @@ def save_document_metadata(
             "file_id": file_id,
             "hash": file_hash,
             "version": version,
-            "parent_id": parent_id,
             "created_at": datetime.utcnow().isoformat() + "Z",
             "updated_at": datetime.utcnow().isoformat() + "Z"
         }
         
+        # Si es documento principal (versión 1), incluir array de versiones vacío
+        if version == 1:
+            doc_data["versions"] = []
+        
+        # Si tiene un documento padre, agregar referencia
+        if parent_id:
+            doc_data["parent_id"] = parent_id
+        
         doc_ref.set(doc_data)
         
         # Si es una nueva versión, actualizar el documento padre
-        if parent_id and version > 1:
-            parent_ref = db.collection("documents").document(parent_id)
-            parent_doc = parent_ref.get()
-            if parent_doc.exists:
-                versions = parent_doc.to_dict().get("versions", [])
-                versions.append({
-                    "version": version,
-                    "file_id": file_id,
-                    "created_at": doc_data["created_at"]
-                })
-                parent_ref.update({"versions": versions})
+        if parent_id:
+            update_parent_document_versions(parent_id, file_id)
                 
     except Exception as e:
         print(f"Error guardando metadatos: {e}")
         raise
 
 def log_event(user_id: str, action: str, details: Dict[str, Any]) -> None:
-    """Registra un evento en Firestore."""
     try:
         db = get_firestore_client()
         event_ref = db.collection("events").document()
@@ -163,37 +196,85 @@ def log_event(user_id: str, action: str, details: Dict[str, Any]) -> None:
     except Exception as e:
         print(f"Error registrando evento: {e}")
 
-def get_document_versions(file_id_base: str) -> List[Dict[str, Any]]:
-    """Obtiene todas las versiones de un documento."""
+def get_document_by_filename(filename: str) -> Optional[Dict[str, Any]]:
     try:
         db = get_firestore_client()
-        docs = db.collection("documents").where("file_id_base", "==", file_id_base).stream()
+        docs = db.collection("documents").where(
+            filter=FieldFilter("filename", "==", filename)
+        ).stream()
         
         versions = []
         for doc in docs:
             doc_data = doc.to_dict()
-            versions.append({
-                "version": doc_data.get("version", 1),
-                "file_id": doc.id,
-                "created_at": doc_data.get("created_at"),
-                "file_size": doc_data.get("file_size_bytes"),
-                "hash": doc_data.get("hash")
-            })
+            doc_data["id"] = doc.id
+            versions.append(doc_data)
         
-        return sorted(versions, key=lambda x: x["version"])
+        return versions if versions else None
     except Exception as e:
-        print(f"Error obteniendo versiones: {e}")
-        return []
+        print(f"Error obteniendo documento por filename: {e}")
+        return None
+
+def get_document_by_stem(file_stem: str) -> Optional[Dict[str, Any]]:
+    try:
+        db = get_firestore_client()
+        doc_ref = db.collection("documents").document(file_stem)
+        doc = doc_ref.get()
+        
+        if not doc.exists:
+            return None
+            
+        doc_data = doc.to_dict()
+        doc_data["id"] = doc.id
+        return doc_data
+    except Exception as e:
+        print(f"Error obteniendo documento por stem: {e}")
+        return None
+
+def get_highest_version(file_stem: str) -> int:
+    try:
+        db = get_firestore_client()
+        doc_ref = db.collection("documents").document(file_stem)
+        doc = doc_ref.get()
+        
+        if not doc.exists:
+            return 0
+            
+        doc_data = doc.to_dict()
+        versions = doc_data.get("versions", [])
+        
+        if not versions:
+            return 1
+            
+        # Consultamos cada documento de versión para obtener su número
+        max_version = 1  # El documento base es la versión 1
+        
+        for version_id in versions:
+            try:
+                version_ref = db.collection("documents").document(version_id)
+                version_doc = version_ref.get()
+                
+                if version_doc.exists:
+                    version_data = version_doc.to_dict()
+                    version_num = version_data.get("version", 0)
+                    if version_num > max_version:
+                        max_version = version_num
+            except:
+                pass
+                
+        return max_version
+    except Exception as e:
+        print(f"Error obteniendo la versión más alta: {e}")
+        return 0
 
 def upload_file_to_storage(
     file_bytes: bytes,
     filename: str,
     content_type: Optional[str] = None,
 ) -> str:
-    """Sube un archivo a Firebase Storage."""
     try:
         bucket = get_storage_bucket()
-        blob_path = _dated_blob_path(filename)
+        versioned_filename = generate_versioned_filename(filename)
+        blob_path = _dated_blob_path(versioned_filename)
         blob = bucket.blob(blob_path)
         blob.upload_from_string(file_bytes, content_type=content_type)
         return blob_path
@@ -201,7 +282,6 @@ def upload_file_to_storage(
         raise Exception(f"Error subiendo archivo: {e}")
 
 def download_file_from_storage(blob_path: str) -> bytes:
-    """Descarga un archivo desde Firebase Storage."""
     try:
         bucket = get_storage_bucket()
         blob = bucket.blob(blob_path)
@@ -211,8 +291,7 @@ def download_file_from_storage(blob_path: str) -> bytes:
     except Exception as e:
         raise Exception(f"Error descargando archivo: {e}")
 
-def list_files_in_storage(prefix: str = "documents/") -> List[Dict[str, Any]]:
-    """Lista archivos en Firebase Storage."""
+def list_files_in_storage(prefix: str = "") -> List[Dict[str, Any]]:
     try:
         bucket = get_storage_bucket()
         files = []
@@ -232,7 +311,6 @@ def list_files_in_storage(prefix: str = "documents/") -> List[Dict[str, Any]]:
         raise Exception(f"Error listando archivos: {e}")
 
 def delete_file_from_storage(blob_path: str) -> None:
-    """Elimina un archivo de Firebase Storage."""
     try:
         bucket = get_storage_bucket()
         blob = bucket.blob(blob_path)
@@ -243,7 +321,6 @@ def delete_file_from_storage(blob_path: str) -> None:
         raise Exception(f"Error eliminando archivo: {e}")
 
 async def create_admin_user(email: str, password: str) -> Dict[str, Any]:
-    """Crea un usuario administrador."""
     try:
         auth_client = get_auth_client()
         user = auth_client.create_user(
@@ -271,7 +348,6 @@ async def create_admin_user(email: str, password: str) -> Dict[str, Any]:
         raise Exception(f"Error creando usuario admin: {e}")
 
 def verify_token(request: Request):
-    """Middleware para verificar tokens de Firebase."""
     auth_header = request.headers.get("Authorization")
     if not auth_header or not auth_header.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Token faltante")
@@ -286,7 +362,6 @@ def verify_token(request: Request):
         raise HTTPException(status_code=401, detail="Token inválido")
 
 def get_user_info(uid: str) -> Dict[str, Any]:
-    """Obtiene información de un usuario."""
     try:
         auth_client = get_auth_client()
         user = auth_client.get_user(uid)
