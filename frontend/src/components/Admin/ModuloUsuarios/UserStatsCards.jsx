@@ -8,14 +8,19 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+// Mapeo de roles técnicos a nombres legibles
+const roleMap = {
+  admin: "Dirección Ejecutiva",
+  asistenciaGeneral: "Asistencia General",
+  CoordinadorPlanificacion: "Coordinador de Planificación",
+  UnidadAdministrativa: "Unidad Administrativa",
+  UnidadComunicacion: "Unidad de Comunicación y Difusión",
+  UnidadPlanificacion: "Unidad de Planificación",
+  UnidadProyectos: "Unidad de Gestión de Proyectos",
+};
+
 export default function UserStatsCards({ stats }) {
   const [selectedRole, setSelectedRole] = useState("admin");
-
-  const roleMap = {
-    admin: "Administradores",
-    secretaria: "Secretarias",
-    supervisor: "Supervisores",
-  };
 
   return (
     <div className="grid md:grid-cols-3 gap-4">
@@ -39,15 +44,19 @@ export default function UserStatsCards({ stats }) {
       <Card>
         <CardContent className="p-6">
           <div className="flex justify-between items-center mb-1">
-            <p className="text-2xl font-bold">{stats[selectedRole]}</p>
+            <p className="text-2xl font-bold">
+              {stats[selectedRole] ?? 0}
+            </p>
             <Select value={selectedRole} onValueChange={setSelectedRole}>
-              <SelectTrigger className="w-[120px] h-8 text-sm">
-                <SelectValue />
+              <SelectTrigger className="w-[220px] h-8 text-sm">
+                <SelectValue placeholder="Seleccione rol" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="admin">Administradores</SelectItem>
-                <SelectItem value="secretaria">Secretarias</SelectItem>
-                <SelectItem value="supervisor">Supervisores</SelectItem>
+                {Object.entries(roleMap).map(([key, label]) => (
+                  <SelectItem key={key} value={key}>
+                    {label}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>

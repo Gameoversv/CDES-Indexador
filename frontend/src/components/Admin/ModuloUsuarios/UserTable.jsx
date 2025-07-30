@@ -11,6 +11,17 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Pencil, Trash2, Lock } from "lucide-react";
 
+// Mapeo de roles técnicos a nombres legibles
+const roleLabels = {
+  admin: "Dirección Ejecutiva",
+  asistenciaGeneral: "Asistencia General",
+  CoordinadorPlanificacion: "Coordinador de Planificación",
+  UnidadAdministrativa: "Unidad Administrativa",
+  UnidadComunicacion: "Unidad de Comunicación",
+  UnidadPlanificacion: "Unidad de Planificación",
+  UnidadProyectos: "Unidad de Gestión de Proyectos",
+};
+
 export default function UserTable({ users, onEdit, onDelete, onChangePassword }) {
   return (
     <Table>
@@ -29,7 +40,9 @@ export default function UserTable({ users, onEdit, onDelete, onChangePassword })
             <TableCell>{u.display_name}</TableCell>
             <TableCell>{u.email}</TableCell>
             <TableCell>
-              <Badge>{u.role}</Badge>
+              <Badge>
+                {roleLabels[u.role] || u.role}
+              </Badge>
             </TableCell>
             <TableCell>
               <Badge

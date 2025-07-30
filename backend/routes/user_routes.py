@@ -17,13 +17,30 @@ class UserCreate(BaseModel):
     display_name: str
     email: EmailStr
     password: str
-    role: Literal["admin", "secretaria", "supervisor"]
+    role: Literal[
+        "admin",
+        "asistenciaGeneral",
+        "CoordinadorPlanificacion",
+        "UnidadAdministrativa",
+        "UnidadComunicacion",
+        "UnidadPlanificacion",
+        "UnidadProyectos"
+    ]
     status: Literal["active", "inactive"]
 
 class UserUpdate(BaseModel):
     display_name: str
-    role: Literal["admin", "secretaria", "supervisor"]
+    role: Literal[
+        "admin",
+        "asistenciaGeneral",
+        "CoordinadorPlanificacion",
+        "UnidadAdministrativa",
+        "UnidadComunicacion",
+        "UnidadPlanificacion",
+        "UnidadProyectos"
+    ]
     status: Literal["active", "inactive"]
+
 
 class PasswordChangeRequest(BaseModel):
     email: EmailStr
