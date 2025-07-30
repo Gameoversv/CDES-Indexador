@@ -26,7 +26,7 @@ export default function Users() {
     display_name: "",
     email: "",
     password: "",
-    role: "secretaria",
+    role: "asistenciaGeneral",
     status: "active",
   });
 
@@ -46,13 +46,23 @@ export default function Users() {
     fetchUsers();
   }, []);
 
+  const validRoles = [
+    "admin",
+    "asistenciaGeneral",
+    "CoordinadorPlanificacion",
+    "UnidadAdministrativa",
+    "UnidadComunicacion",
+    "UnidadPlanificacion",
+    "UnidadProyectos",
+  ];
+
   const handleCreateOrUpdate = async () => {
     if (!formData.display_name || !formData.email) {
       toast.error("Nombre y correo son obligatorios.");
       return;
     }
 
-    if (!formData.role || !["admin", "secretaria", "supervisor"].includes(formData.role)) {
+    if (!formData.role || !validRoles.includes(formData.role)) {
       toast.error("Debes seleccionar un rol válido.");
       return;
     }
@@ -94,7 +104,7 @@ export default function Users() {
       display_name: "",
       email: "",
       password: "",
-      role: "secretaria",
+      role: "asistenciaGeneral",
       status: "active",
     });
     setSelectedUser(null);
@@ -157,13 +167,16 @@ export default function Users() {
   });
 
   const stats = {
-  total: users.length,
-  active: users.filter((u) => u.status === "active").length,
-  admin: users.filter((u) => u.role === "admin").length,
-  secretaria: users.filter((u) => u.role === "secretaria").length,
-  supervisor: users.filter((u) => u.role === "supervisor").length,
-};
-
+    total: users.length,
+    active: users.filter((u) => u.status === "active").length,
+    admin: users.filter((u) => u.role === "admin").length,
+    asistenciaGeneral: users.filter((u) => u.role === "asistenciaGeneral").length,
+    CoordinadorPlanificacion: users.filter((u) => u.role === "CoordinadorPlanificacion").length,
+    UnidadAdministrativa: users.filter((u) => u.role === "UnidadAdministrativa").length,
+    UnidadComunicacion: users.filter((u) => u.role === "UnidadComunicacion").length,
+    UnidadPlanificacion: users.filter((u) => u.role === "UnidadPlanificacion").length,
+    UnidadProyectos: users.filter((u) => u.role === "UnidadProyectos").length,
+  };
 
   return (
     <AdminLayout>
