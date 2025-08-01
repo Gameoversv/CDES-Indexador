@@ -12,6 +12,7 @@ from fastapi.responses import StreamingResponse
 from services.ai_service import extract_metadata, is_supported_file, estimate_processing_time
 from services.firebase_service import (
     upload_file_to_storage, 
+    upload_file_to_custom_path,  # ← Nueva función para rutas organizadas
     download_file_from_storage, 
     list_files_in_storage,
     calculate_file_hash,
@@ -44,6 +45,32 @@ MAX_FILE_SIZE = 50 * 1024 * 1024
 ALLOWED_EXTENSIONS = {'.pdf', '.docx', '.pptx', '.xlsx', '.txt', '.md'}
 
 
+def get_current_user(user_id: str) -> Dict[str, Any]:
+    """
+    Obtiene información del usuario actual desde la base de datos o sistema de auth.
+    Mapea user_id al rol/puesto correspondiente.
+    """
+    try:
+        # 🧪 MAPEO TEMPORAL PARA TESTING - Reemplazar con tu sistema de auth real
+        user_role_mapping = {
+            "comunicacion_user": "comunicacion",
+            "admin_user": "ADMINISTRATIVO", 
+            "asistente_user": "Asistente",
+            "proyectos_user": "proyectos",
+            "director_user": "Direccion_Estrategias",
+            "anonymous": "Direccion_Estrategias"  # Default para anonymous
+        }
+        
+        role = user_role_mapping.get(user_id, "Direccion_Estrategias")
+        print(f"📋 Usuario '{user_id}' → Puesto '{role}'")
+        
+        return {"role": role}
+        
+    except Exception as e:
+        print(f"❌ Error obteniendo usuario {user_id}: {e}")
+        return {"role": "Direccion_Estrategias"}  # Fallback seguro
+
+
 def _validate_uploaded_file(file: UploadFile) -> None:
     if not file.filename:
         raise HTTPException(status_code=400, detail="El archivo debe tener un nombre válido")
@@ -65,6 +92,93 @@ def _save_metadata_locally(metadata: Dict[str, Any], filename: str) -> Path:
         json.dump(metadata, file, ensure_ascii=False, indent=2)
     
     return json_path
+
+
+def _determine_storage_path(extracted_metadata: Dict[str, Any], filename: str) -> str:
+    """
+    Determina la ruta de almacenamiento en Firebase Storage basada en los metadatos extraídos por IA.
+    
+    Estructura:
+    - PES 203P: documents/PES_203P/{estrategia}/{tipo_documento}/{año}/{filename}
+    - CDES Inst: documents/CDES_Inst/{puesto_responsable}/{tipo_documento}/{año}/{filename}
+    - Sin apartado: documents/general/{año}/{mes}/{día}/{filename}
+    """
+    try:
+        # Obtener fecha actual para organización temporal
+        now = datetime.utcnow()
+        año = now.strftime("%Y")
+        mes = now.strftime("%m")
+        día = now.strftime("%d")
+        
+        # Obtener información de los metadatos
+        apartado = extracted_metadata.get("apartado", "").strip()
+        tipo_documento = extracted_metadata.get("tipo_documento", "sin_clasificar").strip()
+        
+        # Limpiar nombre de archivo para evitar problemas
+        safe_filename = filename.replace(" ", "_").replace("&", "y")
+        
+        if apartado == "PES 203P":
+            # ✅ ESTRUCTURA PARA PES 203P
+            estrategia_relacionada = extracted_metadata.get("estrategia_relacionada", "Sin_Estrategia").strip()
+            
+            # Normalizar nombre de estrategia para usar como carpeta
+            if estrategia_relacionada == "Estrategia I":
+                estrategia_folder = "Estrategia_I"
+            elif estrategia_relacionada == "Estrategia II":
+                estrategia_folder = "Estrategia_II"
+            elif estrategia_relacionada == "Estrategia III":
+                estrategia_folder = "Estrategia_III"
+            elif estrategia_relacionada == "Estrategia IV":
+                estrategia_folder = "Estrategia_IV"
+            else:
+                estrategia_folder = "Sin_Estrategia"
+            
+            # Normalizar tipo de documento
+            tipo_folder = tipo_documento.replace("/", "_").replace(" ", "_")
+            
+            storage_path = f"documents/PES_203P/{estrategia_folder}/{tipo_folder}/{año}/{safe_filename}"
+            
+            print(f"🎯 PES 203P - Ruta: {storage_path}")
+            print(f"   📁 Estrategia: {estrategia_relacionada} → {estrategia_folder}")
+            print(f"   📄 Tipo: {tipo_documento} → {tipo_folder}")
+            
+        elif apartado == "CDES Inst.":
+            # ✅ ESTRUCTURA PARA CDES INST
+            puesto_responsable = extracted_metadata.get("puesto_responsable", "Sin_Puesto").strip()
+            
+            # Normalizar puesto para usar como carpeta
+            puesto_folder = puesto_responsable.replace(" ", "_")
+            
+            # Normalizar tipo de documento
+            tipo_folder = tipo_documento.replace("/", "_").replace(" ", "_")
+            
+            storage_path = f"documents/CDES_Inst/{puesto_folder}/{tipo_folder}/{año}/{safe_filename}"
+            
+            print(f"🏢 CDES Inst - Ruta: {storage_path}")
+            print(f"   👥 Puesto: {puesto_responsable} → {puesto_folder}")
+            print(f"   📄 Tipo: {tipo_documento} → {tipo_folder}")
+            
+        else:
+            # ✅ ESTRUCTURA GENERAL (sin apartado específico)
+            storage_path = f"documents/general/{año}/{mes}/{día}/{safe_filename}"
+            
+            print(f"📂 General - Ruta: {storage_path}")
+            print(f"   📅 Fecha: {año}/{mes}/{día}")
+        
+        return storage_path
+        
+    except Exception as e:
+        # Fallback a estructura simple por fecha si hay error
+        print(f"⚠️ Error determinando ruta de almacenamiento: {e}")
+        print(f"🔄 Usando ruta fallback por fecha")
+        
+        now = datetime.utcnow()
+        año = now.strftime("%Y")
+        mes = now.strftime("%m") 
+        día = now.strftime("%d")
+        safe_filename = filename.replace(" ", "_").replace("&", "y")
+        
+        return f"documents/fallback/{año}/{mes}/{día}/{safe_filename}"
 
 
 @router.post("/upload", response_model=DocumentMetadata)
@@ -113,8 +227,37 @@ async def upload_document(
             file_id = f"{file_stem}_v{version}"
         
         content_type = file.content_type or "application/octet-stream"
-        extracted_metadata = extract_metadata(file_bytes, file.filename)
-        storage_path = upload_file_to_storage(file_bytes, file.filename, content_type)
+        
+        # ✅ OBTENER EL PUESTO DEL USUARIO DESDE SU PERFIL
+        current_user = get_current_user(user_id)
+        puesto_usuario = current_user.get('role', 'Direccion_Estrategias')
+        
+        # 🔍 DEBUG: Logs para verificar parámetros
+        print(f"🧑‍💼 Usuario: {user_id}")
+        print(f"📁 Apartado: {apartado}")
+        print(f"💼 Puesto: {puesto_usuario}")
+        
+        # ✅ PASAR AMBOS PARÁMETROS A LA IA
+        extracted_metadata = extract_metadata(
+            file_bytes, 
+            file.filename, 
+            apartado=apartado,           # ← Del formulario frontend
+            puesto_usuario=puesto_usuario # ← Del perfil del usuario
+        )
+        
+        # 🔍 DEBUG: Ver qué devuelve la IA
+        print(f"🤖 Metadatos extraídos por IA:")
+        print(f"   - Título: {extracted_metadata.get('title', 'N/A')}")
+        print(f"   - Apartado: {extracted_metadata.get('apartado', 'N/A')}")
+        print(f"   - Tipo documento: {extracted_metadata.get('tipo_documento', 'N/A')}")
+        print(f"   - Puesto responsable: {extracted_metadata.get('puesto_responsable', 'N/A')}")
+        print(f"   - Metadatos específicos: {extracted_metadata.get('metadatos_especificos', {})}")
+        
+        # ✅ DETERMINAR RUTA DE ALMACENAMIENTO ORGANIZADA
+        organized_storage_path = _determine_storage_path(extracted_metadata, file.filename)
+        
+        # ✅ SUBIR ARCHIVO CON RUTA ORGANIZADA (usando función personalizada sin fechas automáticas)
+        storage_path = upload_file_to_custom_path(file_bytes, organized_storage_path, content_type)
         
         custom_metadata = {}
         if apartado:

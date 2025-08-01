@@ -26,12 +26,28 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
       return;
     }
 
+    // Logs de debugging
+    console.log("🔍 === DEBUGGING UPLOAD ===");
+    console.log("📄 Archivo:", newFile);
+    console.log("📁 Apartado:", apartado);
+    console.log("🌐 Público:", publico);
+
     try {
       const formData = new FormData();
       formData.append("file", newFile);
-      formData.append("apartado", apartado);
+      formData.append("apartado", apartado);  // ← Solo apartado del formulario
       formData.append("is_public", publico);
-      await documentsAPI.upload(formData);
+      // NO enviar puesto_usuario - se obtiene del usuario autenticado
+      
+      console.log("📦 FormData entries:");
+      for (let [key, value] of formData.entries()) {
+        console.log(`  ${key}:`, typeof value === 'object' ? value.name : value);
+      }
+      
+      console.log("🚀 Enviando request...");
+      const response = await documentsAPI.upload(formData);
+      
+      console.log("✅ Response exitoso:", response);
       toast.success("Archivo subido correctamente.");
       setOpen(false);
       setNewFile(null);
@@ -39,8 +55,17 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
       setPublico(false);
       onUploaded();
     } catch (error) {
-      console.error("Error al subir archivo:", error);
-      toast.error("Error al subir el archivo.");
+      console.error("❌ ERROR COMPLETO:", error);
+      console.error("📡 Error response:", error.response);
+      console.error("🔢 Status:", error.response?.status);
+      console.error("📋 Data:", error.response?.data);
+      
+      const errorMessage = error.response?.data?.detail || 
+                          error.response?.data?.message || 
+                          error.message || 
+                          'Error desconocido';
+      
+      toast.error(`Error al subir archivo: ${errorMessage}`);
     }
   };
 
@@ -53,7 +78,7 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
           <span className="hidden sm:inline">Subir documento</span>
         </Button>
       </DialogTrigger>
-      <DialogContent className="rounded-xl border border-gray-300 bg-white">
+      <DialogContent className="rounded-xl border border-gray-300 bg-white sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="text-gray-900">Subir nuevo documento</DialogTitle>
           <DialogDescription className="text-gray-700">
@@ -63,11 +88,11 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
         <form className="space-y-4" onSubmit={handleSubmit}>
           <div className="space-y-2">
             <label className="block text-sm font-medium text-gray-900">Archivo</label>
-            <Input type="file" accept=".pdf,.docx,.xlsx,.pptx" onChange={(e) => setNewFile(e.target.files?.[0] || null)} required />
+            <Input type="file" accept=".pdf,.docx,.xlsx,.pptx,.txt,.md,.png,.jpg,.jpeg,.mp3,.mp4" onChange={(e) => setNewFile(e.target.files?.[0] || null)} required />
           </div>
           <div className="space-y-2">
             <label className="block text-sm font-medium text-gray-900">Apartado</label>
-            <Select value={apartado} onValueChange={setApartado}>
+            <Select value={apartado} onValueChange={setApartado} required>
               <SelectTrigger className="border border-gray-300">
                 <SelectValue placeholder="Selecciona un apartado" />
               </SelectTrigger>

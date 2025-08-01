@@ -281,6 +281,28 @@ def upload_file_to_storage(
     except Exception as e:
         raise Exception(f"Error subiendo archivo: {e}")
 
+
+def upload_file_to_custom_path(
+    file_bytes: bytes,
+    custom_path: str,
+    content_type: Optional[str] = None,
+) -> str:
+    """
+    Sube archivo a Firebase Storage usando una ruta personalizada específica.
+    NO agrega fechas automáticas ni versionado - usa la ruta exacta proporcionada.
+    """
+    try:
+        bucket = get_storage_bucket()
+        blob = bucket.blob(custom_path)
+        blob.upload_from_string(file_bytes, content_type=content_type)
+        
+        print(f"✅ Archivo subido a ruta personalizada: {custom_path}")
+        return custom_path
+        
+    except Exception as e:
+        raise Exception(f"Error subiendo archivo a ruta personalizada: {e}")
+
+
 def download_file_from_storage(blob_path: str) -> bytes:
     try:
         bucket = get_storage_bucket()
