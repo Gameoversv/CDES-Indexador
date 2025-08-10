@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState } from "react";
 import AdminLayout from "@/components/Admin/Layout/AdminLayout";
 import { auditAPI } from "@/services/api";
 import { Loader2, RefreshCw, Download, Shield } from "lucide-react";
@@ -14,111 +14,128 @@ export default function AdminAudit() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
+
+  // Si usas “origen” en el UI, mantenlo; si no, puedes quitarlo.
   const [filters, setFilters] = useState({
     eventType: "all",
     severity: "all",
-    dateRange: "all",
+    dateRange: "all", // 1h | 24h | 7d | 30d | all
+    source: "all",
   });
+
+  const [stats, setStats] = useState({ total: 0, bySeverity: {} });
   const [selectedLog, setSelectedLog] = useState(null);
 
   useEffect(() => {
-    loadLogs();
+    refreshAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    applyFilters();
-  }, [logs, searchTerm, filters]);
+    loadLogs();
+    loadStats();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters.eventType, filters.severity, filters.dateRange, filters.source]);
 
-  const loadLogs = async () => {
+  useEffect(() => {
+    applySearch();
+  }, [logs, searchTerm]);
+
+  const mapDaysFromRange = (range) => {
+    switch (range) {
+      case "1h": return 1;
+      case "24h": return 1;
+      case "7d": return 7;
+      case "30d": return 30;
+      default: return 30;
+    }
+  };
+
+  const refreshAll = async () => {
     setLoading(true);
     setError("");
     try {
-      const { data } = await auditAPI.getLogs(200);
-      setLogs(data.logs || []);
+      await Promise.all([loadLogs(), loadStats()]);
     } catch (err) {
-      setError(err.response?.data?.detail || err.message);
+      setError(err?.response?.data?.detail || err?.message || "Error cargando auditoría");
     } finally {
       setLoading(false);
     }
   };
 
-  const applyFilters = () => {
-    let filtered = [...logs];
+  const loadLogs = async () => {
+    try {
+      const params = {
+        limit: 200,
+        dateRange: filters.dateRange !== "all" ? filters.dateRange : undefined,
+        eventType: filters.eventType !== "all" ? filters.eventType : undefined,
+        severity: filters.severity !== "all" ? filters.severity : undefined,
+        source:   filters.source   !== "all" ? filters.source   : undefined,
+      };
 
-    if (searchTerm) {
-      filtered = filtered.filter((log) =>
-        log.event_type?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        log.user_id?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        JSON.stringify(log.details).toLowerCase().includes(searchTerm.toLowerCase())
-      );
+      const { data } = await auditAPI.getLogs(params);
+      // Axios: { data: { logs, ... } }
+      const list = Array.isArray(data?.logs)
+        ? data.logs
+        : Array.isArray(data?.data?.logs) // por si el backend cambia la envoltura en /export
+          ? data.data.logs
+          : [];
+
+      console.debug("[Audit] GET /audit/logs →", list.length, "registros", { params });
+
+      setLogs(list);
+      // 🔑 evita que la tabla quede vacía si aún no corrió applySearch()
+      if (!searchTerm) setFilteredLogs(list);
+    } catch (err) {
+      console.debug("[Audit] error al cargar logs:", err);
+      setError(err?.response?.data?.detail || err?.message || "Error cargando logs");
+      setLogs([]);
+      setFilteredLogs([]);
     }
+  };
 
-    if (filters.eventType !== "all") {
-      filtered = filtered.filter((log) => log.event_type === filters.eventType);
+  const loadStats = async () => {
+    try {
+      const days = filters.dateRange === "all" ? 30 : mapDaysFromRange(filters.dateRange);
+      const { data } = await auditAPI.getStats(days);
+      setStats({
+        total: data?.total_events ?? 0,
+        bySeverity: data?.events_by_severity ?? {},
+      });
+    } catch (err) {
+      console.debug("[Audit] error stats:", err);
     }
+  };
 
-    if (filters.severity !== "all") {
-      filtered = filtered.filter((log) => log.severity === filters.severity);
+  const applySearch = () => {
+    if (!searchTerm) {
+      setFilteredLogs(logs);
+      return;
     }
-
-    if (filters.dateRange !== "all") {
-      const now = new Date();
-      const cutoff = new Date();
-      switch (filters.dateRange) {
-        case "1h":
-          cutoff.setHours(now.getHours() - 1);
-          break;
-        case "24h":
-          cutoff.setDate(now.getDate() - 1);
-          break;
-        case "7d":
-          cutoff.setDate(now.getDate() - 7);
-          break;
-        case "30d":
-          cutoff.setDate(now.getDate() - 30);
-          break;
-        default:
-          break;
-      }
-      filtered = filtered.filter((log) => new Date(log.timestamp) >= cutoff);
-    }
-
+    const st = searchTerm.toLowerCase();
+    const filtered = logs.filter((log) =>
+      (log.event_type || "").toLowerCase().includes(st) ||
+      (log.user_id || "").toLowerCase().includes(st) ||
+      JSON.stringify(log.details || {}).toLowerCase().includes(st)
+    );
     setFilteredLogs(filtered);
   };
 
-  const exportLogs = () => {
-    const csv = [
-      ["Fecha", "Usuario", "Evento", "Severidad", "Detalles"].join(","),
-      ...filteredLogs.map((log) =>
-        [
-          new Date(log.timestamp).toISOString(),
-          log.user_id || "",
-          log.event_type || "",
-          log.severity || "",
-          JSON.stringify(log.details).replace(/"/g, '""'),
-        ].join(",")
-      ),
-    ].join("\n");
-
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `audit-logs-${new Date().toISOString().split("T")[0]}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+  const exportLogs = async () => {
+    try {
+      const days = filters.dateRange === "all" ? 30 : mapDaysFromRange(filters.dateRange);
+      const resp = await auditAPI.exportLogs("csv", days);
+      const blob = new Blob([resp.data], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `audit-logs-${new Date().toISOString().slice(0,10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err?.response?.data?.detail || err?.message || "Error exportando CSV");
+    }
   };
-
-  const stats = useMemo(() => {
-    const total = filteredLogs.length;
-    const byType = {};
-    const bySeverity = {};
-    filteredLogs.forEach((log) => {
-      byType[log.event_type] = (byType[log.event_type] || 0) + 1;
-      bySeverity[log.severity || "INFO"] = (bySeverity[log.severity || "INFO"] || 0) + 1;
-    });
-    return { total, byType, bySeverity };
-  }, [filteredLogs]);
 
   const formatDate = (ts) => new Date(ts).toLocaleString("es-DO");
 
@@ -131,22 +148,14 @@ export default function AdminAudit() {
               <Shield className="h-8 w-8" />
               Registros de Auditoría
             </h1>
-            <p className="text-muted-foreground">
-              Monitoreo y análisis de actividades del sistema
-            </p>
+            <p className="text-muted-foreground">Monitoreo y análisis de actividades del sistema</p>
           </div>
           <div className="flex gap-2">
-            <button
-              onClick={loadLogs}
-              className="btn-outline flex gap-2 items-center px-3 py-2"
-            >
+            <button onClick={refreshAll} className="btn-outline flex gap-2 items-center px-3 py-2">
               <RefreshCw className="h-4 w-4" />
               Actualizar
             </button>
-            <button
-              onClick={exportLogs}
-              className="btn flex gap-2 items-center px-3 py-2"
-            >
+            <button onClick={exportLogs} className="btn flex gap-2 items-center px-3 py-2">
               <Download className="h-4 w-4" />
               Exportar CSV
             </button>
@@ -158,6 +167,8 @@ export default function AdminAudit() {
             <Loader2 className="h-8 w-8 animate-spin" />
             <span className="ml-2">Cargando registros...</span>
           </div>
+        ) : error ? (
+          <div className="p-4 border rounded text-red-600 bg-red-50">{error}</div>
         ) : (
           <>
             <AuditStatsCards stats={stats} />
@@ -173,12 +184,14 @@ export default function AdminAudit() {
               setSelectedLog={setSelectedLog}
             />
             <AuditLogMobileCards
-              filteredLogs={filteredLogs}
-              setSelectedLog={setSelectedLog}
+              logs={filteredLogs}
+              formatDate={formatDate}
             />
             <AuditLogDetailDialog
-              selectedLog={selectedLog}
-              setSelectedLog={setSelectedLog}
+              log={selectedLog}
+              open={!!selectedLog}
+              onClose={() => setSelectedLog(null)}
+              formatDate={formatDate}
             />
           </>
         )}
