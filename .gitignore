@@ -1,6 +1,7 @@
 # Meilisearch
 meilisearch-data/
 meilisearch-server/
+meilisearch
 
 # Dependencies
 node_modules/

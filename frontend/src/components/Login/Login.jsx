@@ -30,7 +30,7 @@ export default function Login({ className, ...props }) {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const token = await userCredential.user.getIdToken();
 
-      // 🔐 Consultar perfil en backend
+      // Consultar perfil en backend
       const res = await fetch("http://localhost:8000/users/me", {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -44,7 +44,7 @@ export default function Login({ className, ...props }) {
       localStorage.setItem("token", token);
       localStorage.setItem("user", JSON.stringify(data));
 
-      // 🎯 Redirigir por rol
+      // Redirigir por rol
       const role = data.role;
       switch (role) {
         case "admin":
@@ -68,68 +68,124 @@ export default function Login({ className, ...props }) {
   };
 
   return (
-    <div className="flex min-h-screen w-full items-center justify-center p-6 md:p-10 bg-cabra-black text-white">
-      <div className="w-full max-w-sm">
-        <div className={cn("flex flex-col gap-6", className)} {...props}>
-          <Card className="bg-cabra-dark border border-cabra-purple">
-            <CardHeader>
-              <CardTitle className="text-cabra-purple text-2xl tracking-wide text-center">
-                Iniciar sesión
-              </CardTitle>
-              <CardDescription className="text-center text-cabra-steel">
-                Inicia sesión para acceder a tu cuenta
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={handleSubmit}>
-                <div className="flex flex-col gap-6">
-                  <div className="grid gap-3">
-                    <Label htmlFor="email">Correo electrónico</Label>
-                    <Input
-                      id="email"
-                      type="email"
-                      placeholder="correo@ejemplo.com"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      required
-                    />
-                  </div>
-                  <div className="grid gap-3">
-                    <div className="flex items-center">
-                      <Label htmlFor="password">Contraseña</Label>
-                      <a
-                        href="#"
-                        className="ml-auto inline-block text-sm underline-offset-4 hover:underline"
-                      >
-                        ¿Olvidaste tu contraseña?
-                      </a>
+    <div className="relative flex min-h-screen w-full bg-cabra-black">
+      {/* Imagen de fondo del edificio CDES */}
+      <div 
+        className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-75"
+        style={{
+          backgroundImage: `url('/edificio_cdes.png')`,
+          backgroundPosition: 'center right',
+          backgroundSize: 'cover'
+        }}
+      />
+      
+      {/* Overlay para mejor contraste */}
+      <div className="absolute inset-0 bg-gradient-to-r from-cabra-black via-cabra-black/90 to-cabra-black/30" />
+
+      {/* Contenedor principal */}
+      <div className="relative z-10 flex w-full">
+        {/* Panel izquierdo - Formulario de login */}
+        <div className="flex w-full lg:w-1/2 xl:w-2/5 items-center justify-center p-6 md:p-10">
+          <div className="w-full max-w-md">
+            {/* Logo y título principal */}
+            <div className="mb-8 text-center">
+              <div className="flex items-center justify-center mb-4">
+                <img 
+                  src="/favicon.ico" 
+                  alt="CDES Logo" 
+                  className="w-12 h-12 md:w-16 md:h-16 mr-3"
+                />
+                <div className="text-left">
+                  <h1 className="text-3xl md:text-4xl font-bold text-cabra-purple">
+                    CDES
+                  </h1>
+                </div>
+              </div>
+            </div>
+
+            {/* Formulario de login */}
+            <div className={cn("flex flex-col gap-6", className)} {...props}>
+              <Card className="bg-white border border-cabra-purple/50 backdrop-blur-sm shadow-2xl">
+                <CardHeader>
+                  <CardTitle className="text-cabra-purple text-2xl tracking-wide text-center">
+                    Iniciar sesión
+                  </CardTitle>
+                  <CardDescription className="text-center text-cabra-steel">
+                    Accede a tu cuenta para continuar
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <form onSubmit={handleSubmit}>
+                    <div className="flex flex-col gap-6">
+                      <div className="grid gap-3">
+                        <Label htmlFor="email" className="text-black">
+                          Correo electrónico
+                        </Label>
+                        <Input
+                          id="email"
+                          type="email"
+                          placeholder="correo@ejemplo.com"
+                          value={email}
+                          onChange={(e) => setEmail(e.target.value)}
+                          required
+                          className="bg-cabra-black/50 border-cabra-steel/30 text-white placeholder:text-cabra-steel/60"
+                        />
+                      </div>
+                      <div className="grid gap-3">
+                        <div className="flex items-center">
+                          <Label htmlFor="password" className="text-black">
+                            Contraseña
+                          </Label>
+                          <a
+                            href="#"
+                            className="ml-auto inline-block text-sm text-cabra-purple hover:text-cabra-purple/80 underline-offset-4 hover:underline"
+                          >
+                            ¿Olvidaste tu contraseña?
+                          </a>
+                        </div>
+                        <Input
+                          id="password"
+                          type="password"
+                          placeholder="••••••••"
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          required
+                          className="bg-cabra-black/50 border-cabra-steel/30 text-black placeholder:text-cabra-steel/60"
+                        />
+                      </div>
+                      {error && (
+                        <div className="text-red-400 text-sm text-center bg-red-500/10 p-3 rounded-md border border-red-500/20">
+                          {error}
+                        </div>
+                      )}
+                      <div className="flex flex-col gap-3">
+                        <Button 
+                          type="submit" 
+                          className="w-full bg-cabra-purple hover:bg-cabra-purple/90 border-2 border-gray-900 shadow-inner hover:shadow-lg text-black font-medium py-2.5 transition-all duration-200" 
+                          disabled={loading}
+                        >
+                          {loading ? (
+                            <div className="flex items-center gap-2">
+                              <div className="w-4 h-4 border-2 border-white/30 border-t-white text-black rounded-full animate-spin" />
+                              Entrando...
+                            </div>
+                          ) : (
+                            "Iniciar sesión"
+                          )}
+                        </Button>
+                      </div>
                     </div>
-                    <Input
-                      id="password"
-                      type="password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      required
-                    />
-                  </div>
-                  {error && (
-                    <div className="text-red-500 text-sm text-center">{error}</div>
-                  )}
-                  <div className="flex flex-col gap-3">
-                    <Button type="submit" className="w-full" disabled={loading}>
-                      {loading ? "Entrando..." : "Iniciar sesión"}
-                    </Button>
-                  </div>
-                </div>
-                <div className="mt-4 text-center text-sm">
-                  ¿No tienes una cuenta?{" "}
-                  <a href="/signup" className="underline underline-offset-4">
-                    Crear cuenta
-                  </a>
-                </div>
-              </form>
-            </CardContent>
-          </Card>
+                  </form>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Footer */}
+            <div className="mt-8 text-center text-cabra-steel text-sm">
+              <p>Consejo de Desarrollo Estratégico de Santiago</p>
+              <p className="mt-1">© 2025 CDES. Todos los derechos reservados.</p>
+            </div>
+          </div>
         </div>
       </div>
     </div>
