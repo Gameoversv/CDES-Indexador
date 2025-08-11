@@ -19,12 +19,7 @@ import {
   UploadCloud,
   File,
   X,
-  Sparkles,
-  FileText,
-  FileType,
-  FileSpreadsheet,
-  Presentation as FilePresentation,
-  CheckCircle2,
+  Image as ImageIcon,
 } from "lucide-react";
 import { useState, useCallback } from "react";
 import { toast } from "sonner";
@@ -34,13 +29,21 @@ import { Progress } from "@/components/ui/progress";
 export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
   const [files, setFiles] = useState([]);
   const [apartado, setApartado] = useState("");
+  const [tipoDocumento, setTipoDocumento] = useState("");
   const [publico, setPublico] = useState(false);
+  const [coverImage, setCoverImage] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState({});
   const [isDragging, setIsDragging] = useState(false);
 
   const handleFilesSelect = (newFiles) => {
     setFiles((prev) => [...prev, ...Array.from(newFiles)]);
+  };
+
+  const handleCoverImageSelect = (e) => {
+    if (e.target.files && e.target.files[0]) {
+      setCoverImage(e.target.files[0]);
+    }
   };
 
   const handleDragOver = useCallback((e) => {
@@ -67,43 +70,70 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!files.length || !apartado) {
-      toast.warning("Debes seleccionar al menos un archivo y un apartado.");
+    if (!files.length || !apartado || !tipoDocumento) {
+      toast.warning(
+        "Debes seleccionar al menos un archivo, un apartado y un tipo de documento."
+      );
+      return;
+    }
+    if (publico && !coverImage) {
+      toast.warning(
+        "Debes seleccionar una imagen de portada para un documento público."
+      );
       return;
     }
 
-    try {
-      setUploading(true);
+    const uploadFiles = async () => {
+      try {
+        setUploading(true);
 
-      for (const file of files) {
-        const formData = new FormData();
-        formData.append("file", file);
-        formData.append("apartado", apartado);
-        formData.append("publico", publico);
+        for (const file of files) {
+          const formData = new FormData();
+          formData.append("file", file);
+          formData.append("apartado", apartado);
+          formData.append("tipo_documento", tipoDocumento);
+          formData.append("publico", publico);
+          if (publico && coverImage) {
+            formData.append("cover_image", coverImage);
+          }
 
-        await documentsAPI.upload(formData, {
-          onUploadProgress: (event) => {
-            if (event.total) {
-              const percent = Math.round((event.loaded * 100) / event.total);
-              setProgress((prev) => ({ ...prev, [file.name]: percent }));
-            }
-          },
-        });
+          await documentsAPI.upload(formData, {
+            onUploadProgress: (event) => {
+              if (event.total) {
+                const percent = Math.round((event.loaded * 100) / event.total);
+                setProgress((prev) => ({ ...prev, [file.name]: percent }));
+              }
+            },
+          });
+        }
+
+        toast.success("Archivos subidos correctamente.");
+        setOpen(false);
+        setFiles([]);
+        setApartado("");
+        setTipoDocumento("");
+        setPublico(false);
+        setCoverImage(null);
+        onUploaded?.();
+      } catch (error) {
+        console.error("Error al subir archivo:", error);
+        toast.error("Error al subir uno o más archivos.");
+      } finally {
+        setUploading(false);
+        setProgress({});
       }
+    };
 
-      toast.success("Archivos subidos correctamente.");
-      setOpen(false);
-      setFiles([]);
-      setApartado("");
-      setPublico(false);
-      onUploaded?.();
-    } catch (error) {
-      console.error("Error al subir archivo:", error);
-      toast.error("Error al subir uno o más archivos.");
-    } finally {
-      setUploading(false);
-      setProgress({});
-    }
+    toast.message("¿Estás seguro?", {
+      description: `Vas a subir ${files.length} documento(s).`,
+      action: {
+        label: "Confirmar",
+        onClick: uploadFiles,
+      },
+      cancel: {
+        label: "Cancelar",
+      },
+    });
   };
 
   return (
@@ -117,10 +147,10 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
       <DialogContent className="rounded-xl max-w-3xl p-6">
         <DialogHeader>
           <DialogTitle className="text-xl font-semibold">
-            📂 Subir Documentos
+            Subir Documentos
           </DialogTitle>
           <DialogDescription>
-            Sube uno o varios documentos para procesamiento automático con IA e indexación inteligente.
+            Sube uno o varios documentos para indexación.
           </DialogDescription>
         </DialogHeader>
 
@@ -139,7 +169,7 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
               Arrastra tus archivos aquí
             </p>
             <p className="text-xs text-gray-500">
-              o selecciónalos manualmente
+              o selecciónalos manually
             </p>
             <Input
               type="file"
@@ -194,6 +224,25 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
             </Select>
           </div>
 
+          {/* Tipo de documento */}
+          <div className="space-y-2">
+            <label className="block text-sm font-medium">
+              Tipo de documento
+            </label>
+            <Select value={tipoDocumento} onValueChange={setTipoDocumento}>
+              <SelectTrigger className="border border-gray-300">
+                <SelectValue placeholder="Selecciona el tipo de documento" />
+              </SelectTrigger>
+              <SelectContent>
+                {/* Add options here as needed */}
+                <SelectItem value="Informe">Informe</SelectItem>
+                <SelectItem value="Presentacion">Presentación</SelectItem>
+                <SelectItem value="Acta">Acta</SelectItem>
+                <SelectItem value="Otro">Otro</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
           {/* Público */}
           <div className="flex items-center gap-2">
             <input
@@ -208,48 +257,42 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
             </label>
           </div>
 
-          {/* Tarjetas de formatos y IA */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-            <div className="border rounded-lg p-4">
-              <h3 className="font-medium flex items-center gap-2">
-                <FileType className="h-4 w-4 text-red-500" /> Formatos Soportados
-              </h3>
-              <ul className="mt-2 space-y-1 text-sm">
-                <li className="flex items-center gap-2">
-                  <FileText className="h-4 w-4 text-red-500" /> PDF
-                </li>
-                <li className="flex items-center gap-2">
-                  <FileType className="h-4 w-4 text-blue-500" /> DOCX
-                </li>
-                <li className="flex items-center gap-2">
-                  <FileSpreadsheet className="h-4 w-4 text-green-500" /> XLSX
-                </li>
-                <li className="flex items-center gap-2">
-                  <FilePresentation className="h-4 w-4 text-orange-500" /> PPTX
-                </li>
-              </ul>
+          {/* Agregar imagen de portada */}
+          {publico && (
+            <div className="space-y-2">
+              <label className="block text-sm font-medium">
+                Imagen de Portada
+              </label>
+              <div className="flex items-center gap-4">
+                <Input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleCoverImageSelect}
+                  className="flex-grow"
+                />
+                {coverImage && (
+                  <div className="flex items-center gap-2">
+                    <ImageIcon className="h-5 w-5 text-gray-600" />
+                    <span className="text-sm truncate max-w-xs">
+                      {coverImage.name}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setCoverImage(null)}
+                      className="text-red-500 hover:text-red-700"
+                      disabled={uploading}
+                    >
+                      <X className="h-5 w-5" />
+                    </button>
+                  </div>
+                )}
+              </div>
+              <p className="text-xs text-gray-500">
+                Sube una imagen para la portada del documento en la biblioteca
+                pública.
+              </p>
             </div>
-
-            <div className="border rounded-lg p-4">
-              <h3 className="font-medium flex items-center gap-2">
-                <Sparkles className="h-4 w-4 text-yellow-500" /> Procesamiento IA
-              </h3>
-              <ul className="mt-2 space-y-1 text-sm">
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-green-500" /> Extracción de texto
-                </li>
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-green-500" /> Resumen inteligente
-                </li>
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-green-500" /> Palabras clave
-                </li>
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-green-500" /> Indexación semántica
-                </li>
-              </ul>
-            </div>
-          </div>
+          )}
 
           {/* Botones */}
           <div className="flex justify-end gap-3 pt-2">
@@ -261,11 +304,7 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
             >
               Cancelar
             </Button>
-            <Button
-              type="submit"
-              variant="destructive"
-              disabled={uploading}
-            >
+            <Button type="submit" variant="destructive" disabled={uploading}>
               {uploading ? "Subiendo..." : "Subir documentos"}
             </Button>
           </div>

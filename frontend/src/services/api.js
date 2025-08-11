@@ -15,13 +15,27 @@ const UPLOAD_TIMEOUT = 300000;
 // ===============================
 
 const api = axios.create({
-  baseURL: API_BASE_URL,
-  timeout: DEFAULT_TIMEOUT,
-  headers: {
-    "Content-Type": "application/json",
-    Accept: "application/json",
-  },
+  // ¡IMPORTANTE! Elimina o comenta esta línea para que el proxy de Vite funcione.
+  // baseURL: 'http://localhost:8000', 
 });
+
+// Agrega el token de autorización a cada solicitud
+api.interceptors.request.use(
+  (config) => {
+    const token = getAuthToken();
+    if (token && !config.headers.Authorization) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+
+    // Tiempo extra para uploads
+    if (config.url?.includes("/upload")) {
+      config.timeout = UPLOAD_TIMEOUT;
+    }
+
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
 
 // ===============================
 // Manejo de token de autenticación
@@ -42,23 +56,6 @@ const clearAuthData = () => {
 // ===============================
 // Interceptores de Axios
 // ===============================
-
-api.interceptors.request.use(
-  (config) => {
-    const token = getAuthToken();
-    if (token && !config.headers.Authorization) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-
-    // Tiempo extra para uploads
-    if (config.url?.includes("/upload")) {
-      config.timeout = UPLOAD_TIMEOUT;
-    }
-
-    return config;
-  },
-  (error) => Promise.reject(error)
-);
 
 api.interceptors.response.use(
   (res) => res,

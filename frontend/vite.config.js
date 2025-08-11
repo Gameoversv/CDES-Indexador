@@ -11,4 +11,13 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  server: {
+    proxy: {
+      // Redirige cualquier solicitud a /auth, /documents, etc. hacia tu backend
+      '/auth': 'http://localhost:8000',
+      '/documents': 'http://localhost:8000',
+      '/admin': 'http://localhost:8000',
+      '/audit': 'http://localhost:8000',
+    }
+  }
 })
