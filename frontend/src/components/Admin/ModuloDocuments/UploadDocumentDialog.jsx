@@ -5,6 +5,8 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
+  DialogFooter,
+  DialogClose,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -35,6 +37,7 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState({});
   const [isDragging, setIsDragging] = useState(false);
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
 
   const handleFilesSelect = (newFiles) => {
     setFiles((prev) => [...prev, ...Array.from(newFiles)]);
@@ -68,7 +71,7 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
     setFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const handleSubmit = async (e) => {
+  const handleUploadRequest = (e) => {
     e.preventDefault();
     if (!files.length || !apartado || !tipoDocumento) {
       toast.warning(
@@ -82,58 +85,49 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
       );
       return;
     }
+    setShowConfirmDialog(true);
+  };
 
-    const uploadFiles = async () => {
-      try {
-        setUploading(true);
+  const handleConfirmUpload = async () => {
+    setShowConfirmDialog(false);
+    try {
+      setUploading(true);
 
-        for (const file of files) {
-          const formData = new FormData();
-          formData.append("file", file);
-          formData.append("apartado", apartado);
-          formData.append("tipo_documento", tipoDocumento);
-          formData.append("publico", publico);
-          if (publico && coverImage) {
-            formData.append("cover_image", coverImage);
-          }
-
-          await documentsAPI.upload(formData, {
-            onUploadProgress: (event) => {
-              if (event.total) {
-                const percent = Math.round((event.loaded * 100) / event.total);
-                setProgress((prev) => ({ ...prev, [file.name]: percent }));
-              }
-            },
-          });
+      for (const file of files) {
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("apartado", apartado);
+        formData.append("tipo_documento", tipoDocumento);
+        formData.append("publico", publico);
+        if (publico && coverImage) {
+          formData.append("cover_image", coverImage);
         }
 
-        toast.success("Archivos subidos correctamente.");
-        setOpen(false);
-        setFiles([]);
-        setApartado("");
-        setTipoDocumento("");
-        setPublico(false);
-        setCoverImage(null);
-        onUploaded?.();
-      } catch (error) {
-        console.error("Error al subir archivo:", error);
-        toast.error("Error al subir uno o más archivos.");
-      } finally {
-        setUploading(false);
-        setProgress({});
+        await documentsAPI.upload(formData, {
+          onUploadProgress: (event) => {
+            if (event.total) {
+              const percent = Math.round((event.loaded * 100) / event.total);
+              setProgress((prev) => ({ ...prev, [file.name]: percent }));
+            }
+          },
+        });
       }
-    };
 
-    toast.message("¿Estás seguro?", {
-      description: `Vas a subir ${files.length} documento(s).`,
-      action: {
-        label: "Confirmar",
-        onClick: uploadFiles,
-      },
-      cancel: {
-        label: "Cancelar",
-      },
-    });
+      toast.success("Archivos subidos correctamente.");
+      setOpen(false);
+      setFiles([]);
+      setApartado("");
+      setTipoDocumento("");
+      setPublico(false);
+      setCoverImage(null);
+      onUploaded?.();
+    } catch (error) {
+      console.error("Error al subir archivo:", error);
+      toast.error("Error al subir uno o más archivos.");
+    } finally {
+      setUploading(false);
+      setProgress({});
+    }
   };
 
   return (
@@ -154,7 +148,7 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
           </DialogDescription>
         </DialogHeader>
 
-        <form className="space-y-4 mt-4" onSubmit={handleSubmit}>
+        <form className="space-y-4 mt-4" onSubmit={handleUploadRequest}>
           {/* Drag & Drop */}
           <div
             onDragOver={handleDragOver}
@@ -309,6 +303,36 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
             </Button>
           </div>
         </form>
+
+        {/* Confirmation Dialog */}
+        <Dialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Confirmar subida</DialogTitle>
+              <DialogDescription>
+                ¿Estás seguro de que quieres subir {files.length} documento(s)?
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <DialogClose asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowConfirmDialog(false)}
+                >
+                  Cancelar
+                </Button>
+              </DialogClose>
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={handleConfirmUpload}
+              >
+                Confirmar
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </DialogContent>
     </Dialog>
   );
