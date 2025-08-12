@@ -23,13 +23,14 @@ import {
   X,
   Image as ImageIcon,
 } from "lucide-react";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { toast } from "sonner";
 import { documentsAPI } from "@/services/api";
 import { Progress } from "@/components/ui/progress";
+import { useAuth } from "@/contexts/AuthContext";
 
 const documentTypesByRole = {
-  "Direccion Ejecutiva": [
+  admin: [
     "presentaciones", "carta", "informe", "convenios", "contrato", 
     "minutas/ayuda_memoria", "actas", "mapas", "logos", "graficos", 
     "nota_prensa/comunicaciones", "plan", "ficha_tecnica", "estudio", 
@@ -37,28 +38,52 @@ const documentTypesByRole = {
     "convocatorias", "Invitacion", "cuestionario/ instrumento de recolección de datos", 
     "TDER", "cronograma", "diagnostico", "listado", "declaracion ciudadana"
   ],
-  "Proyectos": [
+  CoordinadorPlanificacion: [
+    "presentaciones", "carta", "informe", "convenios", "contrato", 
+    "minutas/ayuda_memoria", "actas", "mapas", "logos", "graficos", 
+    "nota_prensa/comunicaciones", "plan", "ficha_tecnica", "estudio", 
+    "video", "foto", "discursos", "memorias institucionales", 
+    "convocatorias", "Invitacion", "cuestionario/ instrumento de recolección de datos", 
+    "TDER", "cronograma", "diagnostico", "listado", "declaracion ciudadana"
+  ],
+  UnidadProyectos: [
     "presentaciones", "informe", "minutas/ayuda_memoria", "actas", "mapas", 
     "logos", "graficos", "plan", "ficha_tecnica", "estudio", "video", "foto", 
     "memorias institucionales", "Invitacion", "cuestionario/ instrumento de recolección de datos", 
     "TDER", "cronograma", "diagnostico", "listado", "declaracion ciudadana"
   ],
-  "Asistente": [
+  UnidadPlanificacion: [
+    "presentaciones", "informe", "minutas/ayuda_memoria", "actas", "mapas", 
+    "logos", "graficos", "plan", "ficha_tecnica", "estudio", "video", "foto", 
+    "memorias institucionales", "Invitacion", "cuestionario/ instrumento de recolección de datos", 
+    "TDER", "cronograma", "diagnostico", "listado", "declaracion ciudadana"
+  ],
+  asistenciaGeneral: [
     "agendas", "carta", "minutas/ayuda_memoria", "logos", "convocatorias"
   ],
-  "Administrativo": [
+  UnidadAdministrativa: [
     "convenio", "contrato", "plan"
   ],
-  "Comunicaciones": [
+  UnidadComunicacion: [
     "nota_prensa/comunicaciones", "video", "foto", "convocatorias", 
     "Invitacion", "cronograma"
   ]
 };
 
 
+const formatDocumentType = (type) => {
+  if (!type) return "";
+  return type
+    .replace(/_/g, " ")
+    .split(/([ /])/)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join("");
+};
+
 export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
+  const { userRole } = useAuth();
   const [files, setFiles] = useState([]);
-  const [puesto, setPuesto] = useState("");
+  const [apartado, setApartado] = useState("");
   const [tipoDocumento, setTipoDocumento] = useState("");
   const [publico, setPublico] = useState(false);
   const [coverImage, setCoverImage] = useState(null);
@@ -67,10 +92,11 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
   const [isDragging, setIsDragging] = useState(false);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
 
-  const handlePuestoChange = (newPuesto) => {
-    setPuesto(newPuesto);
-    setTipoDocumento(""); // Reset document type when role changes
-  };
+  useEffect(() => {
+    if (userRole) {
+      setTipoDocumento(""); // Resetear al cambiar de rol
+    }
+  }, [userRole]);
 
   const handleFilesSelect = (newFiles) => {
     setFiles((prev) => [...prev, ...Array.from(newFiles)]);
@@ -106,9 +132,9 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
 
   const handleUploadRequest = (e) => {
     e.preventDefault();
-    if (!files.length || !puesto || !tipoDocumento) {
+    if (!files.length || !apartado || !tipoDocumento) {
       toast.warning(
-        "Debes seleccionar al menos un archivo, un puesto y un tipo de documento."
+        "Debes seleccionar al menos un archivo, una iniciativa y un tipo de documento."
       );
       return;
     }
@@ -129,8 +155,9 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
       for (const file of files) {
         const formData = new FormData();
         formData.append("file", file);
-        formData.append("puesto", puesto);
-        formData.append("tipo_documento", tipoDocumento);
+        formData.append("apartado", apartado);
+        formData.append("categoria", tipoDocumento);
+        formData.append("puesto", userRole); // Enviar el rol del usuario
         formData.append("publico", publico);
         if (publico && coverImage) {
           formData.append("cover_image", coverImage);
@@ -149,7 +176,7 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
       toast.success("Archivos subidos correctamente.");
       setOpen(false);
       setFiles([]);
-      setPuesto("");
+      setApartado("");
       setTipoDocumento("");
       setPublico(false);
       setCoverImage(null);
@@ -182,6 +209,20 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
         </DialogHeader>
 
         <form className="space-y-4 mt-4" onSubmit={handleUploadRequest}>
+          {/* Apartado */}
+          <div className="space-y-2">
+            <label className="block text-sm font-medium">Iniciativa</label>
+            <Select value={apartado} onValueChange={setApartado}>
+              <SelectTrigger className="border border-gray-300">
+                <SelectValue placeholder="Selecciona una iniciativa" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="CDES inst.">CDES inst.</SelectItem>
+                <SelectItem value="PES 2030">PES 2030</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
           {/* Drag & Drop */}
           <div
             onDragOver={handleDragOver}
@@ -237,23 +278,6 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
             </div>
           )}
 
-          {/* Puesto */}
-          <div className="space-y-2">
-            <label className="block text-sm font-medium">Puesto</label>
-            <Select value={puesto} onValueChange={handlePuestoChange}>
-              <SelectTrigger className="border border-gray-300">
-                <SelectValue placeholder="Selecciona un puesto" />
-              </SelectTrigger>
-              <SelectContent>
-                {Object.keys(documentTypesByRole).map((role) => (
-                  <SelectItem key={role} value={role}>
-                    {role}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
           {/* Tipo de documento */}
           <div className="space-y-2">
             <label className="block text-sm font-medium">
@@ -262,16 +286,16 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
             <Select
               value={tipoDocumento}
               onValueChange={setTipoDocumento}
-              disabled={!puesto}
+              disabled={!userRole}
             >
               <SelectTrigger className="border border-gray-300">
                 <SelectValue placeholder="Selecciona el tipo de documento" />
               </SelectTrigger>
               <SelectContent>
-                {puesto &&
-                  documentTypesByRole[puesto].map((type) => (
+                {userRole &&
+                  documentTypesByRole[userRole]?.map((type) => (
                     <SelectItem key={type} value={type}>
-                      {type}
+                      {formatDocumentType(type)}
                     </SelectItem>
                   ))}
               </SelectContent>

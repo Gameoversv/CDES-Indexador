@@ -37,6 +37,7 @@ export function AuthProvider({ children }) {
   const [userProfile, setUserProfile] = useState(null);
   const [authError, setAuthError] = useState(null);
   const [tokenExpiring, setTokenExpiring] = useState(false);
+  const [userRole, setUserRole] = useState(null); // Nuevo estado para el rol
 
   const refreshTokenAndClaims = async (user, forceRefresh = false) => {
     try {
@@ -48,6 +49,7 @@ export function AuthProvider({ children }) {
 
       setIdToken(token);
       setIsAdmin(Boolean(customClaims?.admin));
+      setUserRole(customClaims?.role || null); // ✅ Almacena el rol
       localStorage.setItem("idToken", token);
       localStorage.setItem("userClaims", JSON.stringify(customClaims));
       setAuthToken(token); // ✅ Este es el punto clave para las peticiones con token
@@ -171,6 +173,7 @@ export function AuthProvider({ children }) {
       setUserProfile(null);
       setAuthError(null);
       setTokenExpiring(false);
+      setUserRole(null); // ✅ Limpia el rol
       setAuthToken(null); // ✅ Limpia el token del cliente Axios
       localStorage.clear();
     } catch (error) {
@@ -237,6 +240,7 @@ export function AuthProvider({ children }) {
         setUserProfile(null);
         setAuthError(null);
         setTokenExpiring(false);
+        setUserRole(null); // ✅ Limpia el rol
         localStorage.clear();
       }
       setLoading(false);
@@ -282,7 +286,7 @@ export function AuthProvider({ children }) {
       clearAuthError,
       isAuthenticated: !!currentUser,
       hasValidToken: !!idToken,
-      userRole: isAdmin ? "admin" : "user",
+      userRole: userRole || (isAdmin ? "admin" : "user"), // ✅ Expone el rol
     }),
     [
       currentUser,
@@ -293,6 +297,7 @@ export function AuthProvider({ children }) {
       authError,
       tokenExpiring,
       getFreshToken,
+      userRole, // ✅ Añade userRole a las dependencias
     ]
   );
 
