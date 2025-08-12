@@ -28,9 +28,37 @@ import { toast } from "sonner";
 import { documentsAPI } from "@/services/api";
 import { Progress } from "@/components/ui/progress";
 
+const documentTypesByRole = {
+  "Direccion Ejecutiva": [
+    "presentaciones", "carta", "informe", "convenios", "contrato", 
+    "minutas/ayuda_memoria", "actas", "mapas", "logos", "graficos", 
+    "nota_prensa/comunicaciones", "plan", "ficha_tecnica", "estudio", 
+    "video", "foto", "discursos", "memorias institucionales", 
+    "convocatorias", "Invitacion", "cuestionario/ instrumento de recolección de datos", 
+    "TDER", "cronograma", "diagnostico", "listado", "declaracion ciudadana"
+  ],
+  "Proyectos": [
+    "presentaciones", "informe", "minutas/ayuda_memoria", "actas", "mapas", 
+    "logos", "graficos", "plan", "ficha_tecnica", "estudio", "video", "foto", 
+    "memorias institucionales", "Invitacion", "cuestionario/ instrumento de recolección de datos", 
+    "TDER", "cronograma", "diagnostico", "listado", "declaracion ciudadana"
+  ],
+  "Asistente": [
+    "agendas", "carta", "minutas/ayuda_memoria", "logos", "convocatorias"
+  ],
+  "Administrativo": [
+    "convenio", "contrato", "plan"
+  ],
+  "Comunicaciones": [
+    "nota_prensa/comunicaciones", "video", "foto", "convocatorias", 
+    "Invitacion", "cronograma"
+  ]
+};
+
+
 export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
   const [files, setFiles] = useState([]);
-  const [apartado, setApartado] = useState("");
+  const [puesto, setPuesto] = useState("");
   const [tipoDocumento, setTipoDocumento] = useState("");
   const [publico, setPublico] = useState(false);
   const [coverImage, setCoverImage] = useState(null);
@@ -38,6 +66,11 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
   const [progress, setProgress] = useState({});
   const [isDragging, setIsDragging] = useState(false);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+
+  const handlePuestoChange = (newPuesto) => {
+    setPuesto(newPuesto);
+    setTipoDocumento(""); // Reset document type when role changes
+  };
 
   const handleFilesSelect = (newFiles) => {
     setFiles((prev) => [...prev, ...Array.from(newFiles)]);
@@ -73,9 +106,9 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
 
   const handleUploadRequest = (e) => {
     e.preventDefault();
-    if (!files.length || !apartado || !tipoDocumento) {
+    if (!files.length || !puesto || !tipoDocumento) {
       toast.warning(
-        "Debes seleccionar al menos un archivo, un apartado y un tipo de documento."
+        "Debes seleccionar al menos un archivo, un puesto y un tipo de documento."
       );
       return;
     }
@@ -96,7 +129,7 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
       for (const file of files) {
         const formData = new FormData();
         formData.append("file", file);
-        formData.append("apartado", apartado);
+        formData.append("puesto", puesto);
         formData.append("tipo_documento", tipoDocumento);
         formData.append("publico", publico);
         if (publico && coverImage) {
@@ -116,7 +149,7 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
       toast.success("Archivos subidos correctamente.");
       setOpen(false);
       setFiles([]);
-      setApartado("");
+      setPuesto("");
       setTipoDocumento("");
       setPublico(false);
       setCoverImage(null);
@@ -204,16 +237,19 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
             </div>
           )}
 
-          {/* Apartado */}
+          {/* Puesto */}
           <div className="space-y-2">
-            <label className="block text-sm font-medium">Apartado</label>
-            <Select value={apartado} onValueChange={setApartado}>
+            <label className="block text-sm font-medium">Puesto</label>
+            <Select value={puesto} onValueChange={handlePuestoChange}>
               <SelectTrigger className="border border-gray-300">
-                <SelectValue placeholder="Selecciona un apartado" />
+                <SelectValue placeholder="Selecciona un puesto" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="CDES Inst.">CDES Inst.</SelectItem>
-                <SelectItem value="PES 203P">PES 2030</SelectItem>
+                {Object.keys(documentTypesByRole).map((role) => (
+                  <SelectItem key={role} value={role}>
+                    {role}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -223,16 +259,21 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
             <label className="block text-sm font-medium">
               Tipo de documento
             </label>
-            <Select value={tipoDocumento} onValueChange={setTipoDocumento}>
+            <Select
+              value={tipoDocumento}
+              onValueChange={setTipoDocumento}
+              disabled={!puesto}
+            >
               <SelectTrigger className="border border-gray-300">
                 <SelectValue placeholder="Selecciona el tipo de documento" />
               </SelectTrigger>
               <SelectContent>
-                {/* Add options here as needed */}
-                <SelectItem value="Informe">Informe</SelectItem>
-                <SelectItem value="Presentacion">Presentación</SelectItem>
-                <SelectItem value="Acta">Acta</SelectItem>
-                <SelectItem value="Otro">Otro</SelectItem>
+                {puesto &&
+                  documentTypesByRole[puesto].map((type) => (
+                    <SelectItem key={type} value={type}>
+                      {type}
+                    </SelectItem>
+                  ))}
               </SelectContent>
             </Select>
           </div>
