@@ -30,7 +30,6 @@ export default function Login({ className, ...props }) {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const token = await userCredential.user.getIdToken();
 
-      // Consultar perfil en backend
       const res = await fetch("http://localhost:8000/users/me", {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -44,7 +43,6 @@ export default function Login({ className, ...props }) {
       localStorage.setItem("token", token);
       localStorage.setItem("user", JSON.stringify(data));
 
-      // Redirigir por rol
       const role = data.role;
       switch (role) {
         case "admin":
@@ -68,125 +66,127 @@ export default function Login({ className, ...props }) {
   };
 
   return (
-    <div className="relative flex min-h-screen w-full bg-cabra-black">
-      {/* Imagen de fondo del edificio CDES */}
-      <div 
-        className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-75"
-        style={{
-          backgroundImage: `url('/edificio_cdes.png')`,
-          backgroundPosition: 'center right',
-          backgroundSize: 'cover'
-        }}
-      />
-      
-      {/* Overlay para mejor contraste */}
-      <div className="absolute inset-0 bg-gradient-to-r from-cabra-black via-cabra-black/90 to-cabra-black/30" />
+    <div className="flex min-h-screen">
+      {/* Panel izquierdo - Formulario de login */}
+      <div className="flex w-1/2 flex-col justify-center bg-white px-8 py-12 lg:px-16">
+        <div className="mx-auto w-full max-w-sm">
+          {/* Logo y título */}
+          <div className="mb-8">
+            <div className="flex items-center mb-6">
+              <img 
+                src="/favicon.ico" 
+                alt="CDES Logo" 
+                className="w-10 h-10 mr-3"
+              />
+              <span className="text-2xl font-bold text-cabra-purple">CDES</span>
+            </div>
+            <h2 className="text-3xl font-bold text-gray-900">Iniciar sesión</h2>
+            <p className="mt-2 text-sm text-gray-600">
+              Accede a tu cuenta para continuar
+            </p>
+          </div>
 
-      {/* Contenedor principal */}
-      <div className="relative z-10 flex w-full">
-        {/* Panel izquierdo - Formulario de login */}
-        <div className="flex w-full lg:w-1/2 xl:w-2/5 items-center justify-center p-6 md:p-10">
-          <div className="w-full max-w-md">
-            {/* Logo y título principal */}
-            <div className="mb-8 text-center">
-              <div className="flex items-center justify-center mb-4">
-                <img 
-                  src="/favicon.ico" 
-                  alt="CDES Logo" 
-                  className="w-12 h-12 md:w-16 md:h-16 mr-3"
+          {/* Formulario */}
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div>
+              <Label htmlFor="email" className="block text-sm font-medium text-gray-700">
+                Correo electrónico
+              </Label>
+              <div className="mt-1">
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="example@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900 placeholder-gray-400 focus:border-cabra-purple focus:outline-none focus:ring-cabra-purple"
                 />
-                <div className="text-left">
-                  <h1 className="text-3xl md:text-4xl font-bold text-cabra-purple">
-                    CDES
-                  </h1>
-                </div>
               </div>
             </div>
 
-            {/* Formulario de login */}
-            <div className={cn("flex flex-col gap-6", className)} {...props}>
-              <Card className="bg-white border border-cabra-purple/50 backdrop-blur-sm shadow-2xl">
-                <CardHeader>
-                  <CardTitle className="text-cabra-purple text-2xl tracking-wide text-center">
-                    Iniciar sesión
-                  </CardTitle>
-                  <CardDescription className="text-center text-cabra-steel">
-                    Accede a tu cuenta para continuar
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <form onSubmit={handleSubmit}>
-                    <div className="flex flex-col gap-6">
-                      <div className="grid gap-3">
-                        <Label htmlFor="email" className="text-black">
-                          Correo electrónico
-                        </Label>
-                        <Input
-                          id="email"
-                          type="email"
-                          placeholder="correo@ejemplo.com"
-                          value={email}
-                          onChange={(e) => setEmail(e.target.value)}
-                          required
-                          className="bg-cabra-black/50 border-cabra-steel/30 text-white placeholder:text-cabra-steel/60"
-                        />
-                      </div>
-                      <div className="grid gap-3">
-                        <div className="flex items-center">
-                          <Label htmlFor="password" className="text-black">
-                            Contraseña
-                          </Label>
-                          <a
-                            href="#"
-                            className="ml-auto inline-block text-sm text-cabra-purple hover:text-cabra-purple/80 underline-offset-4 hover:underline"
-                          >
-                            ¿Olvidaste tu contraseña?
-                          </a>
-                        </div>
-                        <Input
-                          id="password"
-                          type="password"
-                          placeholder="••••••••"
-                          value={password}
-                          onChange={(e) => setPassword(e.target.value)}
-                          required
-                          className="bg-cabra-black/50 border-cabra-steel/30 text-black placeholder:text-cabra-steel/60"
-                        />
-                      </div>
-                      {error && (
-                        <div className="text-red-400 text-sm text-center bg-red-500/10 p-3 rounded-md border border-red-500/20">
-                          {error}
-                        </div>
-                      )}
-                      <div className="flex flex-col gap-3">
-                        <Button 
-                          type="submit" 
-                          className="w-full bg-cabra-purple hover:bg-cabra-purple/90 border-2 border-gray-900 shadow-inner hover:shadow-lg text-black font-medium py-2.5 transition-all duration-200" 
-                          disabled={loading}
-                        >
-                          {loading ? (
-                            <div className="flex items-center gap-2">
-                              <div className="w-4 h-4 border-2 border-white/30 border-t-white text-black rounded-full animate-spin" />
-                              Entrando...
-                            </div>
-                          ) : (
-                            "Iniciar sesión"
-                          )}
-                        </Button>
-                      </div>
-                    </div>
-                  </form>
-                </CardContent>
-              </Card>
+            <div>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="password" className="block text-sm font-medium text-gray-700">
+                  Contraseña
+                </Label>
+                <a
+                  href="#"
+                  className="text-sm text-cabra-purple hover:text-cabra-purple/80 underline-offset-4 hover:underline"
+                >
+                  ¿Olvidaste tu contraseña?
+                </a>
+              </div>
+              <div className="mt-1">
+                <Input
+                  id="password"
+                  type="password"
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900 placeholder-gray-400 focus:border-cabra-purple focus:outline-none focus:ring-cabra-purple"
+                />
+              </div>
             </div>
 
-            {/* Footer */}
-            <div className="mt-8 text-center text-cabra-steel text-sm">
-              <p>Consejo de Desarrollo Estratégico de Santiago</p>
-              <p className="mt-1">© 2025 CDES. Todos los derechos reservados.</p>
+            {error && (
+              <div className="text-red-600 text-sm bg-red-50 p-3 rounded-md border border-red-200">
+                {error}
+              </div>
+            )}
+
+            <div>
+              <Button
+                type="submit"
+                disabled={loading}
+                className="w-full bg-cabra-purple hover:bg-cabra-purple/90 border-2 border-gray-900 text-black font-medium py-2.5 px-4 rounded-md transition-all duration-200 shadow-md hover:shadow-lg"
+              >
+                {loading ? (
+                  <div className="flex items-center justify-center gap-2">
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Entrando...
+                  </div>
+                ) : (
+                  "Iniciar sesión"
+                )}
+              </Button>
+            </div>
+          </form>
+
+        </div>
+      </div>
+
+      {/* Panel derecho - Imagen y branding */}
+      <div className="relative flex w-1/2 flex-col justify-center overflow-hidden ">
+        {/* Imagen de fondo */}
+        <div 
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-30"
+          style={{
+            backgroundImage: `url('/edificio_cdes.png')`,
+            backgroundPosition: 'center',
+            backgroundSize: 'cover'
+          }}
+        />
+        
+        {/* Contenido */}
+        <div className="relative z-10 px-8 py-12 lg:px-16">
+          <div className="mx-auto max-w-md text-center text-black">
+            {/* Logo grande */}
+            <div className="mb-8">
+              <p className="text-xl text-black">Indexador de Documentos</p>
+            </div>
+
+            {/* Footer del panel */}
+            <div className="mt-8 text-sm text-black">
+              <p>© 2025 CDES. Todos los derechos reservados.</p>
             </div>
           </div>
         </div>
+
+        {/* Decoración geométrica */}
+        <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full transform translate-x-16 -translate-y-16"></div>
+        <div className="absolute bottom-0 left-0 w-24 h-24 bg-white/5 rounded-full transform -translate-x-12 translate-y-12"></div>
       </div>
     </div>
   );

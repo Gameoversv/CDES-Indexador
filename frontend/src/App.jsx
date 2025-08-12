@@ -16,7 +16,7 @@ import AdminDashboard from "./components/Admin/Layout/AdminDashboard";
 import AdminUsers from "./components/Admin/ModuloUsuarios/AdminUsers";
 import AdminDocuments from "./components/Admin/ModuloDocuments/AdminDocuments";
 import AdminAudits from "./components/Admin/ModuloAudits/AdminAudit";
-import AdminLibrary from "./components/Admin/ModuloLibrary/AdminLibrary"; // ✅ corregido
+import AdminLibrary from "./components/Admin/ModuloLibrary/AdminLibrary"; // corregido
 import News from "./components/Admin/ModuloNews/News";
 
 import "./App.css";
