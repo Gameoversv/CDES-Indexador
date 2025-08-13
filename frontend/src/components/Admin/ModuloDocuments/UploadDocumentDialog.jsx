@@ -82,8 +82,9 @@ const formatDocumentType = (type) => {
 
 export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
   const { userRole } = useAuth();
-  const [files, setFiles] = useState([]);
+  const [file, setFile] = useState(null);
   const [apartado, setApartado] = useState("");
+  const [estrategia, setEstrategia] = useState("");
   const [tipoDocumento, setTipoDocumento] = useState("");
   const [publico, setPublico] = useState(false);
   const [coverImage, setCoverImage] = useState(null);
@@ -98,8 +99,8 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
     }
   }, [userRole]);
 
-  const handleFilesSelect = (newFiles) => {
-    setFiles((prev) => [...prev, ...Array.from(newFiles)]);
+  const handleFileSelect = (selectedFile) => {
+    setFile(selectedFile);
   };
 
   const handleCoverImageSelect = (e) => {
@@ -122,20 +123,24 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
     e.preventDefault();
     setIsDragging(false);
     if (e.dataTransfer.files.length) {
-      handleFilesSelect(e.dataTransfer.files);
+      handleFileSelect(e.dataTransfer.files[0]);
     }
   }, []);
 
-  const handleRemoveFile = (index) => {
-    setFiles((prev) => prev.filter((_, i) => i !== index));
+  const handleRemoveFile = () => {
+    setFile(null);
   };
 
   const handleUploadRequest = (e) => {
     e.preventDefault();
-    if (!files.length || !apartado || !tipoDocumento) {
+    if (!file || !apartado || !tipoDocumento) {
       toast.warning(
-        "Debes seleccionar al menos un archivo, una iniciativa y un tipo de documento."
+        "Debes seleccionar un archivo, una iniciativa y un tipo de documento."
       );
+      return;
+    }
+    if (apartado === "PES 2030" && !estrategia) {
+      toast.warning("Debes seleccionar una estrategia para PES 2030.");
       return;
     }
     if (publico && !coverImage) {
@@ -152,38 +157,40 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
     try {
       setUploading(true);
 
-      for (const file of files) {
-        const formData = new FormData();
-        formData.append("file", file);
-        formData.append("apartado", apartado);
-        formData.append("categoria", tipoDocumento);
-        formData.append("puesto", userRole); // Enviar el rol del usuario
-        formData.append("publico", publico);
-        if (publico && coverImage) {
-          formData.append("cover_image", coverImage);
-        }
-
-        await documentsAPI.upload(formData, {
-          onUploadProgress: (event) => {
-            if (event.total) {
-              const percent = Math.round((event.loaded * 100) / event.total);
-              setProgress((prev) => ({ ...prev, [file.name]: percent }));
-            }
-          },
-        });
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("apartado", apartado);
+      if (apartado === "PES 2030") {
+        formData.append("estrategia", estrategia);
+      }
+      formData.append("categoria", tipoDocumento);
+      formData.append("puesto", userRole); // Enviar el rol del usuario
+      formData.append("publico", publico);
+      if (publico && coverImage) {
+        formData.append("cover_image", coverImage);
       }
 
-      toast.success("Archivos subidos correctamente.");
+      await documentsAPI.upload(formData, {
+        onUploadProgress: (event) => {
+          if (event.total) {
+            const percent = Math.round((event.loaded * 100) / event.total);
+            setProgress({ [file.name]: percent });
+          }
+        },
+      });
+
+      toast.success("Archivo subido correctamente.");
       setOpen(false);
-      setFiles([]);
+      setFile(null);
       setApartado("");
+      setEstrategia("");
       setTipoDocumento("");
       setPublico(false);
       setCoverImage(null);
       onUploaded?.();
     } catch (error) {
       console.error("Error al subir archivo:", error);
-      toast.error("Error al subir uno o más archivos.");
+      toast.error("Error al subir el archivo.");
     } finally {
       setUploading(false);
       setProgress({});
@@ -201,26 +208,52 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
       <DialogContent className="rounded-xl max-w-3xl p-6">
         <DialogHeader>
           <DialogTitle className="text-xl font-semibold">
-            Subir Documentos
+            Subir Documento
           </DialogTitle>
           <DialogDescription>
-            Sube uno o varios documentos para indexación.
+            Sube un documento para indexación.
           </DialogDescription>
         </DialogHeader>
 
         <form className="space-y-4 mt-4" onSubmit={handleUploadRequest}>
-          {/* Apartado */}
-          <div className="space-y-2">
-            <label className="block text-sm font-medium">Iniciativa</label>
-            <Select value={apartado} onValueChange={setApartado}>
-              <SelectTrigger className="border border-gray-300">
-                <SelectValue placeholder="Selecciona una iniciativa" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="CDES inst.">CDES inst.</SelectItem>
-                <SelectItem value="PES 2030">PES 2030</SelectItem>
-              </SelectContent>
-            </Select>
+          {/* Apartado y Estrategia */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label className="block text-sm font-medium">Iniciativa</label>
+              <Select
+                value={apartado}
+                onValueChange={(value) => {
+                  setApartado(value);
+                  setEstrategia(""); // Reset strategy when initiative changes
+                }}
+              >
+                <SelectTrigger className="border border-gray-300">
+                  <SelectValue placeholder="Selecciona una iniciativa" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="CDES inst.">CDES inst.</SelectItem>
+                  <SelectItem value="PES 2030">PES 2030</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {apartado === "PES 2030" && (
+              <div className="space-y-2">
+                <label className="block text-sm font-medium">Estrategia</label>
+                <Select value={estrategia} onValueChange={setEstrategia}>
+                  <SelectTrigger className="border border-gray-300">
+                    <SelectValue placeholder="Selecciona una estrategia" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Estrategia I">Estrategia I</SelectItem>
+                    <SelectItem value="Estrategia II">Estrategia II</SelectItem>
+                    <SelectItem value="Estrategia III">
+                      Estrategia III
+                    </SelectItem>
+                    <SelectItem value="Estrategia IV">Estrategia IV</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
 
           {/* Drag & Drop */}
@@ -234,47 +267,43 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
           >
             <UploadCloud className="mx-auto h-10 w-10 text-gray-500" />
             <p className="mt-2 text-gray-700 font-medium">
-              Arrastra tus archivos aquí
+              Arrastra tu archivo aquí
             </p>
             <p className="text-xs text-gray-500">
-              o selecciónalos manually
+              o selecciónalo manualmente
             </p>
             <Input
               type="file"
-              multiple
               accept=".pdf,.docx,.xlsx,.pptx"
-              onChange={(e) => handleFilesSelect(e.target.files)}
+              onChange={(e) => handleFileSelect(e.target.files[0])}
               className="mt-3"
             />
           </div>
 
           {/* Lista de archivos */}
-          {files.length > 0 && (
+          {file && (
             <div className="space-y-2">
-              {files.map((file, idx) => (
-                <div
-                  key={idx}
-                  className="flex items-center justify-between border rounded-lg p-2"
-                >
-                  <div className="flex items-center gap-2">
-                    <File className="h-5 w-5 text-gray-600" />
-                    <span className="text-sm">{file.name}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {uploading && progress[file.name] !== undefined && (
-                      <Progress value={progress[file.name]} className="w-24" />
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveFile(idx)}
-                      className="text-red-500 hover:text-red-700"
-                      disabled={uploading}
-                    >
-                      <X className="h-5 w-5" />
-                    </button>
-                  </div>
+              <div
+                className="flex items-center justify-between border rounded-lg p-2"
+              >
+                <div className="flex items-center gap-2">
+                  <File className="h-5 w-5 text-gray-600" />
+                  <span className="text-sm">{file.name}</span>
                 </div>
-              ))}
+                <div className="flex items-center gap-2">
+                  {uploading && progress[file.name] !== undefined && (
+                    <Progress value={progress[file.name]} className="w-24" />
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleRemoveFile}
+                    className="text-red-500 hover:text-red-700"
+                    disabled={uploading}
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+              </div>
             </div>
           )}
 
@@ -364,7 +393,7 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
               Cancelar
             </Button>
             <Button type="submit" variant="destructive" disabled={uploading}>
-              {uploading ? "Subiendo..." : "Subir documentos"}
+              {uploading ? "Subiendo..." : "Subir documento"}
             </Button>
           </div>
         </form>
@@ -375,7 +404,7 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
             <DialogHeader>
               <DialogTitle>Confirmar subida</DialogTitle>
               <DialogDescription>
-                ¿Estás seguro de que quieres subir {files.length} documento(s)?
+                ¿Estás seguro de que quieres subir este documento?
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
