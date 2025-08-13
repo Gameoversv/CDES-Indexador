@@ -23,7 +23,9 @@ const AuthContext = createContext(undefined);
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (!context) throw new Error("useAuth debe ser usado dentro de un AuthProvider");
+  if (!context) {
+    throw new Error("useAuth debe ser usado dentro de un AuthProvider");
+  }
   return context;
 };
 
@@ -35,6 +37,7 @@ export function AuthProvider({ children }) {
   const [userProfile, setUserProfile] = useState(null);
   const [authError, setAuthError] = useState(null);
   const [tokenExpiring, setTokenExpiring] = useState(false);
+  const [userRole, setUserRole] = useState(null); // Firebase role from custom claims
 
   const refreshTokenAndClaims = async (user, forceRefresh = false) => {
     try {
@@ -45,6 +48,8 @@ export function AuthProvider({ children }) {
       const customClaims = tokenResult.claims;
 
       setIdToken(token);
+      setUserRole(customClaims?.role || null); // Store Firebase role
+      
       // Ajuste: admin si claim admin true o rol == direccion ejecutiva
       const claimAdmin = Boolean(customClaims?.admin);
       let derivedAdmin = claimAdmin;
@@ -69,6 +74,7 @@ export function AuthProvider({ children }) {
       } catch (_) {
         // Silencioso
       }
+      
       setIsAdmin(derivedAdmin);
       localStorage.setItem("userClaims", JSON.stringify(customClaims));
       localStorage.setItem("idToken", token);
@@ -187,6 +193,7 @@ export function AuthProvider({ children }) {
       setUserProfile(null);
       setAuthError(null);
       setTokenExpiring(false);
+      setUserRole(null); // Clear Firebase role
       setAuthToken(null); // ✅ Limpia el token del cliente Axios
       localStorage.clear();
     } catch (error) {
@@ -253,6 +260,7 @@ export function AuthProvider({ children }) {
         setUserProfile(null);
         setAuthError(null);
         setTokenExpiring(false);
+        setUserRole(null); // Clear Firebase role when no user
         localStorage.clear();
       }
       setLoading(false);
@@ -279,26 +287,39 @@ export function AuthProvider({ children }) {
     return () => clearInterval(interval);
   }, [idToken, currentUser]);
 
-  const contextValue = useMemo(() => ({
-    currentUser,
-    idToken,
-    isAdmin,
-    loading,
-    userProfile,
-    authError,
-    tokenExpiring,
-    signup,
-    login,
-    logout,
-    updateUserProfile,
-    getFreshToken,
-    getIdToken: () => getIdToken(false),
-    refreshToken: () => getIdToken(true),
-    clearAuthError,
-    isAuthenticated: !!currentUser,
-    hasValidToken: !!idToken,
-    userRole: isAdmin ? "admin" : (userProfile?.role || "user")
-  }), [currentUser, idToken, isAdmin, loading, userProfile, authError, tokenExpiring, getFreshToken]);
+  const contextValue = useMemo(
+    () => ({
+      currentUser,
+      idToken,
+      isAdmin,
+      loading,
+      userProfile,
+      authError,
+      tokenExpiring,
+      signup,
+      login,
+      logout,
+      updateUserProfile,
+      getFreshToken,
+      getIdToken: () => getIdToken(false),
+      refreshToken: () => getIdToken(true),
+      clearAuthError,
+      isAuthenticated: !!currentUser,
+      hasValidToken: !!idToken,
+      userRole: userRole || (isAdmin ? "admin" : (userProfile?.role || "user")), // Hybrid approach
+    }),
+    [
+      currentUser,
+      idToken,
+      isAdmin,
+      loading,
+      userProfile,
+      authError,
+      tokenExpiring,
+      getFreshToken,
+      userRole, // Add back to dependencies
+    ]
+  );
 
   if (loading) {
     return (
