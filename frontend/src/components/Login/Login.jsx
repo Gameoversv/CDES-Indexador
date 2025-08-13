@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { auth } from "@/services/firebase";
+import { authAPI } from "@/services/api";
 import { cn } from "@/components/utils/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -29,23 +30,19 @@ export default function Login({ className, ...props }) {
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const token = await userCredential.user.getIdToken();
+      localStorage.setItem("token", token); // compat legado
 
-      // 🔐 Consultar perfil en backend
-      const res = await fetch("http://localhost:8000/users/me", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      // Perfil consolidado (usa /auth/me que ya audita USERS_ME_QUERIED)
+      try {
+        const me = await authAPI.getCurrentUser();
+        if (me?.data) {
+          localStorage.setItem("user", JSON.stringify(me.data));
+        }
+      } catch (_) {
+        // fallback silencioso
+      }
 
-      if (!res.ok) throw new Error("Fallo al obtener usuario");
-
-      const data = await res.json();
-
-      localStorage.setItem("token", token);
-      localStorage.setItem("user", JSON.stringify(data));
-
-      // 🎯 Redirigir por rol
-      const role = data.role;
+      const role = JSON.parse(localStorage.getItem("user") || "{}").role;
       switch (role) {
         case "admin":
           navigate("/admin");
