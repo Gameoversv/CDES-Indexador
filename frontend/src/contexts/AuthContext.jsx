@@ -14,7 +14,7 @@ import {
   updateProfile,
 } from "firebase/auth";
 import { auth } from "../services/firebase";
-import { auditAPI, setAuthToken } from "../services/api";
+import { auditAPI, setAuthToken, authAPI } from "../services/api";
 
 const TOKEN_REFRESH_INTERVAL = 50 * 60 * 1000;
 const TOKEN_WARNING_THRESHOLD = 5 * 60 * 1000;
@@ -23,9 +23,7 @@ const AuthContext = createContext(undefined);
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error("useAuth debe ser usado dentro de un AuthProvider");
-  }
+  if (!context) throw new Error("useAuth debe ser usado dentro de un AuthProvider");
   return context;
 };
 
@@ -47,15 +45,33 @@ export function AuthProvider({ children }) {
       const customClaims = tokenResult.claims;
 
       setIdToken(token);
-      setIsAdmin(Boolean(customClaims?.admin));
-      localStorage.setItem("idToken", token);
-      localStorage.setItem("userClaims", JSON.stringify(customClaims));
-      setAuthToken(token); // ✅ Este es el punto clave para las peticiones con token
+      // Ajuste: admin si claim admin true o rol == direccion ejecutiva
+      const claimAdmin = Boolean(customClaims?.admin);
+      let derivedAdmin = claimAdmin;
+      setAuthToken(token);
 
       const expirationTime = tokenResult.expirationTime;
       const timeUntilExpiration = new Date(expirationTime).getTime() - Date.now();
       setTokenExpiring(timeUntilExpiration <= TOKEN_WARNING_THRESHOLD);
 
+      // Sincronizar perfil backend (usa evento existente USERS_ME_QUERIED)
+      try {
+        const me = await authAPI.getCurrentUser();
+        if (me?.data) {
+          localStorage.setItem("user", JSON.stringify(me.data));
+          localStorage.setItem("userProfile", JSON.stringify(me.data));
+          setUserProfile(me.data);
+          const normRole = (me.data?.role || "").normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase().trim();
+          if (normRole === 'direccion ejecutiva') {
+            derivedAdmin = true;
+          }
+        }
+      } catch (_) {
+        // Silencioso
+      }
+      setIsAdmin(derivedAdmin);
+      localStorage.setItem("userClaims", JSON.stringify(customClaims));
+      localStorage.setItem("idToken", token);
       return token;
     } catch (error) {
       console.error("Error al renovar token:", error);
@@ -263,38 +279,26 @@ export function AuthProvider({ children }) {
     return () => clearInterval(interval);
   }, [idToken, currentUser]);
 
-  const contextValue = useMemo(
-    () => ({
-      currentUser,
-      idToken,
-      isAdmin,
-      loading,
-      userProfile,
-      authError,
-      tokenExpiring,
-      signup,
-      login,
-      logout,
-      updateUserProfile,
-      getFreshToken,
-      getIdToken: () => getIdToken(false),
-      refreshToken: () => getIdToken(true),
-      clearAuthError,
-      isAuthenticated: !!currentUser,
-      hasValidToken: !!idToken,
-      userRole: isAdmin ? "admin" : "user",
-    }),
-    [
-      currentUser,
-      idToken,
-      isAdmin,
-      loading,
-      userProfile,
-      authError,
-      tokenExpiring,
-      getFreshToken,
-    ]
-  );
+  const contextValue = useMemo(() => ({
+    currentUser,
+    idToken,
+    isAdmin,
+    loading,
+    userProfile,
+    authError,
+    tokenExpiring,
+    signup,
+    login,
+    logout,
+    updateUserProfile,
+    getFreshToken,
+    getIdToken: () => getIdToken(false),
+    refreshToken: () => getIdToken(true),
+    clearAuthError,
+    isAuthenticated: !!currentUser,
+    hasValidToken: !!idToken,
+    userRole: isAdmin ? "admin" : (userProfile?.role || "user")
+  }), [currentUser, idToken, isAdmin, loading, userProfile, authError, tokenExpiring, getFreshToken]);
 
   if (loading) {
     return (

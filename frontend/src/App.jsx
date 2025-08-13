@@ -9,7 +9,7 @@ import Login from "./components/Login/Login";
 import Signup from "./components/Login/Signup";
 
 // 👤 Área de usuarios autenticados
-import Dashboard from "./components/Users/Dashboard";
+import Dashboard from "./components/Users/UserDashboard";
 
 // 🛠️ Panel administrativo modularizado
 import AdminDashboard from "./components/Admin/Layout/AdminDashboard";
