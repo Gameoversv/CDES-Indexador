@@ -130,7 +130,50 @@ async def upload_document(
 
         content_type = file.content_type or "application/octet-stream"
         extracted_metadata = extract_metadata(file_bytes, file.filename)
-        storage_path = upload_file_to_storage(file_bytes, file.filename, content_type)
+        # Decide subfolder based on apartado
+        apartado_folder = None
+        storage_filename = file.filename
+        if apartado:
+            if apartado == "CDES inst":
+                # Get user_role and tipo_documento from metadata (prefer custom_metadata, fallback to extracted_metadata)
+                user_role = None
+                tipo_documento = None
+                # Try to get from custom_metadata first
+                if "user_role" in custom_metadata:
+                    user_role = custom_metadata["user_role"]
+                elif "user_role" in extracted_metadata:
+                    user_role = extracted_metadata["user_role"]
+                if "tipo_documento" in custom_metadata:
+                    tipo_documento = custom_metadata["tipo_documento"]
+                elif "tipo_documento" in extracted_metadata:
+                    tipo_documento = extracted_metadata["tipo_documento"]
+                # Build path: CDES_inst/{user_role}/{tipo_documento}/filename
+                subfolders = ["CDES_inst"]
+                if user_role:
+                    subfolders.append(str(user_role))
+                if tipo_documento:
+                    subfolders.append(str(tipo_documento))
+                storage_filename = "/".join(subfolders + [file.filename])
+            elif apartado == "PES 2030":
+                # Get estrategia and tipo_documento from metadata (prefer custom_metadata, fallback to extracted_metadata)
+                estrategia = None
+                tipo_documento = None
+                if "estrategia" in custom_metadata:
+                    estrategia = custom_metadata["estrategia"]
+                elif "estrategia" in extracted_metadata:
+                    estrategia = extracted_metadata["estrategia"]
+                if "tipo_documento" in custom_metadata:
+                    tipo_documento = custom_metadata["tipo_documento"]
+                elif "tipo_documento" in extracted_metadata:
+                    tipo_documento = extracted_metadata["tipo_documento"]
+                # Build path: PES_2030/{estrategia}/{tipo_documento}/filename
+                subfolders = ["PES_2030"]
+                if estrategia:
+                    subfolders.append(str(estrategia))
+                if tipo_documento:
+                    subfolders.append(str(tipo_documento))
+                storage_filename = "/".join(subfolders + [file.filename])
+        storage_path = upload_file_to_storage(file_bytes, storage_filename, content_type)
 
         custom_metadata = {}
         if apartado:

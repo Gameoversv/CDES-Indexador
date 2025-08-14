@@ -22,6 +22,140 @@ ALLOWED_EXTENSIONS = {'.pdf', '.docx', '.pptx', '.xlsx', '.txt', '.md', '.png', 
 
 _AI_PROVIDERS: Dict[str, type["AIService"]] = {}
 
+DOCUMENTOS = {
+    "presentaciones": {
+        "metadata": ["tema", "descripcion", "secciones_clave", "keywords"],
+        "descripcion": "Es una presentacion mayormente guardado en formato .pptx, donde se presenta un tema en cuestion."
+    },
+    "carta": {
+        "metadata": ["tema", "descripcion", "remitente", "destinatario", "fecha_carta",
+                        "proposito", "keywords"],
+        "descripcion": "Un mensaje mandado de forma profecional que puede tener difersos motivos. mayormente mandado y recibidas de forma fisica."
+    },
+    "informe": {
+        "metadata": ["tema", "audiencia", "secciones_principales", "numero_paginas", 
+                        "fecha_informe", "inconsistencias_detectadas", "keywords"],
+        "descripcion": " es un documento que presenta de manera ordenada, clara y objetiva información sobre un tema específico. Su propósito principal es comunicar resultados, hallazgos."
+    },
+    "convenios": {
+        "metadata": ["tema", "partes", "objetivos", "fecha_inicio", "duracion", 
+                        "Estatus", "clausulas", "fecha_firma", "Confidencial", "keywords"],
+        "descripcion": "Es un acuerdo formal entre dos o más partes  mediante en el cual establecen compromisos, colaboraciones o intenciones comunes, sin necesariamente implicar una obligación económica directa o contractual, aunque puede incluirla."
+    },
+    "contrato": {
+        "metadata": ["tema", "partes_involucradas", "tipo_contrato", "fecha_firma",
+                        "fecha_inicio", "fecha_fin", "clausulas_principales", "obligaciones", 
+                        "keywords"],
+        "descripcion": "Es un acuerdo legalmente vinculante entre dos o más partes que establece derechos y obligaciones mutuas."
+    },
+    "minutas/ayuda_memoria": {
+        "metadata": ["tema", "resumen_informe", "fecha_reunion", "hora_inicio", 
+                        "actividades_samana", "puntos_claves", "hora_finalizacion", "participantes", 
+                        "keywords"],
+        "descripcion": "es un documento breve que registra de forma resumida y cronológica los puntos tratados en una reunión. Sirve como registro de lo discutido, lo acordado, quién participó y qué acciones deben realizarse luego del encuentro."
+    },
+    "actas": {
+        "metadata": ["tema", "fecha_reunion", "lugar", "presentes", "resoluciones", 
+                        "firmas_presentes", "keywords"],
+        "descripcion": "Documento oficial y escrito que registra de forma fiel, objetiva y cronológica los hechos, acuerdos y decisiones ocurridas durante una reunión, sesión"
+    },
+    "mapas": {
+        "metadata": ["lugar", "leyenda", "tipo_mapa", "nodos_principales", "keywords"],
+        "descripcion": "Es un documento o visualización que presenta datos espaciales o geográficos de manera estructurada. Mayormente guardados por provincias."
+    },
+    "logos": {
+        "metadata": ["tema", "entidad", "colores", "formas", "tipografia", "simbolismo", "keywords"],
+        "descripcion": "Es un símbolo gráfico que representa visualmente la identidad de una marca, empresa, organización o producto."
+    },
+    "graficos": {
+        "metadata": ["tema", "tipo_grafico", "cantida_grafos", "datos_representados", 
+                        "ejes", "etiquetas", "keywords"],
+        "descripcion": "Una representacion grafica de informacion o datos relaciones, que permite comprender patrones, tendencias, comparaciones o distribuciones de forma más clara y rápida"
+    },
+    "nota_prensa/comunicaciones": {
+        "metadata": ["tema", "organizacion principal", "Ubicacion", "Colaboradores", 
+                        "contacto_prensa", "fecha_publicacion", "keywords"],
+        "descripcion": "es un texto redactado en formato periodístico que busca difundir información importante, actual y verificable, generalmente sobre eventos, logros, lanzamientos."
+    },
+    "plan": {
+        "metadata": ["tema", "organizacion", "año", "objetivos", "estrategias", "cronograma", 
+                        "responsables", "indice", "keywords"],
+        "descripcion": "es un documento que define la ejecicion de un proyecto, programa o iniciativa a lo largo de un periodo determinado. Su propósito es establecer objetivos claros, estrategias y acciones específicas para alcanzar metas definidas."
+    },
+    "ficha_tecnica":{
+        "metadata": ["tema", "Descripcion", "justificacion", "objetivos", "poblacion beneficiaria", 
+                        "actores estrategicos", "plazos de ejecucion", "presupuesto estumado", "fecha_extraccion", "keywords"],
+        "descripcion":"Es un documento estructurado que resume de manera clara, concisa y organizada la información esencial de un proyecto, evento, producto, servicio o iniciativa. Su propósito es proporcionar datos clave para facilitar la comprensión."
+    },
+    "estudio":{
+        "metadata": ["tema", "titulo", "objetivo", "Descripcion", "metodologia", "fecha_publicacion", 
+                        "autor", "numero_paginas", "fecha_extraccion", "keywords"],
+        "descripcion":"Un análisis sistemático y detallado sobre un tema, fenómeno o problema específico, realizado con el objetivo de comprenderlo, evaluarlo o proponer soluciones."
+    },
+    "video":{
+        "metadata": ["tema", "duracion_segundos", "resolucion", "fecha_grabacion", "autor", 
+                        "formato_video", "tamano_mb", "fecha_extraccion", "keywords"],
+        "descripcion":"un video posiblemente promocional o de algun evento."
+    },
+    "foto":{
+        "metadata": ["tema", "resolucion", "fecha_captura", "autor", "formato_imagen", "tamano_mb", 
+                        "fecha_extraccion", "keywords"],
+        "descripcion":"una foto posiblemente promocional o de algun evento."
+    },
+    "discursos":{
+        "metadata": ["tema", "orador", "afiliacion", "resumen", "fecha_extraccion", "keywords"],
+        "descripcion":"una foto posiblemente promocional o de algun evento."
+    },
+    "memorias institucionales":{
+        "metadata": ["temas", "institucion", "periodo", "fecha_extraccion", "keywords"],
+        "descripcion":"es un documento que adberga los eventos mas importante que pasaron en un periodo de tiempo, para tener un registro mas ordenados de estos"
+    },
+    "convocatorias":{
+        "metadata": ["descripcion", "tipo", "temas", "medio_confirmacion", 
+                        "Entidad_convocada", "fecha_citacion", "ubicacion", "fecha_extraccion", "keywords"],
+        "descripcion":"son los datos estructurados que describen sus características, contexto y contenido, facilitando su organización, búsqueda, análisis y seguimiento."
+    },
+    "Invitacion":{
+        "metadata": ["descripcion", "evento", "emisor", "destinatario", "fecha_invitacion", 
+                        "fecha_extraccion", "keywords"],
+        "descripcion":" es un documento o mensaje formal o informal, emitido por una persona, institución o entidad, con el propósito de convocar, solicitar o animar la participación de una o más personas a un evento, actividad, reunión, proceso o acto específico."
+    },
+    "cuestionario/ instrumento de recolección de datos":{
+        "metadata": ["objetivo", "actores", "tipo", "unidad_analisis", "tipo_datos", "preguntas", 
+                        "fecha_extraccion", "keywords"],
+        "descripcion":"es una herramienta diseñada para obtener información relevante, válida y confiable de una población, muestra o unidad de análisis. Estos instrumentos permiten captar datos cuantitativos o cualitativos según el objetivo de una investigación o diagnóstico."
+    },
+    "TDER":{
+        "metadata": ["proyecto", "instalacion", "lugar_ejecucion", "duracion", "objetivos", 
+                        "actividades", "fecha_extraccion", "keywords"],
+        "descripcion":"El TDR establece las bases para la contratación de un consultor especializado en geomática y producción cartográfica, con el fin de instalar y poner en funcionamiento un laboratorio cartográfico municipal. Incluye actividades como diagnóstico de capacidades técnicas y equipos, formulación de recomendaciones organizativas y tecnológicas, y capacitación del personal."
+    },
+    "cronograma": {
+        "metadata": ["evento", "descripcion", "Objetivos", "responsable", "fecha_cronograma", 
+                        "fecha_extraccion", "keywords"],
+        "descripcion": "Es un documento que presenta un calendario de actividades o eventos, con el objetivo de organizar y planificar el tiempo de manera efectiva."
+    },
+    "diagnostico":{
+        "metadata": ["tema", "institucion_responsable", "resumen", "region", "principales_hallazgos", 
+                        "estado", "fecha_extraccion", "keywords"],
+        "descripcion":"es un informe o análisis que evalúa el estado actual de la participación, derechos, deberes, organización y condiciones socio-políticas de la población dentro de un territorio."
+    },
+    "listado":{
+        "metadata": ["tema", "descripcion", "elementos", "fecha_extraccion", "keywords"],
+        "descripcion":"es un documento que presenta una relación ordenada y estructurada de elementos, objetos, personas o conceptos relacionados con un tema específico. Su propósito es organizar y presentar información de manera clara y accesible."
+    },
+    "declaracion ciudadana":{
+        "metadata": ["descripcion", "categoria de listado", "fecha_captura", "fecha_extraccion", 
+                        "keywords"],
+        "descripcion":"es un documento que establece los principios y compromisos de una comunidad o grupo en relación con un tema específico, buscando promover la participación ciudadana y la transparencia en la gestión pública."
+    },
+    "agendas": {
+        "metadata": ["tipo_archivo", "tema", "puntos_importantes", "fecha_reunion", "tiempo_inicio",
+                        "tiempo_finalizacion", "participantes", "fecha_cargado", "keywords"],
+        "descripcion": "Es un documento en el que se presenta la agenda de un evento, con sus participantes, fecha del evento y duracion estima tanto de inicio como de finalizacion "
+    }
+}
+
 def is_large_file(file_size_bytes: int) -> bool:
     return file_size_bytes > 20 * 1024 * 1024
 
@@ -51,7 +185,7 @@ IMPORTANTE: Responde ÚNICAMENTE con el objeto JSON, sin bloques de código mark
                 return data
         except json.JSONDecodeError:
             pass
-        
+
         json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', raw_response, re.DOTALL)
         if json_match:
             try:
@@ -60,10 +194,10 @@ IMPORTANTE: Responde ÚNICAMENTE con el objeto JSON, sin bloques de código mark
                     return data
             except json.JSONDecodeError:
                 pass
-        
+
         start_brace = raw_response.find('{')
         end_brace = raw_response.rfind('}')
-        
+
         if start_brace != -1 and end_brace != -1 and start_brace < end_brace:
             try:
                 data = json.loads(raw_response[start_brace:end_brace + 1])
@@ -71,23 +205,23 @@ IMPORTANTE: Responde ÚNICAMENTE con el objeto JSON, sin bloques de código mark
                     return data
             except json.JSONDecodeError:
                 pass
-        
+
         return {
             "title": "Error de parseo",
             "summary": "No se pudo extraer el resumen.",
             "keywords": [],
             "date": "Fecha no encontrada"
         }
-    
     @abstractmethod
     def _process_file(self, file_bytes: bytes, filename: str) -> Dict[str, Any]:
         pass
     
     def extract_metadata(self, file_bytes: bytes, filename: str) -> Dict[str, Any]:
+        import uuid
         try:
             path = Path(filename)
             file_extension = path.suffix.lower()
-            file_id = path.stem
+            file_id = f"doc_{uuid.uuid4()}"
             
             ai_metadata = self._process_file(file_bytes, filename)
             
@@ -107,8 +241,9 @@ IMPORTANTE: Responde ÚNICAMENTE con el objeto JSON, sin bloques de código mark
                 "file_hash": file_hash
             }
         except Exception as e:
+            file_id = f"doc_{uuid.uuid4()}"
             return {
-                "id": Path(filename).stem,
+                "id": file_id,
                 "filename": filename,
                 "file_extension": Path(filename).suffix.lower(),
                 "file_size_bytes": len(file_bytes),

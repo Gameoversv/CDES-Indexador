@@ -93,19 +93,36 @@ class DocumentMetadata(BaseModel):
         description="Título del documento extraído por IA",
         example="Contrato de Servicios Profesionales 2024"
     )
-    
+    apartado: str = Field(
+        ...,  # Obligatorio para indexación
+        description="Apartado o iniciativa del documento (ejemplo: 'CDES inst.', 'PES 2030')",
+        example="CDES inst."
+    )
+    user_role: str = Field(
+        ...,  # Rol del usuario que subió el archivo
+        description="Rol del usuario que subió el documento",
+        example="admin"
+    )
+    tipo_documento: str = Field(
+        ...,  # Tipo de documento seleccionado en el formulario
+        description="Tipo de documento seleccionado en el formulario",
+        example="informe"
+    )
+    estrategia: str = Field(
+        default="",  # Solo se guarda si apartado es 'PES 2030'
+        description="Estrategia seleccionada si apartado es 'PES 2030'",
+        example="Estrategia I"
+    )
     summary: str = Field(
         ...,
         description="Resumen del contenido generado por Google Gemini",
         example="Contrato que establece los términos y condiciones para la prestación de servicios profesionales..."
     )
-    
     keywords: List[str] = Field(
         ...,
         description="Lista de palabras clave extraídas por IA",
         example=["contrato", "servicios", "legal", "términos", "condiciones"]
     )
-    
     date: str = Field(
         ...,
         description="Fecha del documento en formato YYYY-MM-DD (extraída por IA)",
@@ -308,11 +325,11 @@ class DocumentSearchRequest(BaseModel):
 # ==================================================================================
 
 def create_document_metadata(
-    document_id: str,
-    filename: str,
-    file_content: bytes,
-    storage_path: str,
-    ai_metadata: Dict[str, Any],
+    document_id: str = None,
+    filename: str = None,
+    file_content: bytes = None,
+    storage_path: str = None,
+    ai_metadata: Dict[str, Any] = None,
     media_type: str = "application/octet-stream"
 ) -> DocumentMetadata:
     """
@@ -348,23 +365,36 @@ def create_document_metadata(
         )
     """
     import os
+    import uuid
     from datetime import datetime
-    
+
     # Extraer extensión del archivo
-    file_extension = os.path.splitext(filename)[1].lower()
-    
+    file_extension = os.path.splitext(filename)[1].lower() if filename else ""
+
     # Crear timestamp actual
     current_time = datetime.now().isoformat() + "Z"
-    
+
+    # Generar UUID si no se proporciona document_id
+    if not document_id:
+        document_id = f"doc_{uuid.uuid4()}"
+
+    estrategia_value = ""
+    if ai_metadata and ai_metadata.get("apartado", "") == "PES 2030":
+        estrategia_value = ai_metadata.get("estrategia", "")
+
     return DocumentMetadata(
         id=document_id,
         filename=filename,
         file_extension=file_extension,
-        file_size_bytes=len(file_content),
-        title=ai_metadata.get("title", "Título no disponible"),
-        summary=ai_metadata.get("summary", "Resumen no disponible"),
-        keywords=ai_metadata.get("keywords", []),
-        date=ai_metadata.get("date", "Fecha no encontrada"),
+        file_size_bytes=len(file_content) if file_content else 0,
+        title=ai_metadata.get("title", "Título no disponible") if ai_metadata else "Título no disponible",
+        apartado=ai_metadata.get("apartado", "") if ai_metadata else "",
+        user_role=ai_metadata.get("user_role", "") if ai_metadata else "",
+        tipo_documento=ai_metadata.get("tipo_documento", "") if ai_metadata else "",
+        estrategia=estrategia_value,
+        summary=ai_metadata.get("summary", "Resumen no disponible") if ai_metadata else "Resumen no disponible",
+        keywords=ai_metadata.get("keywords", []) if ai_metadata else [],
+        date=ai_metadata.get("date", "Fecha no encontrada") if ai_metadata else "Fecha no encontrada",
         storage_path=storage_path,
         media_type=media_type,
         created_at=current_time,
