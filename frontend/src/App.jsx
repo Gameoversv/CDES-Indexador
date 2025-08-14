@@ -7,6 +7,7 @@ import { Toaster } from "sonner";
 // 🔐 Autenticación
 import Login from "./components/Login/Login";
 import Signup from "./components/Login/Signup";
+import ForgotPassword from "./components/Login/ForgotPassword";
 
 // 👤 Área de usuarios autenticados
 import Dashboard from "./components/Users/UserDashboard";
@@ -31,6 +32,7 @@ export default function App() {
           {/* 🌐 Rutas públicas */}
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
 
           {/* 👤 Área de usuarios autenticados */}
           <Route

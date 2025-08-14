@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { auth } from "@/services/firebase";
 import { authAPI } from "@/services/api";
@@ -109,12 +109,12 @@ export default function Login({ className, ...props }) {
                 <Label htmlFor="password" className="block text-sm font-medium text-gray-700">
                   Contraseña
                 </Label>
-                <a
-                  href="#"
+                <Link
+                  to="/forgot-password"
                   className="text-sm text-cabra-purple hover:text-cabra-purple/80 underline-offset-4 hover:underline"
                 >
                   ¿Olvidaste tu contraseña?
-                </a>
+                </Link>
               </div>
               <div className="mt-1">
                 <Input

@@ -122,6 +122,37 @@ class Settings(BaseSettings):
         pattern=r"^(development|staging|production)$"
     )
 
+    # ===== CONFIGURACIÓN SMTP =====
+    SMTP_SERVER: str = Field(
+        "smtp.gmail.com",
+        description="Servidor SMTP para envío de correos",
+        example="smtp.gmail.com"
+    )
+    
+    SMTP_PORT: int = Field(
+        587,
+        description="Puerto SMTP para envío de correos",
+        ge=1, le=65535
+    )
+    
+    EMAIL_USER: str = Field(
+        ...,
+        description="Usuario de correo electrónico para autenticación SMTP",
+        example="mi_correo@gmail.com"
+    )
+    
+    EMAIL_PASSWORD: str = Field(
+        ...,
+        description="Contraseña de correo electrónico para autenticación SMTP",
+        min_length=8
+    )
+    
+    ADMIN_EMAIL: str = Field(
+        ...,
+        description="Dirección de correo electrónico del administrador",
+        example="admin@mi_dominio.com"
+    )
+
 
 # ==================================================================================
 #                           INSTANCIA GLOBAL DE CONFIGURACIÓN
@@ -164,6 +195,10 @@ def validar_configuracion():
         errores.append("OPENAI_API_KEY es requerida cuando AI_PROVIDER es 'openai'")
     elif settings.AI_PROVIDER == "deepseek" and not settings.DEEPSEEK_API_KEY:
         errores.append("DEEPSEEK_API_KEY es requerida cuando AI_PROVIDER es 'deepseek'")
+    
+    # Validar configuración SMTP
+    if not settings.EMAIL_USER or not settings.EMAIL_PASSWORD:
+        errores.append("EMAIL_USER y EMAIL_PASSWORD son requeridos para la autenticación SMTP")
     
     if errores:
         raise ValueError("Errores de configuración:\n" + "\n".join(f"  • {error}" for error in errores))
