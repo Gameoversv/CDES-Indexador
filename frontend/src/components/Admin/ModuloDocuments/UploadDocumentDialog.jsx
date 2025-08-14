@@ -70,6 +70,9 @@ const documentTypesByRole = {
   ]
 };
 
+const allDocumentTypes = [
+  ...new Set(Object.values(documentTypesByRole).flat()),
+].sort();
 
 const formatDocumentType = (type) => {
   if (!type) return "";
@@ -92,6 +95,13 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
   const [progress, setProgress] = useState({});
   const [isDragging, setIsDragging] = useState(false);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+
+  const availableDocumentTypes =
+    apartado === "PES 2030"
+      ? allDocumentTypes
+      : userRole
+      ? documentTypesByRole[userRole] || []
+      : [];
 
   useEffect(() => {
     if (userRole) {
@@ -225,6 +235,7 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
                 onValueChange={(value) => {
                   setApartado(value);
                   setEstrategia(""); // Reset strategy when initiative changes
+                  setTipoDocumento(""); // Reset document type as well
                 }}
               >
                 <SelectTrigger className="border border-gray-300">
@@ -315,18 +326,17 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
             <Select
               value={tipoDocumento}
               onValueChange={setTipoDocumento}
-              disabled={!userRole}
+              disabled={!userRole || !apartado}
             >
               <SelectTrigger className="border border-gray-300">
                 <SelectValue placeholder="Selecciona el tipo de documento" />
               </SelectTrigger>
               <SelectContent>
-                {userRole &&
-                  documentTypesByRole[userRole]?.map((type) => (
-                    <SelectItem key={type} value={type}>
-                      {formatDocumentType(type)}
-                    </SelectItem>
-                  ))}
+                {availableDocumentTypes.map((type) => (
+                  <SelectItem key={type} value={type}>
+                    {formatDocumentType(type)}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
