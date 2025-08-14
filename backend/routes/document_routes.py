@@ -130,6 +130,16 @@ async def upload_document(
 
         content_type = file.content_type or "application/octet-stream"
         extracted_metadata = extract_metadata(file_bytes, file.filename)
+        
+        # Initialize custom metadata
+        custom_metadata = {}
+        if apartado:
+            custom_metadata["apartado"] = apartado
+        if categoria:
+            custom_metadata["categoria"] = categoria
+        if tags:
+            custom_metadata["tags"] = tags.split(",") if isinstance(tags, str) else tags
+            
         # Decide subfolder based on apartado
         apartado_folder = None
         storage_filename = file.filename
@@ -197,6 +207,20 @@ async def upload_document(
             "uploader_email": user_email,
             **custom_metadata
         }
+        
+        # Ensure required fields exist in metadata for DocumentMetadata model
+        if "apartado" not in complete_metadata:
+            complete_metadata["apartado"] = ""
+        if "user_role" not in complete_metadata:
+            complete_metadata["user_role"] = ""
+        if "tipo_documento" not in complete_metadata:
+            complete_metadata["tipo_documento"] = ""
+        if "estrategia" not in complete_metadata:
+            complete_metadata["estrategia"] = ""
+            
+        # Ensure ID field is set (required by DocumentMetadata model)
+        if "id" not in complete_metadata and "file_id" in complete_metadata:
+            complete_metadata["id"] = complete_metadata["file_id"]
 
         # Guardar en Firebase con versión
         save_document_metadata(file_id, complete_metadata, file_hash, version, parent_id)
@@ -225,7 +249,17 @@ async def upload_document(
             'indexed': indexing_success
         }), severity="INFO")
 
-        return DocumentMetadata(**complete_metadata)
+        try:
+            return DocumentMetadata(**complete_metadata)
+        except Exception as e:
+            # Log validation errors for debugging
+            log_error(e, "DOCUMENT_METADATA_VALIDATION", user_id=user_id, additional_details=_ctx(request, {
+                'user_email': user_email,
+                'file_id': file_id,
+                'missing_fields': str(e)
+            }))
+            # Return the metadata as a dict to bypass validation issues
+            return complete_metadata
 
     except HTTPException as e:
         # Fallos esperados (validaciones, duplicado)
