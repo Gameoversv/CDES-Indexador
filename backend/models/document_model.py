@@ -99,14 +99,9 @@ class DocumentMetadata(BaseModel):
         example="CDES inst."
     )
     user_role: str = Field(
-        ...,  # Rol del usuario que subió el archivo
+        default="",  # Opcional, puede estar vacío
         description="Rol del usuario que subió el documento",
         example="admin"
-    )
-    tipo_documento: str = Field(
-        ...,  # Tipo de documento seleccionado en el formulario
-        description="Tipo de documento seleccionado en el formulario",
-        example="informe"
     )
     estrategia: str = Field(
         default="",  # Solo se guarda si apartado es 'PES 2030'
@@ -154,6 +149,13 @@ class DocumentMetadata(BaseModel):
         default=[],
         description="Lista de IDs de las versiones del documento (solo para la versión principal)",
         example=["informe_anual_2024_v2", "informe_anual_2024_v3"]
+    )
+    
+    # ===== CONFIGURACIÓN DE ACCESO PÚBLICO =====
+    public: bool = Field(
+        default=False,
+        description="Indica si el documento es público o privado",
+        example=True
     )
 
     # ===== CONFIGURACIÓN DE PYDANTIC V2 =====
@@ -390,7 +392,6 @@ def create_document_metadata(
         title=ai_metadata.get("title", "Título no disponible") if ai_metadata else "Título no disponible",
         apartado=ai_metadata.get("apartado", "") if ai_metadata else "",
         user_role=ai_metadata.get("user_role", "") if ai_metadata else "",
-        tipo_documento=ai_metadata.get("tipo_documento", "") if ai_metadata else "",
         estrategia=estrategia_value,
         summary=ai_metadata.get("summary", "Resumen no disponible") if ai_metadata else "Resumen no disponible",
         keywords=ai_metadata.get("keywords", []) if ai_metadata else [],
