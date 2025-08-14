@@ -10,6 +10,8 @@ import LibraryGridView from "./LibraryGridView";
 import PreviewFileDialog from "../ModuloDocuments/PreviewFileDialog";
 import ConfirmDeleteDialog from "./ConfirmDeleteDialog";
 
+import Pagination from "@/components/ui/Pagination";
+
 export default function AdminLibrary() {
   const [documents, setDocuments] = useState([]);
   const [viewMode, setViewMode] = useState("list");
@@ -22,6 +24,8 @@ export default function AdminLibrary() {
   const [sortBy, setSortBy] = useState({ field: "name", direction: "asc" });
   const [statType, setStatType] = useState("pdf");
   const [loading, setLoading] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   // Obtener documentos usando Meilisearch con búsqueda en tiempo real
   const fetchData = async (q = "") => {
@@ -55,6 +59,7 @@ export default function AdminLibrary() {
     setTypeFilter("all");
     setTypeContent("all");
     setDateRange({ from: null, to: null });
+    setCurrentPage(1);
   };
 
   // Filtrado solo por formato, tipo y rango de fechas; la búsqueda por texto ya se hace en backend
@@ -83,6 +88,12 @@ export default function AdminLibrary() {
         return valB.localeCompare(valA);
       });
   }, [documents, typeFilter, typeContent, dateRange, sortBy]);
+
+  const totalPages = Math.ceil(filteredDocs.length / itemsPerPage);
+  const paginatedDocs = filteredDocs.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
 
   const stats = {
     total: documents.length,
@@ -139,7 +150,7 @@ export default function AdminLibrary() {
           </p>
         ) : viewMode === "grid" ? (
           <LibraryGridView
-            documents={filteredDocs}
+            documents={paginatedDocs}
             onView={setSelectedDoc}
             onDelete={setShowDeleteDialog}
             onDownload={(file) =>
@@ -156,28 +167,37 @@ export default function AdminLibrary() {
             }
           />
         ) : (
-          <LibraryTable
-            files={filteredDocs}
-            onView={setSelectedDoc}
-            onDelete={setShowDeleteDialog}
-            onDownload={(file) =>
-              documentsAPI.downloadByPath(file.storage_path).then((res) => {
-                const url = window.URL.createObjectURL(res.data);
-                const a = document.createElement("a");
-                a.href = url;
-                a.download = file.name || file.filename || "documento";
-                a.click();
-              }).catch(error => {
-                console.error("Error al descargar:", error);
-                toast.error("Error al descargar el documento");
-              })
-            }
-            sortKey={sortBy.field}
-            sortOrder={sortBy.direction}
-            onSort={(field, direction) =>
-              setSortBy({ field, direction })
-            }
-          />
+          <div className="border rounded-lg overflow-hidden">
+            <LibraryTable
+              files={paginatedDocs}
+              onView={setSelectedDoc}
+              onDelete={setShowDeleteDialog}
+              onDownload={(file) =>
+                documentsAPI.downloadByPath(file.storage_path).then((res) => {
+                  const url = window.URL.createObjectURL(res.data);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = file.name || file.filename || "documento";
+                  a.click();
+                }).catch(error => {
+                  console.error("Error al descargar:", error);
+                  toast.error("Error al descargar el documento");
+                })
+              }
+              sortKey={sortBy.field}
+              sortOrder={sortBy.direction}
+              onSort={(field, direction) =>
+                setSortBy({ field, direction })
+              }
+            />
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              onPageChange={setCurrentPage}
+              itemsPerPage={itemsPerPage}
+              totalItems={filteredDocs.length}
+            />
+          </div>
         )}
 
         {/* Vista previa */}
