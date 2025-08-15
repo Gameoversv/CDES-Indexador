@@ -11,6 +11,7 @@ import DocumentsTable from "@/components/Admin/ModuloDocuments/DocumentsTable";
 import DocumentsGrid from "@/components/Admin/ModuloDocuments/DocumentsGrid";
 import DocumentToolbar from "@/components/Admin/ModuloDocuments/DocumentToolbar";
 import DocumentStatsCard from "@/components/Admin/ModuloDocuments/DocumentStatsCard";
+import Pagination from "@/components/ui/Pagination";
 
 export default function AdminDocuments() {
   const [files, setFiles] = useState([]);
@@ -28,7 +29,9 @@ export default function AdminDocuments() {
   const [viewMode, setViewMode] = useState("list");
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [statType, setStatType] = useState("pdf"); // ✅ Nuevo
+  const [statType, setStatType] = useState("pdf");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
 
   useEffect(() => {
     fetchFiles();
@@ -58,6 +61,7 @@ export default function AdminDocuments() {
     setTypeFilter("all");
     setTypeContent("all");
     setDateRange({ from: null, to: null });
+    setCurrentPage(1);
   };
 
   const formatSize = (bytes) => {
@@ -109,6 +113,7 @@ export default function AdminDocuments() {
   }, [files, sortBy, sortOrder]);
 
   const filteredFiles = useMemo(() => {
+    setCurrentPage(1);
     return sortedFiles.filter((f) => {
       const matchesSearch = (f.filename || "")
         .toLowerCase()
@@ -129,12 +134,21 @@ export default function AdminDocuments() {
     });
   }, [sortedFiles, search, typeFilter, typeContent, dateRange]);
 
+  const paginatedFiles = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return filteredFiles.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredFiles, currentPage, itemsPerPage]);
+
+  const totalPages = useMemo(() => {
+    return Math.ceil(filteredFiles.length / itemsPerPage);
+  }, [filteredFiles, itemsPerPage]);
+
   const stats = {
     total: files.length,
     totalSize: formatSize(files.reduce((acc, f) => acc + (f.size || 0), 0)),
     filteredCount: files.filter((f) =>
       f.filename?.toLowerCase().endsWith(`.${statType}`)
-    ).length, // ✅
+    ).length,
   };
 
   const handleDownload = async (path, filename) => {
@@ -203,29 +217,40 @@ export default function AdminDocuments() {
           <Loader2 className="w-6 h-6 animate-spin" />
         </div>
       ) : filteredFiles.length === 0 ? (
-        <p className="text-center text-gray-500">
+        <p className="text-center text-gray-500 py-10">
           No hay documentos para mostrar.
         </p>
-      ) : viewMode === "list" ? (
-        <DocumentsTable
-          files={filteredFiles}
-          handleSort={handleSort}
-          sortBy={sortBy}
-          setPreviewFile={setPreviewFile}
-          setConfirmDelete={setConfirmDelete}
-          handleDownload={handleDownload}
-          formatSize={formatSize}
-          formatDate={formatDate}
-        />
       ) : (
-        <DocumentsGrid
-          files={filteredFiles}
-          formatDate={formatDate}
-          formatSize={formatSize}
-          handleDownload={handleDownload}
-          setPreviewFile={setPreviewFile}
-          setConfirmDelete={setConfirmDelete}
-        />
+        <div className="border rounded-lg overflow-hidden">
+          {viewMode === "list" ? (
+            <DocumentsTable
+              files={paginatedFiles}
+              handleSort={handleSort}
+              sortBy={sortBy}
+              setPreviewFile={setPreviewFile}
+              setConfirmDelete={setConfirmDelete}
+              handleDownload={handleDownload}
+              formatSize={formatSize}
+              formatDate={formatDate}
+            />
+          ) : (
+            <DocumentsGrid
+              files={paginatedFiles}
+              formatDate={formatDate}
+              formatSize={formatSize}
+              handleDownload={handleDownload}
+              setPreviewFile={setPreviewFile}
+              setConfirmDelete={setConfirmDelete}
+            />
+          )}
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPageChange={setCurrentPage}
+            itemsPerPage={itemsPerPage}
+            totalItems={filteredFiles.length}
+          />
+        </div>
       )}
 
       <PreviewFileDialog

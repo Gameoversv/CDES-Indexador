@@ -25,54 +25,56 @@ const roleLabels = {
 export default function UserTable({ users, onEdit, onDelete, onChangePassword }) {
   return (
     <Table>
-      <TableHeader>
+      <TableHeader className="bg-gray-100">
         <TableRow>
-          <TableHead>Nombre</TableHead>
-          <TableHead>Email</TableHead>
-          <TableHead>Rol</TableHead>
-          <TableHead>Estado</TableHead>
-          <TableHead>Acciones</TableHead>
+          <TableHead className="py-3 border-b border-gray-300 text-gray-900 font-semibold">Nombre</TableHead>
+          <TableHead className="py-3 border-b border-gray-300 text-gray-900 font-semibold">Email</TableHead>
+          <TableHead className="py-3 border-b border-gray-300 text-gray-900 font-semibold">Rol</TableHead>
+          <TableHead className="py-3 border-b border-gray-300 text-gray-900 font-semibold">Estado</TableHead>
+          <TableHead className="text-right py-3 border-b border-gray-300 text-gray-900 font-semibold">Acciones</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
         {users.map((u) => (
-          <TableRow key={u.id}>
-            <TableCell>{u.display_name}</TableCell>
-            <TableCell>{u.email}</TableCell>
+          <TableRow key={u.id} className="hover:bg-gray-50 border-b border-gray-300">
+            <TableCell className="font-medium text-gray-900">{u.display_name}</TableCell>
+            <TableCell className="text-gray-900">{u.email}</TableCell>
             <TableCell>
-              <Badge>
+              <Badge variant="secondary" className="border border-gray-300">
                 {roleLabels[u.role] || u.role}
               </Badge>
             </TableCell>
             <TableCell>
               <Badge
-                style={{
-                  backgroundColor: u.status === "active" ? "#22c55e" : "#ef4444",
-                  color: "white",
-                }}
+                className={`border border-gray-300 ${
+                  u.status === "active"
+                    ? "bg-green-100 text-green-700"
+                    : "bg-red-100 text-red-700"
+                }`}
               >
                 {u.status === "active" ? "Activo" : "Inactivo"}
               </Badge>
             </TableCell>
             <TableCell>
-              <div className="flex gap-2">
-                <Button size="sm" variant="outline" onClick={() => onEdit(u)}>
-                  <Pencil className="h-4 w-4" />
+              <div className="flex gap-2 justify-end">
+                <Button size="sm" variant="ghost" className="rounded-full p-2 bg-gray-100 hover:bg-gray-200 border border-gray-300" onClick={() => onEdit(u)}>
+                  <Pencil className="h-4 w-4 text-gray-900" />
                 </Button>
                 <Button
                   size="sm"
-                  variant="outline"
-                  className="border-red-500 text-red-500"
+                  variant="ghost"
+                  className="rounded-full p-2 bg-gray-100 hover:bg-gray-200 border border-gray-300"
                   onClick={() => onDelete(u.id)}
                 >
-                  <Trash2 className="h-4 w-4" />
+                  <Trash2 className="h-4 w-4 text-red-500" />
                 </Button>
                 <Button
                   size="sm"
-                  variant="outline"
+                  variant="ghost"
+                  className="rounded-full p-2 bg-gray-100 hover:bg-gray-200 border border-gray-300"
                   onClick={() => onChangePassword(u)}
                 >
-                  <Lock className="h-4 w-4" />
+                  <Lock className="h-4 w-4 text-gray-900" />
                 </Button>
               </div>
             </TableCell>
