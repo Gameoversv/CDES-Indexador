@@ -272,8 +272,8 @@ def upload_file_to_storage(
 ) -> str:
     try:
         bucket = get_storage_bucket()
-        versioned_filename = generate_versioned_filename(filename)
-        blob_path = _dated_blob_path(versioned_filename)
+        # Use filename directly as it already contains the full path
+        blob_path = filename
         blob = bucket.blob(blob_path)
         blob.upload_from_string(file_bytes, content_type=content_type)
         return blob_path

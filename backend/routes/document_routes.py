@@ -150,16 +150,23 @@ async def upload_document(
         if estrategia:
             custom_metadata["estrategia"] = estrategia
             
+        # Create final filename with version if needed
+        final_filename = file.filename
+        if version > 1:
+            file_stem = Path(file.filename).stem
+            file_ext = Path(file.filename).suffix
+            final_filename = f"{file_stem}_v{version}{file_ext}"
+            
         # Decide subfolder based on apartado
         apartado_folder = None
-        storage_filename = file.filename
+        storage_filename = final_filename
         if apartado:
             # Get current date for folder structure
             today = datetime.now()
             year = f"{today.year:04d}"
             month = f"{today.month:02d}"
             
-            if apartado == "CDES inst":
+            if apartado == "CDES inst.":
                 # Get user_role from metadata (prefer form data, fallback to extracted_metadata)
                 actual_user_role = effective_user_role or extracted_metadata.get("user_role")
                 # Build path: CDES_inst/{user_role}/{categoria}/{año}/{mes}/filename
@@ -169,7 +176,7 @@ async def upload_document(
                 if categoria:
                     subfolders.append(str(categoria))
                 subfolders.extend([year, month])
-                storage_filename = "/".join(subfolders + [file.filename])
+                storage_filename = "/".join(subfolders + [final_filename])
             elif apartado == "PES 2030":
                 # Get estrategia from form data (prefer form data, fallback to extracted_metadata)
                 actual_estrategia = estrategia or extracted_metadata.get("estrategia")
@@ -180,7 +187,7 @@ async def upload_document(
                 if categoria:
                     subfolders.append(str(categoria))
                 subfolders.extend([year, month])
-                storage_filename = "/".join(subfolders + [file.filename])
+                storage_filename = "/".join(subfolders + [final_filename])
         storage_path = upload_file_to_storage(file_bytes, storage_filename, content_type)
 
         complete_metadata = {
