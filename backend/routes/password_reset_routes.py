@@ -5,7 +5,7 @@ import logging
 import datetime
 
 from services.email_service import email_service
-from utils.audit_logger import log_event  # Esta función NO es async
+from utils.audit_logger import log_event
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +21,7 @@ class PasswordResetRequest(BaseModel):
 class PasswordResetResponse(BaseModel):
     success: bool
     message: str
+    error_type: str = None  # ← Nuevo campo para tipo de error
 
 @router.post("/request-password-reset", response_model=PasswordResetResponse)
 async def request_password_reset(request: PasswordResetRequest):
@@ -30,11 +31,11 @@ async def request_password_reset(request: PasswordResetRequest):
     try:
         logger.info(f"Solicitud de reset de contraseña para: {request.email}")
         
-        # log_event NO es async y usa 'event_type', no 'action'
+        # Log de auditoría
         try:
             log_event(
                 user_id=request.email,
-                event_type="PASSWORD_RESET_REQUEST",  # ← Cambio: 'event_type' en lugar de 'action'
+                event_type="PASSWORD_RESET_REQUEST",
                 details={
                     "user_name": request.user_name or "No especificado",
                     "timestamp": datetime.datetime.now().isoformat()
@@ -43,7 +44,6 @@ async def request_password_reset(request: PasswordResetRequest):
             )
         except Exception as log_error:
             logger.warning(f"Error en log_event: {log_error}")
-            # Continuar sin fallar si el log falla
         
         # Usar el servicio de email
         try:
@@ -52,18 +52,20 @@ async def request_password_reset(request: PasswordResetRequest):
                 user_name=request.user_name or "No especificado"
             )
         except Exception as email_error:
-            logger.warning(f"Error en email_service: {email_error}")
-            # Simular éxito para desarrollo
-            result = {"success": True, "message": "Email simulado enviado"}
+            logger.error(f"Error en email_service: {email_error}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Error interno del servicio de email"
+            )
         
         if result.get("success", True):
             # Log de éxito
             try:
                 log_event(
                     user_id=request.email,
-                    event_type="PASSWORD_RESET_EMAIL_SENT",  # ← Cambio: 'event_type'
+                    event_type="PASSWORD_RESET_EMAIL_SENT",
                     details={
-                        "admin_email": "cadetbudder@gmail.com",
+                        "admin_email": "admin@ejemplo.com",
                         "status": "success",
                         "timestamp": datetime.datetime.now().isoformat()
                     },
@@ -77,24 +79,41 @@ async def request_password_reset(request: PasswordResetRequest):
                 message="Tu solicitud ha sido enviada al administrador. Te contactaremos pronto."
             )
         else:
-            # Log de error
+            error_message = result.get("message", "Error desconocido")
+            
+            # ✅ DETECTAR TIPO DE ERROR ESPECÍFICO
+            error_type = None
+            if "rate limit" in error_message.lower() or "demasiadas solicitudes" in error_message.lower():
+                error_type = "RATE_LIMIT_EXCEEDED"
+            elif "dominio no autorizado" in error_message.lower():
+                error_type = "UNAUTHORIZED_DOMAIN"
+            elif "smtp" in error_message.lower() or "credenciales" in error_message.lower():
+                error_type = "EMAIL_SERVICE_ERROR"
+            else:
+                error_type = "UNKNOWN_ERROR"
+            
+            # Log de error específico
             try:
                 log_event(
                     user_id=request.email,
-                    event_type="PASSWORD_RESET_EMAIL_FAILED",  # ← Cambio: 'event_type'
+                    event_type="PASSWORD_RESET_EMAIL_FAILED",
                     details={
-                        "admin_email": "cadetbudder@gmail.com",
+                        "admin_email": "admin@ejemplo.com",
                         "status": "failed",
-                        "error": result.get("message", "Unknown error")
+                        "error": error_message,
+                        "error_type": error_type,
+                        "timestamp": datetime.datetime.now().isoformat()
                     },
                     severity="WARNING"
                 )
             except Exception as log_error:
                 logger.warning(f"Error logging fallo: {log_error}")
             
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Error interno enviando la solicitud. Inténtalo más tarde."
+            # ✅ RETORNAR ERROR ESPECÍFICO EN LUGAR DE EXCEPTION
+            return PasswordResetResponse(
+                success=False,
+                message=error_message,
+                error_type=error_type
             )
             
     except HTTPException:
@@ -106,7 +125,7 @@ async def request_password_reset(request: PasswordResetRequest):
         try:
             log_event(
                 user_id=request.email,
-                event_type="PASSWORD_RESET_ERROR",  # ← Cambio: 'event_type'
+                event_type="PASSWORD_RESET_ERROR",
                 details={
                     "error": str(e),
                     "status": "critical_error",
@@ -117,9 +136,10 @@ async def request_password_reset(request: PasswordResetRequest):
         except Exception as log_error:
             logger.warning(f"Error logging error crítico: {log_error}")
         
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error interno procesando la solicitud"
+        return PasswordResetResponse(
+            success=False,
+            message="Error interno procesando la solicitud",
+            error_type="INTERNAL_SERVER_ERROR"
         )
 
 @router.get("/password-reset-status")
@@ -129,8 +149,13 @@ async def get_password_reset_info():
     """
     return {
         "process": "manual_admin_approval",
-        "admin_email": "cadetbudder@gmail.com",
+        "admin_email": "admin@ejemplo.com",
         "estimated_response_time": "24-48 horas",
+        "rate_limit": {
+            "max_requests": 5,
+            "time_window": "1 hora",
+            "reset_time": "cada hora en punto"
+        },
         "contact_info": {
             "phone": "+1-809-XXX-XXXX",
             "office_hours": "Lunes a Viernes, 8:00 AM - 5:00 PM"
