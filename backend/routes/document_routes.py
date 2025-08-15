@@ -154,21 +154,32 @@ async def upload_document(
         apartado_folder = None
         storage_filename = file.filename
         if apartado:
+            # Get current date for folder structure
+            today = datetime.now()
+            year = f"{today.year:04d}"
+            month = f"{today.month:02d}"
+            
             if apartado == "CDES inst":
                 # Get user_role from metadata (prefer form data, fallback to extracted_metadata)
                 actual_user_role = effective_user_role or extracted_metadata.get("user_role")
-                # Build path: CDES_inst/{user_role}/filename
+                # Build path: CDES_inst/{user_role}/{categoria}/{año}/{mes}/filename
                 subfolders = ["CDES_inst"]
                 if actual_user_role:
                     subfolders.append(str(actual_user_role))
+                if categoria:
+                    subfolders.append(str(categoria))
+                subfolders.extend([year, month])
                 storage_filename = "/".join(subfolders + [file.filename])
             elif apartado == "PES 2030":
                 # Get estrategia from form data (prefer form data, fallback to extracted_metadata)
                 actual_estrategia = estrategia or extracted_metadata.get("estrategia")
-                # Build path: PES_2030/{estrategia}/filename
+                # Build path: PES_2030/{estrategia}/{categoria}/{año}/{mes}/filename
                 subfolders = ["PES_2030"]
                 if actual_estrategia:
                     subfolders.append(str(actual_estrategia))
+                if categoria:
+                    subfolders.append(str(categoria))
+                subfolders.extend([year, month])
                 storage_filename = "/".join(subfolders + [file.filename])
         storage_path = upload_file_to_storage(file_bytes, storage_filename, content_type)
 
