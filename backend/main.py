@@ -13,7 +13,7 @@ from services.firebase_service import (
 )
 from services.meilisearch_service import initialize_meilisearch
 from utils.audit_logger import log_event
-from routes import auth_routes, document_routes, audit_routes, user_routes
+from routes import auth_routes, document_routes, audit_routes, user_routes, password_reset_routes
 
 # ============================
 # Inicialización del backend
@@ -121,6 +121,7 @@ app.include_router(user_routes.router, prefix="/admin/users", tags=["Usuarios"])
 
 app.include_router(document_routes.router, prefix="/documents", tags=["Documentos"])
 app.include_router(audit_routes.router, prefix="/audit", tags=["Auditoría"])
+app.include_router(password_reset_routes.router)
 
 
 # ============================

@@ -128,4 +128,4 @@ function SignUpForm({ className, ...props }) {
   )
 }
 
-export default SignUpForm; // ✅ exportación por defecto
+export default SignUpForm; // exportación por defecto

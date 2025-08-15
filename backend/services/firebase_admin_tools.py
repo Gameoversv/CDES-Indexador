@@ -1,5 +1,5 @@
 import firebase_admin
-from firebase_admin import credentials, firestore, auth  # 👈 añade `auth`
+from firebase_admin import credentials, firestore, auth  # añade `auth`
 import os
 
 # Carga el archivo de credenciales (descargado desde Firebase)

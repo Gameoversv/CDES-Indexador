@@ -15,6 +15,8 @@ import UserTable from "@/components/Admin/ModuloUsuarios/UserTable";
 import UserStatsCards from "@/components/Admin/ModuloUsuarios/UserStatsCards";
 import UserSearchBar from "@/components/Admin/ModuloUsuarios/UserSearchBar";
 
+import Pagination from "@/components/ui/Pagination";
+
 export default function Users() {
   const [users, setUsers] = useState([]);
   const [search, setSearch] = useState("");
@@ -32,6 +34,8 @@ export default function Users() {
 
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const [newPassword, setNewPassword] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   const fetchUsers = async () => {
     try {
@@ -166,6 +170,12 @@ export default function Users() {
     return matchesSearch && matchesRole;
   });
 
+  const totalPages = Math.ceil(filtered.length / itemsPerPage);
+  const paginatedUsers = filtered.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
+
   const stats = {
     total: users.length,
     active: users.filter((u) => u.status === "active").length,
@@ -220,12 +230,21 @@ export default function Users() {
         />
 
         {/* Tabla */}
-        <UserTable
-          users={filtered}
-          onEdit={handleEdit}
-          onDelete={handleDelete}
-          onChangePassword={openPasswordModal}
-        />
+        <div className="border rounded-lg overflow-hidden">
+          <UserTable
+            users={paginatedUsers}
+            onEdit={handleEdit}
+            onDelete={handleDelete}
+            onChangePassword={openPasswordModal}
+          />
+           <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPageChange={setCurrentPage}
+            itemsPerPage={itemsPerPage}
+            totalItems={filtered.length}
+          />
+        </div>
       </div>
     </AdminLayout>
   );

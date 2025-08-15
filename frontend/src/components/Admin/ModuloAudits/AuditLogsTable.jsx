@@ -23,14 +23,14 @@ export default function AuditLogsTable({ logs = [], formatDate, setSelectedLog }
   return (
     <div className="hidden md:block">
       <Table>
-        <TableHeader>
+        <TableHeader className="bg-gray-100">
           <TableRow>
-            <TableHead>Fecha</TableHead>
-            <TableHead>Evento</TableHead>
-            <TableHead>Usuario</TableHead>
-            <TableHead>Severidad</TableHead>
-            <TableHead>Detalles</TableHead>
-            <TableHead className="text-right">Acciones</TableHead>
+            <TableHead className="py-3 border-b border-gray-300 text-gray-900 font-semibold">Fecha</TableHead>
+            <TableHead className="py-3 border-b border-gray-300 text-gray-900 font-semibold">Evento</TableHead>
+            <TableHead className="py-3 border-b border-gray-300 text-gray-900 font-semibold">Usuario</TableHead>
+            <TableHead className="py-3 border-b border-gray-300 text-gray-900 font-semibold">Severidad</TableHead>
+            <TableHead className="py-3 border-b border-gray-300 text-gray-900 font-semibold">Detalles</TableHead>
+            <TableHead className="text-right py-3 border-b border-gray-300 text-gray-900 font-semibold">Acciones</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -46,57 +46,55 @@ export default function AuditLogsTable({ logs = [], formatDate, setSelectedLog }
               const sourceInfo = getSourceInfo(log.source);
               const EventIcon = eventInfo.icon || Globe;
 
-              // Detalles (preferimos resumen amigable y caemos a JSON corto si viene vacío)
               const pretty = getDetailsPreview(log);
               const fallbackRaw = safeStringify(log.details ?? "");
               const detailsPreview = pretty || (fallbackRaw.length > 200 ? `${fallbackRaw.slice(0, 200)}…` : fallbackRaw);
 
-              // Usuario visible
               const displayUser = getDisplayUser(log);
 
               return (
-                <TableRow key={log.id || `${log.event_type}-${ts}-${idx}`}>
-                  <TableCell>
+                <TableRow key={log.id || `${log.event_type}-${ts}-${idx}`} className="hover:bg-gray-50 border-b border-gray-300">
+                  <TableCell className="text-gray-900">
                     <div className="flex items-center gap-2 text-sm">
-                      <Clock className="h-3 w-3 text-muted-foreground" />
+                      <Clock className="h-3 w-3 text-gray-700" />
                       {ts ? formatDate(ts) : "Sin fecha"}
                     </div>
                   </TableCell>
 
-                  <TableCell>
+                  <TableCell className="text-gray-900">
                     <div className="flex items-center gap-2">
                       <div className={cn("w-2 h-2 rounded-full", eventInfo.color)} />
                       <EventIcon className="h-4 w-4" />
                       <span className="font-medium">{eventInfo.label}</span>
-                      <Badge variant="secondary" className="ml-2 px-2 py-0 text-xs">
+                      <Badge variant="secondary" className="ml-2 px-2 py-0 text-xs border border-gray-300">
                         {sourceInfo.label}
                       </Badge>
                     </div>
                   </TableCell>
 
-                  <TableCell>
+                  <TableCell className="text-gray-900">
                     <div className="flex items-center gap-1">
-                      <UserIcon className="h-3 w-3 text-muted-foreground" />
+                      <UserIcon className="h-3 w-3 text-gray-700" />
                       {displayUser}
                     </div>
                   </TableCell>
 
                   <TableCell>
-                    <Badge variant="outline" className="gap-1">
+                    <Badge variant="outline" className="gap-1 border border-gray-300">
                       <div className={cn("w-2 h-2 rounded-full", severityInfo.color)} />
                       {severityInfo.label}
                     </Badge>
                   </TableCell>
 
-                  <TableCell>
-                    <div className="max-w-64 truncate text-sm text-muted-foreground">
+                  <TableCell className="text-gray-900">
+                    <div className="max-w-64 truncate text-sm">
                       {detailsPreview}
                     </div>
                   </TableCell>
 
                   <TableCell className="text-right">
-                    <Button variant="ghost" size="sm" onClick={() => setSelectedLog(log)}>
-                      <Eye className="h-4 w-4" />
+                    <Button variant="ghost" size="sm" className="rounded-full p-2 bg-gray-100 hover:bg-gray-200 border border-gray-300" onClick={() => setSelectedLog(log)}>
+                      <Eye className="h-4 w-4 text-gray-900" />
                     </Button>
                   </TableCell>
                 </TableRow>
@@ -104,7 +102,7 @@ export default function AuditLogsTable({ logs = [], formatDate, setSelectedLog }
             })
           ) : (
             <TableRow>
-              <TableCell colSpan={6} className="text-center text-muted-foreground">
+              <TableCell colSpan={6} className="text-center py-10 text-gray-500">
                 No hay registros disponibles.
               </TableCell>
             </TableRow>

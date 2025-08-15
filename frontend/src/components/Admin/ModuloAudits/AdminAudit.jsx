@@ -7,6 +7,7 @@ import AuditFilters from "./AuditFilters";
 import AuditLogsTable from "./AuditLogsTable";
 import AuditLogMobileCards from "./AuditLogMobileCards";
 import AuditLogDetailDialog from "./AuditLogDetailDialog";
+import Pagination from "@/components/ui/Pagination";
 
 export default function AdminAudit() {
   const [logs, setLogs] = useState([]);
@@ -14,12 +15,13 @@ export default function AdminAudit() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 15;
 
-  // Si usas “origen” en el UI, mantenlo; si no, puedes quitarlo.
   const [filters, setFilters] = useState({
     eventType: "all",
     severity: "all",
-    dateRange: "all", // 1h | 24h | 7d | 30d | all
+    dateRange: "all",
     source: "all",
   });
 
@@ -39,6 +41,8 @@ export default function AdminAudit() {
 
   useEffect(() => {
     applySearch();
+    setCurrentPage(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [logs, searchTerm]);
 
   const mapDaysFromRange = (range) => {
@@ -66,7 +70,7 @@ export default function AdminAudit() {
   const loadLogs = async () => {
     try {
       const params = {
-        limit: 200,
+        limit: 500,
         dateRange: filters.dateRange !== "all" ? filters.dateRange : undefined,
         eventType: filters.eventType !== "all" ? filters.eventType : undefined,
         severity: filters.severity !== "all" ? filters.severity : undefined,
@@ -74,20 +78,15 @@ export default function AdminAudit() {
       };
 
       const { data } = await auditAPI.getLogs(params);
-      // Axios: { data: { logs, ... } }
       const list = Array.isArray(data?.logs)
         ? data.logs
-        : Array.isArray(data?.data?.logs) // por si el backend cambia la envoltura en /export
+        : Array.isArray(data?.data?.logs)
           ? data.data.logs
           : [];
 
-      console.debug("[Audit] GET /audit/logs →", list.length, "registros", { params });
-
       setLogs(list);
-      // 🔑 evita que la tabla quede vacía si aún no corrió applySearch()
       if (!searchTerm) setFilteredLogs(list);
     } catch (err) {
-      console.debug("[Audit] error al cargar logs:", err);
       setError(err?.response?.data?.detail || err?.message || "Error cargando logs");
       setLogs([]);
       setFilteredLogs([]);
@@ -139,6 +138,12 @@ export default function AdminAudit() {
 
   const formatDate = (ts) => new Date(ts).toLocaleString("es-DO");
 
+  const totalPages = Math.ceil(filteredLogs.length / itemsPerPage);
+  const paginatedLogs = filteredLogs.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
+
   return (
     <AdminLayout>
       <div className="container mx-auto py-6 space-y-6">
@@ -178,15 +183,24 @@ export default function AdminAudit() {
               searchTerm={searchTerm}
               setSearchTerm={setSearchTerm}
             />
-            <AuditLogsTable
-              logs={filteredLogs}
-              formatDate={formatDate}
-              setSelectedLog={setSelectedLog}
-            />
-            <AuditLogMobileCards
-              logs={filteredLogs}
-              formatDate={formatDate}
-            />
+            <div className="border rounded-lg overflow-x-auto">
+              <AuditLogsTable
+                logs={paginatedLogs}
+                formatDate={formatDate}
+                setSelectedLog={setSelectedLog}
+              />
+              <AuditLogMobileCards
+                logs={paginatedLogs}
+                formatDate={formatDate}
+              />
+               <Pagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onPageChange={setCurrentPage}
+                itemsPerPage={itemsPerPage}
+                totalItems={filteredLogs.length}
+              />
+            </div>
             <AuditLogDetailDialog
               log={selectedLog}
               open={!!selectedLog}
