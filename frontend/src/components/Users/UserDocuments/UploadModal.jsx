@@ -174,8 +174,8 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
         formData.append("estrategia", estrategia);
       }
       formData.append("categoria", tipoDocumento);
-      formData.append("puesto", userRole); // Enviar el rol del usuario
-      formData.append("publico", publico);
+      formData.append("user_role", userRole); // Enviar el rol del usuario
+      formData.append("is_public", publico);
       if (publico && coverImage) {
         formData.append("cover_image", coverImage);
       }

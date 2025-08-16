@@ -94,10 +94,16 @@ async def upload_document(
     apartado: str = Form(None),
     categoria: str = Form(None),
     tags: str = Form(None),
+    user_role: str = Form(None),
+    puesto: str = Form(None),  # Alternativa para user_role (compatibilidad)
+    estrategia: str = Form(None),  # Campo para PES 2030
     token_data=Depends(verify_firebase_token)
 ):
     user_id = token_data["user_id"]
     user_email = token_data.get("email", "")
+    
+    # Use puesto as fallback for user_role if user_role is not provided
+    effective_user_role = user_role or puesto
 
     try:
         _validate_uploaded_file(file)
@@ -130,8 +136,8 @@ async def upload_document(
 
         content_type = file.content_type or "application/octet-stream"
         extracted_metadata = extract_metadata(file_bytes, file.filename)
-        storage_path = upload_file_to_storage(file_bytes, file.filename, content_type)
-
+        
+        # Initialize custom metadata
         custom_metadata = {}
         if apartado:
             custom_metadata["apartado"] = apartado
@@ -139,6 +145,50 @@ async def upload_document(
             custom_metadata["categoria"] = categoria
         if tags:
             custom_metadata["tags"] = tags.split(",") if isinstance(tags, str) else tags
+        if effective_user_role:
+            custom_metadata["user_role"] = effective_user_role
+        if estrategia:
+            custom_metadata["estrategia"] = estrategia
+            
+        # Create final filename with version if needed
+        final_filename = file.filename
+        if version > 1:
+            file_stem = Path(file.filename).stem
+            file_ext = Path(file.filename).suffix
+            final_filename = f"{file_stem}_v{version}{file_ext}"
+            
+        # Decide subfolder based on apartado
+        apartado_folder = None
+        storage_filename = final_filename
+        if apartado:
+            # Get current date for folder structure
+            today = datetime.now()
+            year = f"{today.year:04d}"
+            month = f"{today.month:02d}"
+            
+            if apartado == "CDES inst.":
+                # Get user_role from metadata (prefer form data, fallback to extracted_metadata)
+                actual_user_role = effective_user_role or extracted_metadata.get("user_role")
+                # Build path: CDES_inst/{user_role}/{categoria}/{año}/{mes}/filename
+                subfolders = ["CDES_inst"]
+                if actual_user_role:
+                    subfolders.append(str(actual_user_role))
+                if categoria:
+                    subfolders.append(str(categoria))
+                subfolders.extend([year, month])
+                storage_filename = "/".join(subfolders + [final_filename])
+            elif apartado == "PES 2030":
+                # Get estrategia from form data (prefer form data, fallback to extracted_metadata)
+                actual_estrategia = estrategia or extracted_metadata.get("estrategia")
+                # Build path: PES_2030/{estrategia}/{categoria}/{año}/{mes}/filename
+                subfolders = ["PES_2030"]
+                if actual_estrategia:
+                    subfolders.append(str(actual_estrategia))
+                if categoria:
+                    subfolders.append(str(categoria))
+                subfolders.extend([year, month])
+                storage_filename = "/".join(subfolders + [final_filename])
+        storage_path = upload_file_to_storage(file_bytes, storage_filename, content_type)
 
         complete_metadata = {
             **extracted_metadata,
@@ -154,6 +204,18 @@ async def upload_document(
             "uploader_email": user_email,
             **custom_metadata
         }
+        
+        # Ensure required fields exist in metadata for DocumentMetadata model
+        if "apartado" not in complete_metadata:
+            complete_metadata["apartado"] = ""
+        if "user_role" not in complete_metadata:
+            complete_metadata["user_role"] = ""
+        if "estrategia" not in complete_metadata:
+            complete_metadata["estrategia"] = ""
+            
+        # Ensure ID field is set (required by DocumentMetadata model)
+        if "id" not in complete_metadata and "file_id" in complete_metadata:
+            complete_metadata["id"] = complete_metadata["file_id"]
 
         # Guardar en Firebase con versión
         save_document_metadata(file_id, complete_metadata, file_hash, version, parent_id)
@@ -182,7 +244,17 @@ async def upload_document(
             'indexed': indexing_success
         }), severity="INFO")
 
-        return DocumentMetadata(**complete_metadata)
+        try:
+            return DocumentMetadata(**complete_metadata)
+        except Exception as e:
+            # Log validation errors for debugging
+            log_error(e, "DOCUMENT_METADATA_VALIDATION", user_id=user_id, additional_details=_ctx(request, {
+                'user_email': user_email,
+                'file_id': file_id,
+                'missing_fields': str(e)
+            }))
+            # Return the metadata as a dict to bypass validation issues
+            return complete_metadata
 
     except HTTPException as e:
         # Fallos esperados (validaciones, duplicado)

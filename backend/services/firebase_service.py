@@ -57,9 +57,8 @@ def get_storage_bucket():
     return storage.bucket(settings.FIREBASE_STORAGE_BUCKET)
 
 def _dated_blob_path(filename: str) -> str:
-    """Genera una ruta con fecha para el archivo."""
-    today = datetime.now()
-    return f"documents/{today.year:04d}/{today.month:02d}/{today.day:02d}/{filename}"
+    """Genera una ruta para el archivo sin estructura de fechas."""
+    return filename
 
 def calculate_file_hash(file_bytes: bytes) -> str:
     sha256 = hashlib.sha256()
@@ -273,8 +272,8 @@ def upload_file_to_storage(
 ) -> str:
     try:
         bucket = get_storage_bucket()
-        versioned_filename = generate_versioned_filename(filename)
-        blob_path = _dated_blob_path(versioned_filename)
+        # Use filename directly as it already contains the full path
+        blob_path = filename
         blob = bucket.blob(blob_path)
         blob.upload_from_string(file_bytes, content_type=content_type)
         return blob_path

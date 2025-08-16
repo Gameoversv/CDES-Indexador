@@ -32,40 +32,40 @@ import { useAuth } from "@/contexts/AuthContext";
 const documentTypesByRole = {
   admin: [
     "presentaciones", "carta", "informe", "convenios", "contrato", 
-    "minutas/ayuda_memoria", "actas", "mapas", "logos", "graficos", 
-    "nota_prensa/comunicaciones", "plan", "ficha_tecnica", "estudio", 
+    "minutas\ayuda_memoria", "actas", "mapas", "logos", "graficos", 
+    "nota_pensa\comunicaciones", "plan", "ficha_tecnica", "estudio", 
     "video", "foto", "discursos", "memorias institucionales", 
     "convocatorias", "Invitacion", "cuestionario/ instrumento de recolección de datos", 
     "TDER", "cronograma", "diagnostico", "listado", "declaracion ciudadana"
   ],
   CoordinadorPlanificacion: [
     "presentaciones", "carta", "informe", "convenios", "contrato", 
-    "minutas/ayuda_memoria", "actas", "mapas", "logos", "graficos", 
-    "nota_prensa/comunicaciones", "plan", "ficha_tecnica", "estudio", 
+    "minutas\ayuda_memoria", "actas", "mapas", "logos", "graficos", 
+    "nota_pensa\comunicaciones", "plan", "ficha_tecnica", "estudio", 
     "video", "foto", "discursos", "memorias institucionales", 
     "convocatorias", "Invitacion", "cuestionario/ instrumento de recolección de datos", 
     "TDER", "cronograma", "diagnostico", "listado", "declaracion ciudadana"
   ],
   UnidadProyectos: [
-    "presentaciones", "informe", "minutas/ayuda_memoria", "actas", "mapas", 
+    "presentaciones", "informe", "minutas\ayuda_memoria", "actas", "mapas", 
     "logos", "graficos", "plan", "ficha_tecnica", "estudio", "video", "foto", 
     "memorias institucionales", "Invitacion", "cuestionario/ instrumento de recolección de datos", 
     "TDER", "cronograma", "diagnostico", "listado", "declaracion ciudadana"
   ],
   UnidadPlanificacion: [
-    "presentaciones", "informe", "minutas/ayuda_memoria", "actas", "mapas", 
+    "presentaciones", "informe", "minutas\ayuda_memoria", "actas", "mapas", 
     "logos", "graficos", "plan", "ficha_tecnica", "estudio", "video", "foto", 
     "memorias institucionales", "Invitacion", "cuestionario/ instrumento de recolección de datos", 
     "TDER", "cronograma", "diagnostico", "listado", "declaracion ciudadana"
   ],
   asistenciaGeneral: [
-    "agendas", "carta", "minutas/ayuda_memoria", "logos", "convocatorias"
+    "agendas", "carta", "minutas\ayuda_memoria", "logos", "convocatorias"
   ],
   UnidadAdministrativa: [
     "convenio", "contrato", "plan"
   ],
   UnidadComunicacion: [
-    "nota_prensa/comunicaciones", "video", "foto", "convocatorias", 
+    "nota_pensa\comunicaciones", "video", "foto", "convocatorias", 
     "Invitacion", "cronograma"
   ]
 };
@@ -174,8 +174,8 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
         formData.append("estrategia", estrategia);
       }
       formData.append("categoria", tipoDocumento);
-      formData.append("puesto", userRole); // Enviar el rol del usuario
-      formData.append("publico", publico);
+      formData.append("user_role", userRole); // Enviar el rol del usuario
+      formData.append("is_public", publico);
       if (publico && coverImage) {
         formData.append("cover_image", coverImage);
       }
