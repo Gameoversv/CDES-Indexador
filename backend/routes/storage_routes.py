@@ -9,6 +9,7 @@ from services.firebase_service import (
 )
 from utils.audit_logger import log_event, log_error
 from typing import Dict, Any, List, Optional
+import unicodedata
 import asyncio
 from pydantic import BaseModel
 
@@ -23,61 +24,66 @@ router = APIRouter(
 )
 
 # Mapeo de roles del sistema a carpetas de Firebase Storage
-# NOTA: Solo existen las carpetas 'admin' y 'asistenciaGeneral' en Firebase Storage
-ROLE_TO_FOLDER_MAPPING = {
-    # Roles administrativos - apuntan a la carpeta admin que tiene 2 archivos
-    "admin": "admin",
-    "Dirección ejecutiva": "admin",  # Los directivos ven la misma carpeta que admin
-    
-    # Roles específicos por unidad - temporalmente apuntando a carpetas existentes
-    "asistenciaGeneral": "asistenciaGeneral",  # Esta carpeta existe y tiene 1 archivo
-    "CoordinadorPlanificacion": "admin",  # Temporalmente apunta a admin hasta crear la carpeta
-    "UnidadAdministrativa": "admin",      # Temporalmente apunta a admin hasta crear la carpeta
-    "UnidadComunicacion": "admin",        # Temporalmente apunta a admin hasta crear la carpeta
-    "UnidadPlanificacion": "admin",       # Temporalmente apunta a admin hasta crear la carpeta
-    "UnidadProyectos": "admin",           # Temporalmente apunta a admin hasta crear la carpeta
-    
-    # Mapeos adicionales basados en emails de prueba
-    "asistente@general.com": "asistenciaGeneral",
-    "coordinador@planificacion.com": "admin",  # Temporalmente admin
-    "unidad@administrativa.com": "admin",      # Temporalmente admin
-    "unidad@comunicacion.com": "admin",        # Temporalmente admin
-    "unidad@planificacion.com": "admin",       # Temporalmente admin
-    "unidad@gestion.com": "admin",             # Temporalmente admin
+# Claves normalizadas (minúsculas, sin acentos, sin espacios)
+ROLE_TO_FOLDER_MAPPING: Dict[str, str] = {
+    # Administrativos (verán toda la raíz: esta clave no se usa como carpeta)
+    # 'admin' y 'direccionejecutiva' se tratan aparte devolviendo None.
+
+    # Unidades/roles con carpetas propias (usa exactamente el nombre de carpeta en Storage)
+    "asistenciageneral": "asistenciaGeneral",
+    "coordinadorplanificacion": "CoordinadorPlanificacion",
+    "unidadadministrativa": "UnidadAdministrativa",
+    "unidadcomunicacion": "UnidadComunicacion",
+    "unidadplanificacion": "UnidadPlanificacion",
+    "unidadproyectos": "UnidadProyectos",
 }
 
-def get_storage_folder_for_user(user_role: str, email: str) -> str:
+def _norm(text: Optional[str]) -> str:
+    if not isinstance(text, str):
+        return ""
+    # quita acentos, pasa a ascii, minúsculas y sin espacios/guiones/bajos
+    t = unicodedata.normalize("NFD", text)
+    t = t.encode("ascii", "ignore").decode("utf-8").lower()
+    for ch in [" ", "_", "-", "/", "."]:
+        t = t.replace(ch, "")
+    return t.strip()
+
+def get_storage_folder_for_user(user_role: Optional[str], email: Optional[str]) -> Optional[str]:
     """
     Determina la carpeta de Firebase Storage basada en el rol del usuario.
     Si es admin o dirección ejecutiva, retorna None para acceder a toda la raíz.
     """
+    nr = _norm(user_role)
+
     # Usuarios administrativos ven toda la estructura
-    if user_role in ["admin", "Dirección ejecutiva"]:
+    if nr in {"admin", "direccionejecutiva", "direccionexecutiva"}:
         return None  # None significa acceso a toda la raíz CDES_inst/
-    
-    # Primero intentar por rol específico
-    if user_role and user_role in ROLE_TO_FOLDER_MAPPING:
-        return ROLE_TO_FOLDER_MAPPING[user_role]
-    
-    # Si no encuentra por rol, intentar por email
-    if email and email in ROLE_TO_FOLDER_MAPPING:
-        return ROLE_TO_FOLDER_MAPPING[email]
-    
-    # Fallback por email pattern - usando carpetas que realmente existen
-    if email:
-        if "asistente" in email or "general" in email:
-            return "asistenciaGeneral"  # Esta carpeta existe
-        elif "coordinador" in email or "planificacion" in email:
-            return "admin"  # Temporalmente admin hasta crear carpetas específicas
-        elif "administrativa" in email:
-            return "admin"  # Temporalmente admin
-        elif "comunicacion" in email:
-            return "admin"  # Temporalmente admin
-        elif "gestion" in email or "proyectos" in email:
-            return "admin"  # Temporalmente admin
-    
-    # Fallback final - usar admin que sabemos que existe
-    return "admin"
+
+    # Intentar por rol conocido
+    if nr in ROLE_TO_FOLDER_MAPPING:
+        return ROLE_TO_FOLDER_MAPPING[nr]
+
+    # Fallback por email pattern hacia carpetas específicas, no a 'admin'
+    if isinstance(email, str) and email:
+        e = email.lower()
+        if "asistente" in e or "general" in e:
+            return "asistenciaGeneral"
+        # Prioridad: si contiene 'coordinador' => carpeta de CoordinadorPlanificacion
+        if "coordinador" in e:
+            return "CoordinadorPlanificacion"
+        # Si es de planificación pero no coordinador => UnidadPlanificacion
+        if "planificacion" in e:
+            return "UnidadPlanificacion"
+        if "administrativa" in e:
+            return "UnidadAdministrativa"
+        if "comunicacion" in e:
+            return "UnidadComunicacion"
+        if "gestion" in e or "proyectos" in e:
+            return "UnidadProyectos"
+
+    # Sin coincidencias: no asignar carpeta arbitraria; devolver una cadena vacía
+    # para que el caller trate como "no posee carpeta" (se devolverá lista vacía)
+    return ""
 
 def _build_tree_from_paths(file_list: List[Dict[str, Any]], root_path: str) -> List[Dict[str, Any]]:
     """Construye un árbol jerárquico a partir de blobs, incluyendo carpetas vacías.
@@ -166,7 +172,7 @@ async def get_storage_tree(request: Request, token_data: Dict[str, Any] = Depend
     try:
         print(f"🔍 DEBUG - UID: {uid}, Email: {email}")
         
-        # 1. Obtener el rol del usuario desde Firestore
+    # 1. Obtener el rol del usuario desde Firestore (o token como fallback)
         user_doc_ref = firestore.collection("users").document(uid)
         user_doc = user_doc_ref.get()
 
@@ -180,6 +186,10 @@ async def get_storage_tree(request: Request, token_data: Dict[str, Any] = Depend
             print(f"🔍 DEBUG - User role from Firestore: {user_role}")
         else:
             print(f"🔍 DEBUG - User not found in Firestore")
+            # Fallback a claims en el token
+            user_role = token_data.get("role") or (token_data.get("custom_claims", {}) or {}).get("role")
+            if user_role:
+                print(f"🔍 DEBUG - User role from token: {user_role}")
 
         # 2. Determinar la carpeta de storage usando el mapeo inteligente
         storage_folder = get_storage_folder_for_user(user_role, email)
@@ -192,12 +202,20 @@ async def get_storage_tree(request: Request, token_data: Dict[str, Any] = Depend
             print(f"🔍 DEBUG - Admin access: viewing entire Firebase Storage root")
         else:
             # Usuario normal - ve solo su carpeta específica dentro de CDES_inst
+            if storage_folder == "":
+                # Sin carpeta asignada para su rol
+                print("⚠️  DEBUG - Usuario sin carpeta para su rol; se devolverá lista vacía")
+                log_event(
+                    user_id=uid,
+                    event_type="STORAGE_NO_ROLE_FOLDER",
+                    details={
+                        "role": user_role,
+                        "email": email,
+                    },
+                    severity="INFO",
+                )
+                return []
             root_path = f"CDES_inst/{storage_folder}/"
-            # Verificar si estamos usando mapeo temporal
-            if user_role and user_role not in ["admin", "asistenciaGeneral"] and storage_folder == "admin":
-                print(f"⚠️  DEBUG - Usando mapeo temporal: {user_role} -> {storage_folder}")
-            elif user_role and user_role not in ["admin", "asistenciaGeneral"] and storage_folder == "asistenciaGeneral":
-                print(f"⚠️  DEBUG - Usando mapeo temporal: {user_role} -> {storage_folder}")
         
         print(f"🔍 DEBUG - Root path: '{root_path}'")
 
@@ -235,17 +253,8 @@ async def get_storage_tree(request: Request, token_data: Dict[str, Any] = Depend
                         "is_folder": True,
                     })
         else:
-            # Usuario no admin: asegurar que al menos su carpeta raíz exista como marcador
-            base_marker = root_path if root_path.endswith('/') else root_path + '/'
-            if not any(f.get("path") == base_marker for f in files_list):
-                files_list.append({
-                    "path": base_marker,
-                    "filename": base_marker.rstrip('/').split('/')[-1],
-                    "size": 0,
-                    "updated": None,
-                    "content_type": "application/x-directory",
-                    "is_folder": True,
-                })
+            # Usuario no admin: no añadir marcadores falsos; si no hay blobs, el front mostrará "no posee carpeta".
+            pass
         print(f"🔍 DEBUG - Files found: {len(files_list)}")
         print(f"🔍 DEBUG - First file: {files_list[0] if files_list else 'None'}")
 
@@ -257,14 +266,14 @@ async def get_storage_tree(request: Request, token_data: Dict[str, Any] = Depend
             user_id=uid,
             event_type="STORAGE_TREE_ACCESSED",
             details={
-                "role": user_role, 
+                "role": user_role,
                 "email": email,
-                "storage_folder": storage_folder or "ALL_FOLDERS",
+                "storage_folder": ("ALL_FOLDERS" if storage_folder is None else (storage_folder or "NO_FOLDER_ASSIGNED")),
                 "access_type": "ADMIN_FULL_ACCESS" if storage_folder is None else "USER_RESTRICTED_ACCESS",
-                "path": root_path, 
-                "file_count": len(files_list)
+                "path": root_path,
+                "file_count": len(files_list),
             },
-            severity="INFO"
+            severity="INFO",
         )
 
         return file_tree
@@ -295,6 +304,8 @@ async def create_folder(request: Request, folder: CreateFolderRequest, token_dat
         user_data = user_doc.to_dict()
         user_role = user_data.get("role")
     storage_folder = get_storage_folder_for_user(user_role, email)  # determina carpeta base o None si admin
+    if storage_folder == "":
+        raise HTTPException(status_code=403, detail="Aún no posee una carpeta asignada a su rol en Storage.")
     allowed_prefix = "" if storage_folder is None else f"CDES_inst/{storage_folder}/"
 
     # 2. Validar nombre de nueva carpeta
@@ -361,6 +372,8 @@ async def upload_by_storage_path(
         user_role = (user_doc.to_dict() or {}).get("role")
 
     storage_folder = get_storage_folder_for_user(user_role, email)
+    if storage_folder == "":
+        raise HTTPException(status_code=403, detail="Aún no posee una carpeta asignada a su rol en Storage.")
     allowed_prefix = "" if storage_folder is None else f"CDES_inst/{storage_folder}/"
 
     # Normalizar path y validar
