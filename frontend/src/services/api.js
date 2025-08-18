@@ -111,6 +111,8 @@ export const documentsAPI = {
   // Listar archivos en storage
   listStorage: () => api.get("/documents/storage"),
 
+  getStorageTree: () => api.get("/documents/storage/tree"),
+
   // Subir documento
   upload: (formData) =>
     api.post("/documents/upload", formData, {
@@ -123,6 +125,16 @@ export const documentsAPI = {
     api.get("/documents/download_by_path", {
       params: { path },
       responseType: "blob",
+    }),
+
+  // Crear carpeta en Storage
+  createFolder: (data) => api.post("/documents/storage/folders", data),
+
+  // Subir a una ruta específica de Storage
+  uploadByPath: (formData) =>
+    api.post("/documents/storage/upload_by_path", formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+      timeout: UPLOAD_TIMEOUT,
     }),
 
   // Eliminar por ruta
