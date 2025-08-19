@@ -8,7 +8,6 @@ import {
   DialogFooter,
   DialogClose,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -17,62 +16,22 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  UploadCloud,
-  File,
-  X,
-  Image as ImageIcon,
-} from "lucide-react";
-import { useState, useCallback, useEffect } from "react";
+import { UploadCloud } from "lucide-react";
+import { useState } from "react";
 import { toast } from "sonner";
-import { documentsAPI } from "@/services/api";
-import { Progress } from "@/components/ui/progress";
 import { useAuth } from "@/contexts/AuthContext";
+import FileUpload from "@/components/ui/FileUpload";
+import { useFileUpload } from "@/hooks/useFileUpload";
 
-const documentTypesByRole = {
-  admin: [
-    "presentaciones", "carta", "informe", "convenios", "contrato", 
-    "minutas\ayuda_memoria", "actas", "mapas", "logos", "graficos", 
-    "nota_pensa\comunicaciones", "plan", "ficha_tecnica", "estudio", 
-    "video", "foto", "discursos", "memorias institucionales", 
-    "convocatorias", "Invitacion", "cuestionario/ instrumento de recolección de datos", 
-    "TDER", "cronograma", "diagnostico", "listado", "declaracion ciudadana"
-  ],
-  CoordinadorPlanificacion: [
-    "presentaciones", "carta", "informe", "convenios", "contrato", 
-    "minutas\ayuda_memoria", "actas", "mapas", "logos", "graficos", 
-    "nota_pensa\comunicaciones", "plan", "ficha_tecnica", "estudio", 
-    "video", "foto", "discursos", "memorias institucionales", 
-    "convocatorias", "Invitacion", "cuestionario/ instrumento de recolección de datos", 
-    "TDER", "cronograma", "diagnostico", "listado", "declaracion ciudadana"
-  ],
-  UnidadProyectos: [
-    "presentaciones", "informe", "minutas\ayuda_memoria", "actas", "mapas", 
-    "logos", "graficos", "plan", "ficha_tecnica", "estudio", "video", "foto", 
-    "memorias institucionales", "Invitacion", "cuestionario/ instrumento de recolección de datos", 
-    "TDER", "cronograma", "diagnostico", "listado", "declaracion ciudadana"
-  ],
-  UnidadPlanificacion: [
-    "presentaciones", "informe", "minutas\ayuda_memoria", "actas", "mapas", 
-    "logos", "graficos", "plan", "ficha_tecnica", "estudio", "video", "foto", 
-    "memorias institucionales", "Invitacion", "cuestionario/ instrumento de recolección de datos", 
-    "TDER", "cronograma", "diagnostico", "listado", "declaracion ciudadana"
-  ],
-  asistenciaGeneral: [
-    "agendas", "carta", "minutas\ayuda_memoria", "logos", "convocatorias"
-  ],
-  UnidadAdministrativa: [
-    "convenio", "contrato", "plan"
-  ],
-  UnidadComunicacion: [
-    "nota_pensa\comunicaciones", "video", "foto", "convocatorias", 
-    "Invitacion", "cronograma"
-  ]
-};
-
-const allDocumentTypes = [
-  ...new Set(Object.values(documentTypesByRole).flat()),
-].sort();
+// CONFIGURACIÓN SIMPLIFICADA PARA ADMIN
+const adminDocumentTypes = [
+  "presentaciones", "carta", "informe", "convenios", "contrato", 
+  "minutas/ayuda_memoria", "actas", "mapas", "logos", "graficos", 
+  "nota_prensa/comunicaciones", "plan", "ficha_tecnica", "estudio", 
+  "video", "foto", "discursos", "memorias institucionales", 
+  "convocatorias", "Invitacion", "cuestionario", "TDER", 
+  "cronograma", "diagnostico", "listado", "declaracion ciudadana"
+];
 
 const formatDocumentType = (type) => {
   if (!type) return "";
@@ -85,143 +44,94 @@ const formatDocumentType = (type) => {
 
 export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
   const { userRole } = useAuth();
+  const { uploading, progress, uploadFile, reset } = useFileUpload();
+  
+  // ESTADOS SIMPLIFICADOS PARA ADMIN
   const [file, setFile] = useState(null);
   const [apartado, setApartado] = useState("");
   const [estrategia, setEstrategia] = useState("");
   const [tipoDocumento, setTipoDocumento] = useState("");
-  const [publico, setPublico] = useState(false);
-  const [coverImage, setCoverImage] = useState(null);
-  const [uploading, setUploading] = useState(false);
-  const [progress, setProgress] = useState({});
-  const [isDragging, setIsDragging] = useState(false);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
 
-  const availableDocumentTypes =
-    apartado === "PES 2030"
-      ? allDocumentTypes
-      : userRole
-      ? documentTypesByRole[userRole] || []
-      : [];
-
-  useEffect(() => {
-    if (userRole) {
-      setTipoDocumento(""); // Resetear al cambiar de rol
-    }
-  }, [userRole]);
-
-  const handleFileSelect = (selectedFile) => {
-    setFile(selectedFile);
-  };
-
-  const handleCoverImageSelect = (e) => {
-    if (e.target.files && e.target.files[0]) {
-      setCoverImage(e.target.files[0]);
-    }
-  };
-
-  const handleDragOver = useCallback((e) => {
-    e.preventDefault();
-    setIsDragging(true);
-  }, []);
-
-  const handleDragLeave = useCallback((e) => {
-    e.preventDefault();
-    setIsDragging(false);
-  }, []);
-
-  const handleDrop = useCallback((e) => {
-    e.preventDefault();
-    setIsDragging(false);
-    if (e.dataTransfer.files.length) {
-      handleFileSelect(e.dataTransfer.files[0]);
-    }
-  }, []);
-
-  const handleRemoveFile = () => {
-    setFile(null);
-  };
-
-  const handleUploadRequest = (e) => {
-    e.preventDefault();
+  // VALIDACIÓN SIMPLIFICADA
+  const validateForm = () => {
     if (!file || !apartado || !tipoDocumento) {
-      toast.warning(
-        "Debes seleccionar un archivo, una iniciativa y un tipo de documento."
-      );
-      return;
+      toast.warning("Debes seleccionar un archivo, una iniciativa y un tipo de documento.");
+      return false;
     }
+    
     if (apartado === "PES 2030" && !estrategia) {
       toast.warning("Debes seleccionar una estrategia para PES 2030.");
-      return;
+      return false;
     }
-    if (publico && !coverImage) {
-      toast.warning(
-        "Debes seleccionar una imagen de portada para un documento público."
-      );
-      return;
-    }
-    setShowConfirmDialog(true);
+    
+    return true;
   };
 
+  // MANEJAR SOLICITUD DE SUBIDA
+  const handleUploadRequest = (e) => {
+    e.preventDefault();
+    if (validateForm()) {
+      setShowConfirmDialog(true);
+    }
+  };
+
+  // CONFIRMAR Y SUBIR
   const handleConfirmUpload = async () => {
     setShowConfirmDialog(false);
-    try {
-      setUploading(true);
-
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("apartado", apartado);
-      if (apartado === "PES 2030") {
-        formData.append("estrategia", estrategia);
-      }
-      formData.append("categoria", tipoDocumento);
-      formData.append("user_role", userRole); // Enviar el rol del usuario
-      formData.append("is_public", publico);
-      if (publico && coverImage) {
-        formData.append("cover_image", coverImage);
-      }
-
-      await documentsAPI.upload(formData, {
-        onUploadProgress: (event) => {
-          if (event.total) {
-            const percent = Math.round((event.loaded * 100) / event.total);
-            setProgress({ [file.name]: percent });
-          }
-        },
-      });
-
-      toast.success("Archivo subido correctamente.");
-      setOpen(false);
-      setFile(null);
-      setApartado("");
-      setEstrategia("");
-      setTipoDocumento("");
-      setPublico(false);
-      setCoverImage(null);
-      onUploaded?.();
-    } catch (error) {
-      console.error("Error al subir archivo:", error);
-      toast.error("Error al subir el archivo.");
-    } finally {
-      setUploading(false);
-      setProgress({});
+    
+    const metadata = {
+      apartado,
+      categoria: tipoDocumento,
+      user_role: userRole || 'admin',
+      is_public: false, // Admin documents are private by default
+    };
+    
+    if (apartado === "PES 2030") {
+      metadata.estrategia = estrategia;
     }
+
+    const success = await uploadFile(
+      file, 
+      metadata,
+      (data) => {
+        // Success callback
+        handleCloseDialog();
+        onUploaded?.();
+      },
+      (error) => {
+        // Error callback
+        console.error("Error al subir archivo:", error);
+      }
+    );
+  };
+
+  // CERRAR DIÁLOGO Y LIMPIAR
+  const handleCloseDialog = () => {
+    setOpen(false);
+    setFile(null);
+    setApartado("");
+    setEstrategia("");
+    setTipoDocumento("");
+    reset();
   };
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="destructive" className="gap-2 px-3 py-2 rounded-lg">
+        <Button variant="destructive" className="gap-2 px-4 py-2 rounded-lg">
           <UploadCloud className="h-4 w-4" />
-          <span className="hidden sm:inline">Subir documento</span>
+          <span>Subir Documento</span>
         </Button>
       </DialogTrigger>
-      <DialogContent className="rounded-xl max-w-3xl p-6">
+      
+      <DialogContent className="rounded-xl max-w-2xl p-6">
         <DialogHeader>
           <DialogTitle className="text-xl font-semibold">
-            Subir Documento
+            Subir Documento (Admin)
           </DialogTitle>
           <DialogDescription>
-            Sube un documento para indexación.
+            Sube un documento al sistema de gestión.
           </DialogDescription>
         </DialogHeader>
 
@@ -234,8 +144,8 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
                 value={apartado}
                 onValueChange={(value) => {
                   setApartado(value);
-                  setEstrategia(""); // Reset strategy when initiative changes
-                  setTipoDocumento(""); // Reset document type as well
+                  setEstrategia("");
+                  setTipoDocumento("");
                 }}
               >
                 <SelectTrigger className="border border-gray-300">
@@ -247,6 +157,7 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
                 </SelectContent>
               </Select>
             </div>
+            
             {apartado === "PES 2030" && (
               <div className="space-y-2">
                 <label className="block text-sm font-medium">Estrategia</label>
@@ -257,9 +168,7 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
                   <SelectContent>
                     <SelectItem value="Estrategia I">Estrategia I</SelectItem>
                     <SelectItem value="Estrategia II">Estrategia II</SelectItem>
-                    <SelectItem value="Estrategia III">
-                      Estrategia III
-                    </SelectItem>
+                    <SelectItem value="Estrategia III">Estrategia III</SelectItem>
                     <SelectItem value="Estrategia IV">Estrategia IV</SelectItem>
                   </SelectContent>
                 </Select>
@@ -267,72 +176,33 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
             )}
           </div>
 
-          {/* Drag & Drop */}
-          <div
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
-            className={`border-2 border-dashed rounded-lg p-6 text-center transition ${
-              isDragging ? "border-red-500 bg-red-50" : "border-gray-300"
-            }`}
-          >
-            <UploadCloud className="mx-auto h-10 w-10 text-gray-500" />
-            <p className="mt-2 text-gray-700 font-medium">
-              Arrastra tu archivo aquí
-            </p>
-            <p className="text-xs text-gray-500">
-              o selecciónalo manualmente
-            </p>
-            <Input
-              type="file"
-              accept=".pdf,.docx,.xlsx,.pptx"
-              onChange={(e) => handleFileSelect(e.target.files[0])}
-              className="mt-3"
+          {/* COMPONENTE DE SUBIDA MODULAR */}
+          <div className="space-y-2">
+            <label className="block text-sm font-medium">Archivo</label>
+            <FileUpload
+              file={file}
+              onFileSelect={setFile}
+              onFileRemove={() => setFile(null)}
+              uploading={uploading}
+              progress={progress}
+              placeholder="Arrastra tu archivo aquí o selecciónalo manualmente"
+              acceptedTypes=".pdf,.docx,.xlsx,.pptx"
             />
           </div>
 
-          {/* Lista de archivos */}
-          {file && (
-            <div className="space-y-2">
-              <div
-                className="flex items-center justify-between border rounded-lg p-2"
-              >
-                <div className="flex items-center gap-2">
-                  <File className="h-5 w-5 text-gray-600" />
-                  <span className="text-sm">{file.name}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  {uploading && progress[file.name] !== undefined && (
-                    <Progress value={progress[file.name]} className="w-24" />
-                  )}
-                  <button
-                    type="button"
-                    onClick={handleRemoveFile}
-                    className="text-red-500 hover:text-red-700"
-                    disabled={uploading}
-                  >
-                    <X className="h-5 w-5" />
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
           {/* Tipo de documento */}
           <div className="space-y-2">
-            <label className="block text-sm font-medium">
-              Tipo de documento
-            </label>
+            <label className="block text-sm font-medium">Tipo de documento</label>
             <Select
               value={tipoDocumento}
               onValueChange={setTipoDocumento}
-              disabled={!userRole || !apartado}
+              disabled={!apartado}
             >
               <SelectTrigger className="border border-gray-300">
                 <SelectValue placeholder="Selecciona el tipo de documento" />
               </SelectTrigger>
               <SelectContent>
-                {availableDocumentTypes.map((type) => (
+                {adminDocumentTypes.map((type) => (
                   <SelectItem key={type} value={type}>
                     {formatDocumentType(type)}
                   </SelectItem>
@@ -341,69 +211,18 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
             </Select>
           </div>
 
-          {/* Público */}
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="publico"
-              checked={publico}
-              onChange={(e) => setPublico(e.target.checked)}
-              className="h-4 w-4 rounded border-gray-300 text-blue-600"
-            />
-            <label htmlFor="publico" className="text-sm">
-              Habilitar en biblioteca pública
-            </label>
-          </div>
-
-          {/* Agregar imagen de portada */}
-          {publico && (
-            <div className="space-y-2">
-              <label className="block text-sm font-medium">
-                Imagen de Portada
-              </label>
-              <div className="flex items-center gap-4">
-                <Input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleCoverImageSelect}
-                  className="flex-grow"
-                />
-                {coverImage && (
-                  <div className="flex items-center gap-2">
-                    <ImageIcon className="h-5 w-5 text-gray-600" />
-                    <span className="text-sm truncate max-w-xs">
-                      {coverImage.name}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setCoverImage(null)}
-                      className="text-red-500 hover:text-red-700"
-                      disabled={uploading}
-                    >
-                      <X className="h-5 w-5" />
-                    </button>
-                  </div>
-                )}
-              </div>
-              <p className="text-xs text-gray-500">
-                Sube una imagen para la portada del documento en la biblioteca
-                pública.
-              </p>
-            </div>
-          )}
-
           {/* Botones */}
-          <div className="flex justify-end gap-3 pt-2">
+          <div className="flex justify-end gap-3 pt-4">
             <Button
               type="button"
               variant="outline"
-              onClick={() => setOpen(false)}
+              onClick={handleCloseDialog}
               disabled={uploading}
             >
               Cancelar
             </Button>
-            <Button type="submit" variant="destructive" disabled={uploading}>
-              {uploading ? "Subiendo..." : "Subir documento"}
+            <Button type="submit" variant="destructive" disabled={uploading || !file}>
+              {uploading ? `Subiendo... ${Math.round(progress)}%` : "Subir documento"}
             </Button>
           </div>
         </form>
