@@ -291,20 +291,24 @@ def download_file_from_storage(blob_path: str) -> bytes:
         raise Exception(f"Error descargando archivo: {e}")
 
 def list_files_in_storage(prefix: str = "") -> List[Dict[str, Any]]:
+    """Lista blobs de Storage incluyendo marcadores de carpeta (terminados en '/').
+    Esto permite representar carpetas vacías en el árbol.
+    """
     try:
         bucket = get_storage_bucket()
-        files = []
-        
+        files: List[Dict[str, Any]] = []
+
         for blob in bucket.list_blobs(prefix=prefix):
-            if not blob.name.endswith("/"):
-                files.append({
-                    "path": blob.name,
-                    "filename": os.path.basename(blob.name),
-                    "size": blob.size or 0,
-                    "updated": blob.updated.isoformat() if blob.updated else None,
-                    "content_type": blob.content_type or "application/octet-stream"
-                })
-                
+            is_folder = blob.name.endswith("/")
+            files.append({
+                "path": blob.name,
+                "filename": os.path.basename(blob.name.rstrip("/")) or blob.name.rstrip("/"),
+                "size": 0 if is_folder else (blob.size or 0),
+                "updated": blob.updated.isoformat() if getattr(blob, "updated", None) else None,
+                "content_type": (blob.content_type or ("application/x-directory" if is_folder else "application/octet-stream")),
+                "is_folder": is_folder,
+            })
+
         return files
     except Exception as e:
         raise Exception(f"Error listando archivos: {e}")

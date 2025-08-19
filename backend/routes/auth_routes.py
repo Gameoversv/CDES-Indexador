@@ -2,7 +2,7 @@ from typing import Optional, Dict, Any
 import unicodedata
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 
-from services.security import verify_firebase_token
+from services.firebase_service import verify_token as verify_firebase_token
 from services.firebase_admin_tools import db
 from utils.audit_logger import log_event, log_error
 
