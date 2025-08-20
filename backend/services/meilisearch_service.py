@@ -35,7 +35,10 @@ INDEX_CONFIG = {
         "public",
         "publico",
         "apartado",
-        "uploader_id"
+        "uploader_id",
+        "categoria",
+        "user_role",
+        "estrategia"
     ],
     "sortableAttributes": [
         "date",
@@ -58,7 +61,19 @@ INDEX_CONFIG = {
         "publico",
         "apartado",
         "storage_path",
-        "upload_timestamp"
+        "upload_timestamp",
+        "processing_timestamp",
+        "ai_model",
+        "file_hash",
+        "file_id",
+        "media_type",
+        "original_filename",
+        "processing_time_estimate",
+        "uploader_id",
+        "uploader_email",
+        "categoria",
+        "user_role",
+        "estrategia"
     ]
 }
 
@@ -74,7 +89,8 @@ def check_meilisearch_health() -> bool:
         if health_status and health_status.get('status') == 'available':
             _meilisearch_available = True
             return True
-    except:
+    except Exception as e:
+        print(f"Error checking Meilisearch health: {str(e)}")
         pass
     
     try:
@@ -82,18 +98,43 @@ def check_meilisearch_health() -> bool:
         if version:
             _meilisearch_available = True
             return True
-    except:
+    except Exception as e:
+        print(f"Error checking Meilisearch version: {str(e)}")
         pass
     
     try:
         client.get_indexes()
         _meilisearch_available = True
         return True
-    except:
+    except Exception as e:
+        print(f"Error getting Meilisearch indexes: {str(e)}")
         pass
     
     _meilisearch_available = False
     return False
+
+
+def get_task_details(task):
+    """Get the task UID and status details in a uniform way, handling both dict and object responses"""
+    task_uid = None
+    
+    # Try to get task UID from task object or dict
+    if hasattr(task, 'task_uid'):
+        task_uid = task.task_uid
+    elif isinstance(task, dict) and "taskUid" in task:
+        task_uid = task["taskUid"]
+    
+    if not task_uid:
+        print("Warning: Could not extract task UID from task result")
+        return None, None
+        
+    # Get task status
+    try:
+        task_status = client.get_task(task_uid)
+        return task_uid, task_status
+    except Exception as e:
+        print(f"Error getting task status for task {task_uid}: {e}")
+        return task_uid, None
 
 def initialize_meilisearch() -> None:
     global client, _meilisearch_available
@@ -106,7 +147,12 @@ def initialize_meilisearch() -> None:
         
         if check_meilisearch_health():
             print("Meilisearch está disponible")
-            _ensure_index_exists()
+            # Check for failed tasks to help with debugging
+            check_failed_tasks()
+            if _ensure_index_exists(INDEX_NAME):
+                print(f"Índice '{INDEX_NAME}' verificado y configurado correctamente")
+            else:
+                print(f"Hubo un problema al configurar el índice '{INDEX_NAME}'")
         else:
             print("Meilisearch no está disponible. Usando modo fallback.")
             
@@ -116,36 +162,136 @@ def initialize_meilisearch() -> None:
         _meilisearch_available = False
 
 
-def _ensure_index_exists() -> None:
+def check_failed_tasks(limit=5):
+    """Check for failed tasks in Meilisearch to help with debugging"""
     if not _meilisearch_available or client is None:
         return
+        
+    try:
+        # Get failed tasks
+        try:
+            tasks = client.get_tasks({"limit": limit, "statuses": "failed"})
+        except Exception as e:
+            print(f"Error checking failed tasks: {e}")
+            return
+            
+        if hasattr(tasks, 'results') and tasks.results:
+            print(f"Found {len(tasks.results)} failed tasks:")
+            for task in tasks.results:
+                task_type = task.type if hasattr(task, 'type') else "Unknown"
+                error = task.error if hasattr(task, 'error') else "Unknown error"
+                details = task.details if hasattr(task, 'details') else {}
+                print(f"  - Task type: {task_type}, Error: {error}, Details: {details}")
+        elif isinstance(tasks, dict) and "results" in tasks and tasks["results"]:
+            print(f"Found {len(tasks['results'])} failed tasks:")
+            for task in tasks["results"]:
+                task_type = task.get('type', "Unknown")
+                error = task.get('error', "Unknown error")
+                details = task.get('details', {})
+                print(f"  - Task type: {task_type}, Error: {error}, Details: {details}")
+        else:
+            print("No failed tasks found")
+            
+    except Exception as e:
+        print(f"Error checking failed tasks: {e}")
+
+
+def sanitize_document_id(doc_id):
+    """
+    Sanitize document ID to comply with Meilisearch requirements:
+    - Only alphanumeric characters, hyphens and underscores
+    - Not more than 511 bytes
+    """
+    if not doc_id:
+        return str(datetime.now().timestamp()).replace(".", "")
+        
+    # Convert to string if needed
+    doc_id = str(doc_id)
+    
+    # Handle escaped quotes - replace them before general processing
+    import re
+    doc_id = doc_id.replace('\\"', '').replace("\\'", '')
+    
+    # Remove any surrounding quotes (both single and double)
+    # This handles cases where the ID might have been serialized with quotes
+    doc_id = re.sub(r'^[\'"]|[\'"]$', '', doc_id)
+    
+    # Replace invalid characters with underscores
+    sanitized = re.sub(r'[^a-zA-Z0-9_-]', '_', doc_id)
+    
+    # Truncate if too long (511 bytes max)
+    if len(sanitized.encode('utf-8')) > 511:
+        sanitized = sanitized[:255]  # Safe truncation
+        
+    return sanitized
+
+
+def _ensure_index_exists(index_name=INDEX_NAME) -> bool:
+    if not _meilisearch_available or client is None:
+        return False
     
     try:
-        existing_indices = client.get_indexes()
-        index_names = []
-        
-        if isinstance(existing_indices, dict) and "results" in existing_indices:
-            index_names = [idx.uid for idx in existing_indices["results"]]
-        elif isinstance(existing_indices, list):
-            index_names = [idx.uid for idx in existing_indices]
-        
-        if INDEX_NAME not in index_names:
-            print(f"Creando índice '{INDEX_NAME}'...")
-            task = client.create_index(uid=INDEX_NAME, options={"primaryKey": "id"})
-            client.wait_for_task(task.task_uid)
+        # Verificar si el índice ya existe
+        try:
+            existing_indices = client.get_indexes()
+            index_names = []
             
-        _configure_index()
+            if isinstance(existing_indices, dict) and "results" in existing_indices:
+                index_names = [idx.uid for idx in existing_indices["results"]]
+            elif hasattr(existing_indices, 'results'):
+                index_names = [idx.uid for idx in existing_indices.results]
+            elif isinstance(existing_indices, list):
+                index_names = [idx.uid for idx in existing_indices]
+                
+            if index_name in index_names:
+                # El índice ya existe, no es necesario crearlo
+                print(f"El índice '{index_name}' ya existe")
+                return _configure_index(index_name)
+        except Exception as e:
+            print(f"Error al verificar índices existentes: {e}")
+            # Continuamos para intentar crear el índice de todos modos
         
+        # Crear el índice si no existe
+        try:
+            print(f"Creando índice '{index_name}'...")
+            # En la versión 0.37.0 del cliente Python, el parámetro se llama 'primary_key' en lugar de 'uid'
+            task = client.create_index(index_name, {"primaryKey": "id"})
+            
+            # Check task status using the helper function
+            task_uid, task_status = get_task_details(task)
+            if task_uid and task_status:
+                print(f"Create index task status: {task_status}")
+                
+                if hasattr(task_status, 'status') and task_status.status == "failed":
+                    error = task_status.error if hasattr(task_status, 'error') else "Unknown error"
+                    print(f"Failed to create index: {error}")
+                    return False
+            
+            return _configure_index(index_name)
+        except Exception as e:
+            print(f"Error al crear índice: {e}")
+            # Intentar obtener el índice incluso si falló la creación
+            # (podría haber fallado porque ya existe)
+            try:
+                index = client.index(index_name)
+                if index:
+                    print(f"El índice '{index_name}' parece existir a pesar del error")
+                    return _configure_index(index_name)
+            except:
+                pass
+            return False
+            
     except Exception as e:
         print(f"Error configurando índice: {e}")
+        return False
 
 
-def _configure_index() -> None:
+def _configure_index(index_name=INDEX_NAME) -> bool:
     if not _meilisearch_available or client is None:
-        return
+        return False
     
     try:
-        index = client.index(INDEX_NAME)
+        index = client.index(index_name)
         
         for config_type, attributes in [
             ("searchable", INDEX_CONFIG["searchableAttributes"]),
@@ -163,55 +309,128 @@ def _configure_index() -> None:
                 elif config_type == "displayed":
                     task = index.update_displayed_attributes(attributes)
                     
-                client.wait_for_task(task.task_uid, timeout_ms=5000)
-            except:
-                pass
+                # Check task status using the helper function
+                task_uid, task_status = get_task_details(task)
+                if task_uid and task_status:
+                    if hasattr(task_status, 'status') and task_status.status == "failed":
+                        error = task_status.error if hasattr(task_status, 'error') else "Unknown error"
+                        print(f"Failed to update {config_type} attributes: {error}")
+            except Exception as e:
+                print(f"Error updating {config_type} attributes: {str(e)}")
+                
+        return True
                 
     except Exception as e:
         print(f"Error en configuración del índice: {e}")
-
-
-def add_documents(documents: List[Dict[str, Any]]) -> bool:
-    if not documents:
-        return True
-    
-    if not check_meilisearch_health():
-        print(f"Meilisearch no disponible. {len(documents)} documento(s) guardado(s) solo localmente.")
         return False
+
+
+def add_documents(documents, index_name=INDEX_NAME):
+    """Add documents to the specified index"""
+    if not _meilisearch_available:
+        if not check_meilisearch_health():
+            print(f"Meilisearch unavailable when adding documents to {index_name}")
+            return False
+
+    # Ensure index exists
+    _ensure_index_exists(index_name)
     
     try:
-        index = client.index(INDEX_NAME)
+        # Get the index
+        index = client.index(index_name)
         
+        # Sanitize document IDs
         for doc in documents:
-            if 'id' not in doc and 'file_id' in doc:
-                doc['id'] = doc['file_id']
+            if isinstance(doc, dict):
+                # Ensure 'id' exists and is sanitized
+                if 'id' in doc:
+                    doc['id'] = sanitize_document_id(doc['id'])
+                # Align with file_id if present
+                elif 'file_id' in doc:
+                    doc['id'] = sanitize_document_id(doc['file_id'])
         
-        task = index.add_documents(documents)
+        # Add documents with explicit primary key
+        task = index.add_documents(documents, primary_key="id")
         
-        try:
-            client.wait_for_task(task.task_uid, timeout_ms=30000)
-            print(f"{len(documents)} documento(s) indexado(s) en Meilisearch")
-            return True
-        except:
-            # Si el timeout expira, asumir éxito (indexación asíncrona)
-            print(f"{len(documents)} documento(s) enviado(s) a Meilisearch (procesamiento en segundo plano)")
-            return True
+        # Check task status using the helper function
+        task_uid, task_status = get_task_details(task)
+        if task_uid and task_status:
+            print(f"Add documents task status: {task_status}")
             
+            # Handle task status object
+            if hasattr(task_status, 'status'):
+                if task_status.status == "failed":
+                    error = task_status.error if hasattr(task_status, 'error') else "Unknown error"
+                    print(f"Failed to add documents: {error}")
+                    # Print the full task status for debugging
+                    print(f"Task details: {dir(task_status)}")
+                    if hasattr(task_status, 'details'):
+                        print(f"Task details: {task_status.details}")
+                    return False
+            # Handle task status dict
+            elif isinstance(task_status, dict) and task_status.get("status") == "failed":
+                print(f"Failed to add documents: {task_status.get('error')}")
+                print(f"Task details: {task_status}")
+                return False
+        else:
+            print("Could not get task details from add_documents result")
+            
+        return True
     except Exception as e:
-        print(f"Error indexando en Meilisearch: {e}")
+        print(f"Error adding documents to Meilisearch: {str(e)}")
         return False
 
 
 def delete_document(document_id: str) -> bool:
     if not check_meilisearch_health():
+        print(f"Meilisearch unavailable when deleting document {document_id}")
         return False
     
     try:
+        # Sanitize document ID
+        sanitized_id = sanitize_document_id(document_id)
+        
         index = client.index(INDEX_NAME)
-        task = index.delete_document(document_id)
-        client.wait_for_task(task.task_uid, timeout_ms=5000)
-        return True
-    except:
+        task = index.delete_document(sanitized_id)
+        
+        # Check task status using the helper function
+        task_uid, task_status = get_task_details(task)
+        if task_uid and task_status:
+            print(f"Delete document task status: {task_status}")
+            
+            # Handle task status object
+            if hasattr(task_status, 'status'):
+                if task_status.status == "failed":
+                    error = task_status.error if hasattr(task_status, 'error') else "Unknown error"
+                    print(f"Failed to delete document: {error}")
+                    return False
+                elif task_status.status in ["enqueued", "processing"]:
+                    print(f"Document {sanitized_id} deletion is being processed")
+                    return True
+                elif task_status.status == "succeeded":
+                    print(f"Document {sanitized_id} deleted successfully")
+                    return True
+            # Handle task status dict
+            elif isinstance(task_status, dict):
+                if task_status.get("status") == "failed":
+                    print(f"Failed to delete document: {task_status.get('error')}")
+                    return False
+                elif task_status.get("status") in ["enqueued", "processing"]:
+                    print(f"Document {sanitized_id} deletion is being processed")
+                    return True
+                elif task_status.get("status") == "succeeded":
+                    print(f"Document {sanitized_id} deleted successfully")
+                    return True
+                
+            # Unknown status
+            print(f"Unknown status when deleting document: {task_status}")
+            return False
+        else:
+            print("Could not get task details from delete_document result")
+            return False
+        
+    except Exception as e:
+        print(f"Error deleting document from Meilisearch: {str(e)}")
         return False
         
 def update_documents(documents: List[Dict[str, Any]]) -> bool:
@@ -226,19 +445,55 @@ def update_documents(documents: List[Dict[str, Any]]) -> bool:
         index = client.index(INDEX_NAME)
         
         for doc in documents:
-            if 'id' not in doc and 'file_id' in doc:
-                doc['id'] = doc['file_id']
+            # Always align primary key with Firestore's document id
+            if 'file_id' in doc:
+                doc['id'] = sanitize_document_id(doc['file_id'])
+            elif 'id' in doc:
+                doc['id'] = sanitize_document_id(doc['id'])
                 
-        task = index.update_documents(documents)
+        # Explicitly specify primary key for Meilisearch 1.18.0 compatibility
+        task = index.update_documents(documents, primary_key="id")
         
-        try:
-            client.wait_for_task(task.task_uid, timeout_ms=30000)
-            print(f"{len(documents)} documento(s) actualizado(s) en Meilisearch")
-            return True
-        except:
-            # Si el timeout expira, asumir éxito (indexación asíncrona)
-            print(f"{len(documents)} documento(s) enviado(s) a actualizar en Meilisearch (procesamiento en segundo plano)")
-            return True
+        # Check task status using the helper function
+        task_uid, task_status = get_task_details(task)
+        if task_uid and task_status:
+            print(f"Update documents task status: {task_status}")
+            
+            # Handle task status object
+            if hasattr(task_status, 'status'):
+                if task_status.status == "failed":
+                    error = task_status.error if hasattr(task_status, 'error') else "Unknown error"
+                    print(f"Failed to update documents: {error}")
+                    # Print the full task status for debugging
+                    print(f"Task details: {dir(task_status)}")
+                    if hasattr(task_status, 'details'):
+                        print(f"Task details: {task_status.details}")
+                    return False
+                elif task_status.status in ["enqueued", "processing"]:
+                    print(f"{len(documents)} documento(s) enviado(s) a actualizar en Meilisearch (procesamiento en segundo plano)")
+                    return True
+                elif task_status.status == "succeeded":
+                    print(f"{len(documents)} documento(s) actualizado(s) en Meilisearch")
+                    return True
+            # Handle task status dict
+            elif isinstance(task_status, dict):
+                if task_status.get("status") == "failed":
+                    print(f"Failed to update documents: {task_status.get('error')}")
+                    print(f"Task details: {task_status}")
+                    return False
+                elif task_status.get("status") in ["enqueued", "processing"]:
+                    print(f"{len(documents)} documento(s) enviado(s) a actualizar en Meilisearch (procesamiento en segundo plano)")
+                    return True
+                elif task_status.get("status") == "succeeded":
+                    print(f"{len(documents)} documento(s) actualizado(s) en Meilisearch")
+                    return True
+                
+            # Unknown status
+            print(f"Estado desconocido al actualizar documentos: {task_status}")
+            return False
+        else:
+            print("Could not get task details from update_documents result")
+            return False
             
     except Exception as e:
         print(f"Error actualizando documentos en Meilisearch: {e}")

@@ -212,10 +212,10 @@ async def upload_document(
             complete_metadata["user_role"] = ""
         if "estrategia" not in complete_metadata:
             complete_metadata["estrategia"] = ""
-            
-        # Ensure ID field is set (required by DocumentMetadata model)
-        if "id" not in complete_metadata and "file_id" in complete_metadata:
-            complete_metadata["id"] = complete_metadata["file_id"]
+        
+        # Force ID to match Firestore document id to keep a single source of truth
+        # This avoids using the random UUID from the AI layer as Meilisearch primary key.
+        complete_metadata["id"] = file_id
 
         # Guardar en Firebase con versión
         save_document_metadata(file_id, complete_metadata, file_hash, version, parent_id)
