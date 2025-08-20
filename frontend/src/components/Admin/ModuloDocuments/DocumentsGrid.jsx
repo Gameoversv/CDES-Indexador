@@ -1,7 +1,18 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Calendar, Eye, Trash2, Download, FileText, FileSpreadsheet, FileBarChart, File } from "lucide-react";
+import { 
+  Calendar, Eye, Trash2, Download, FileText, FileSpreadsheet, 
+  FileBarChart, File, ChevronDown, ChevronRight 
+} from "lucide-react";
+import { useState } from "react";
+import { getFileDisplayName } from "@/lib/documentUtils";
+import { 
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem
+} from "@/components/ui/dropdown-menu";
 
 const getFileIcon = (filename) => {
   const ext = filename?.split(".").pop()?.toLowerCase();
@@ -49,14 +60,25 @@ export default function DocumentsGrid({
           <div className="p-1 bg-gray-100">
             <div className="flex justify-center py-4">
               {getFileIcon(file.filename)}
+              {file.isVersioned && (
+                <Badge className="absolute right-2 top-2 bg-blue-600 hover:bg-blue-700 text-white">
+                  {file.versionCount}
+                </Badge>
+              )}
             </div>
           </div>
           <CardContent className="p-4">
             <div className="space-y-3">
               <div>
-                <p className="font-medium truncate text-gray-900" title={file.filename}>
-                  {file.filename}
+                <p className="font-medium truncate text-gray-900" 
+                   title={file.isVersioned ? getFileDisplayName(file) : file.filename}>
+                  {file.isVersioned ? getFileDisplayName(file) : file.filename}
                 </p>
+                {file.isVersioned && (
+                  <p className="text-xs text-blue-600">
+                    {file.versionCount} versiones disponibles
+                  </p>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-2 text-xs">
@@ -81,14 +103,139 @@ export default function DocumentsGrid({
                   >
                     <Eye className="h-4 w-4 text-gray-900" />
                   </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="rounded-full p-1.5 bg-gray-100 hover:bg-gray-200 border border-gray-300"
-                    onClick={() => setConfirmDelete({ open: true, file })}
-                  >
-                    <Trash2 className="h-4 w-4 text-red-500" />
-                  </Button>
+                  
+                  {file.isVersioned ? (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="rounded-full p-1.5 bg-gray-100 hover:bg-gray-200 border border-gray-300"
+                        >
+                          <ChevronDown className="h-4 w-4 text-gray-900" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-56">
+                        {/* Show original file if available */}
+                        {file.originalFile && file.filename !== file.originalFile.filename && (
+                          <DropdownMenuItem className="cursor-pointer">
+                            <div className="flex flex-col w-full">
+                              <div className="flex justify-between w-full">
+                                <span className="truncate flex-1">{file.originalFile.filename}</span>
+                                <Badge variant="outline" className="text-xs ml-2 bg-green-100 text-green-800 border-green-200">
+                                  Original
+                                </Badge>
+                              </div>
+                              <div className="flex justify-between text-xs text-gray-500 mt-1">
+                                <span>{formatDate(file.originalFile.updated)}</span>
+                                <span>{formatSize(file.originalFile.size)}</span>
+                              </div>
+                              <div className="flex gap-1 mt-2">
+                                <Button
+                                  variant="ghost" 
+                                  size="sm"
+                                  className="rounded-full p-1 h-7 w-7 bg-gray-100"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setPreviewFile(file.originalFile);
+                                  }}
+                                >
+                                  <Eye className="h-3 w-3" />
+                                </Button>
+                                <Button
+                                  variant="ghost" 
+                                  size="sm"
+                                  className="rounded-full p-1 h-7 w-7 bg-gray-100" 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setConfirmDelete({ open: true, file: file.originalFile });
+                                  }}
+                                >
+                                  <Trash2 className="h-3 w-3 text-red-500" />
+                                </Button>
+                                <Button
+                                  variant="ghost" 
+                                  size="sm"
+                                  className="rounded-full p-1 h-7 w-7 bg-red-100" 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDownload(file.originalFile.path, file.originalFile.filename);
+                                  }}
+                                >
+                                  <Download className="h-3 w-3 text-red-600" />
+                                </Button>
+                              </div>
+                            </div>
+                          </DropdownMenuItem>
+                        )}
+                        
+                        {/* Show all versions */}
+                        {file.versions.map((version, vIdx) => (
+                          <DropdownMenuItem key={vIdx} className="cursor-pointer">
+                            <div className="flex flex-col w-full">
+                              <div className="flex justify-between w-full">
+                                <span className="truncate flex-1">{version.filename}</span>
+                                {vIdx === 0 && (
+                                  <Badge variant="outline" className="text-xs ml-2 bg-green-100 text-green-800 border-green-200">
+                                    Última
+                                  </Badge>
+                                )}
+                              </div>
+                              <div className="flex justify-between text-xs text-gray-500 mt-1">
+                                <span>{formatDate(version.updated)}</span>
+                                <span>{formatSize(version.size)}</span>
+                              </div>
+                              <div className="flex gap-1 mt-2">
+                                <Button
+                                  variant="ghost" 
+                                  size="sm"
+                                  className="rounded-full p-1 h-7 w-7 bg-gray-100"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setPreviewFile(version);
+                                  }}
+                                >
+                                  <Eye className="h-3 w-3" />
+                                </Button>
+                                <Button
+                                  variant="ghost" 
+                                  size="sm"
+                                  className="rounded-full p-1 h-7 w-7 bg-gray-100" 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setConfirmDelete({ open: true, file: version });
+                                  }}
+                                >
+                                  <Trash2 className="h-3 w-3 text-red-500" />
+                                </Button>
+                                <Button
+                                  variant="ghost" 
+                                  size="sm"
+                                  className="rounded-full p-1 h-7 w-7 bg-red-100" 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDownload(version.path, version.filename);
+                                  }}
+                                >
+                                  <Download className="h-3 w-3 text-red-600" />
+                                </Button>
+                              </div>
+                            </div>
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  ) : (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="rounded-full p-1.5 bg-gray-100 hover:bg-gray-200 border border-gray-300"
+                      onClick={() => setConfirmDelete({ open: true, file })}
+                    >
+                      <Trash2 className="h-4 w-4 text-red-500" />
+                    </Button>
+                  )}
+                  
                   <Button
                     variant="outline"
                     size="sm"

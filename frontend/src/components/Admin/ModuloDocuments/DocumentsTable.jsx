@@ -18,7 +18,11 @@ import {
   FileSpreadsheet,
   FileBarChart,
   File,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
+import { useState } from "react";
+import { getFileDisplayName } from "@/lib/documentUtils";
 
 const getFileIcon = (filename) => {
   const ext = filename?.split(".").pop()?.toLowerCase();
@@ -67,6 +71,15 @@ export default function DocumentsTable({
   formatSize,
   formatDate,
 }) {
+  const [expandedFiles, setExpandedFiles] = useState({});
+  
+  const toggleFileExpansion = (fileId) => {
+    setExpandedFiles(prev => ({
+      ...prev,
+      [fileId]: !prev[fileId]
+    }));
+  };
+  
   return (
     <div className="overflow-x-auto">
       <Table>
@@ -112,67 +125,235 @@ export default function DocumentsTable({
         </TableHeader>
         <TableBody>
           {files.map((file, index) => (
-            <TableRow
-              key={index}
-              className="hover:bg-gray-50 border-b border-gray-300"
-            >
-              <TableCell className="font-medium text-gray-900">
-                <div className="flex items-center gap-3">
-                  {getFileIcon(file.filename)}
-                  <div className="font-medium truncate max-w-xs">
-                    {file.filename}
+            <>
+              <TableRow
+                key={index}
+                className="hover:bg-gray-50 border-b border-gray-300"
+              >
+                <TableCell className="font-medium text-gray-900">
+                  <div className="flex items-center gap-3">
+                    {file.isVersioned && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="p-0 h-5 w-5"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleFileExpansion(file.filename);
+                        }}
+                      >
+                        {expandedFiles[file.filename] ? (
+                          <ChevronDown className="h-5 w-5" />
+                        ) : (
+                          <ChevronRight className="h-5 w-5" />
+                        )}
+                      </Button>
+                    )}
+                    {getFileIcon(file.filename)}
+                    <div className="font-medium truncate max-w-xs">
+                      {file.isVersioned ? getFileDisplayName(file) : file.filename}
+                      {file.isVersioned && (
+                        <span className="ml-2 text-xs text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full">
+                          {file.versionCount} versiones
+                        </span>
+                      )}
+                    </div>
                   </div>
-                </div>
-              </TableCell>
-              <TableCell className="text-gray-900">
-                {formatSize(file.size)}
-              </TableCell>
-              <TableCell className="text-gray-900">
-                <div className="flex items-center gap-1 text-sm text-gray-700">
-                  <Calendar className="h-3 w-3" />
-                  {formatDate(file.updated)}
-                </div>
-              </TableCell>
-              <TableCell className="text-gray-900">
-                {file.tipo || "-"}
-              </TableCell>
-              <TableCell>
-                <Badge
-                  variant="secondary"
-                  className={getFileTypeColor(file.filename)}
-                >
-                  {file.filename?.split(".").pop()?.toUpperCase() || "FILE"}
-                </Badge>
-              </TableCell>
-              <TableCell className="text-right">
-                <div className="flex gap-2 justify-end">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="rounded-full p-2 bg-gray-100 hover:bg-gray-200 border border-gray-300"
-                    onClick={() => setPreviewFile(file)}
+                </TableCell>
+                <TableCell className="text-gray-900">
+                  {formatSize(file.size)}
+                </TableCell>
+                <TableCell className="text-gray-900">
+                  <div className="flex items-center gap-1 text-sm text-gray-700">
+                    <Calendar className="h-3 w-3" />
+                    {formatDate(file.updated)}
+                  </div>
+                </TableCell>
+                <TableCell className="text-gray-900">
+                  {file.tipo || "-"}
+                </TableCell>
+                <TableCell>
+                  <Badge
+                    variant="secondary"
+                    className={getFileTypeColor(file.filename)}
                   >
-                    <Eye className="h-4 w-4 text-gray-900" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="rounded-full p-2 bg-gray-100 hover:bg-gray-200 border border-gray-300"
-                    onClick={() => setConfirmDelete({ open: true, file })}
-                  >
-                    <Trash2 className="h-4 w-4 text-red-500" />
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleDownload(file.path, file.filename)}
-                    className="gap-1 px-3 border border-gray-300 bg-red-600 text-white hover:bg-red-700"
-                  >
-                    <Download className="h-4 w-4" />
-                  </Button>
-                </div>
-              </TableCell>
-            </TableRow>
+                    {file.filename?.split(".").pop()?.toUpperCase() || "FILE"}
+                  </Badge>
+                </TableCell>
+                <TableCell className="text-right">
+                  <div className="flex gap-2 justify-end">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="rounded-full p-2 bg-gray-100 hover:bg-gray-200 border border-gray-300"
+                      onClick={() => setPreviewFile(file)}
+                    >
+                      <Eye className="h-4 w-4 text-gray-900" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="rounded-full p-2 bg-gray-100 hover:bg-gray-200 border border-gray-300"
+                      onClick={() => setConfirmDelete({ open: true, file })}
+                    >
+                      <Trash2 className="h-4 w-4 text-red-500" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleDownload(file.path, file.filename)}
+                      className="gap-1 px-3 border border-gray-300 bg-red-600 text-white hover:bg-red-700"
+                    >
+                      <Download className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+              
+              {/* Versions dropdown */}
+              {file.isVersioned && 
+               expandedFiles[file.filename] && (
+                 <>
+                   {/* If there's an original file, show it first */}
+                   {file.originalFile && file.filename !== file.originalFile.filename && (
+                     <TableRow
+                       key={`${index}-original`}
+                       className="hover:bg-blue-50 border-b border-gray-300 bg-blue-50/30"
+                     >
+                       <TableCell className="font-medium text-gray-900">
+                         <div className="flex items-center gap-3 pl-10">
+                           {getFileIcon(file.originalFile.filename)}
+                           <div className="font-medium truncate max-w-xs">
+                             {file.originalFile.filename}
+                             <span className="ml-2 text-xs text-green-600 bg-green-100 px-2 py-0.5 rounded-full">
+                               Original
+                             </span>
+                           </div>
+                         </div>
+                       </TableCell>
+                       <TableCell className="text-gray-900">
+                         {formatSize(file.originalFile.size)}
+                       </TableCell>
+                       <TableCell className="text-gray-900">
+                         <div className="flex items-center gap-1 text-sm text-gray-700">
+                           <Calendar className="h-3 w-3" />
+                           {formatDate(file.originalFile.updated)}
+                         </div>
+                       </TableCell>
+                       <TableCell className="text-gray-900">
+                         {file.originalFile.tipo || "-"}
+                       </TableCell>
+                       <TableCell>
+                         <Badge
+                           variant="secondary"
+                           className={getFileTypeColor(file.originalFile.filename)}
+                         >
+                           {file.originalFile.filename?.split(".").pop()?.toUpperCase() || "FILE"}
+                         </Badge>
+                       </TableCell>
+                       <TableCell className="text-right">
+                         <div className="flex gap-2 justify-end">
+                           <Button
+                             variant="ghost"
+                             size="sm"
+                             className="rounded-full p-2 bg-gray-100 hover:bg-gray-200 border border-gray-300"
+                             onClick={() => setPreviewFile(file.originalFile)}
+                           >
+                             <Eye className="h-4 w-4 text-gray-900" />
+                           </Button>
+                           <Button
+                             variant="ghost"
+                             size="sm"
+                             className="rounded-full p-2 bg-gray-100 hover:bg-gray-200 border border-gray-300"
+                             onClick={() => setConfirmDelete({ open: true, file: file.originalFile })}
+                           >
+                             <Trash2 className="h-4 w-4 text-red-500" />
+                           </Button>
+                           <Button
+                             variant="outline"
+                             size="sm"
+                             onClick={() => handleDownload(file.originalFile.path, file.originalFile.filename)}
+                             className="gap-1 px-3 border border-gray-300 bg-red-600 text-white hover:bg-red-700"
+                           >
+                             <Download className="h-4 w-4" />
+                           </Button>
+                         </div>
+                       </TableCell>
+                     </TableRow>
+                   )}
+                   
+                   {/* Display all versioned files */}
+                   {file.versions.map((version, vIdx) => (
+                     <TableRow
+                       key={`${index}-version-${vIdx}`}
+                       className="hover:bg-blue-50 border-b border-gray-300 bg-blue-50/30"
+                     >
+                       <TableCell className="font-medium text-gray-900">
+                         <div className="flex items-center gap-3 pl-10">
+                           {getFileIcon(version.filename)}
+                           <div className="font-medium truncate max-w-xs">
+                             {version.filename}
+                             {vIdx === 0 && (
+                               <span className="ml-2 text-xs text-green-600 bg-green-100 px-2 py-0.5 rounded-full">
+                                 Última versión
+                               </span>
+                             )}
+                           </div>
+                         </div>
+                       </TableCell>
+                       <TableCell className="text-gray-900">
+                         {formatSize(version.size)}
+                       </TableCell>
+                       <TableCell className="text-gray-900">
+                         <div className="flex items-center gap-1 text-sm text-gray-700">
+                           <Calendar className="h-3 w-3" />
+                           {formatDate(version.updated)}
+                         </div>
+                       </TableCell>
+                       <TableCell className="text-gray-900">
+                         {version.tipo || "-"}
+                       </TableCell>
+                       <TableCell>
+                         <Badge
+                           variant="secondary"
+                           className={getFileTypeColor(version.filename)}
+                         >
+                           {version.filename?.split(".").pop()?.toUpperCase() || "FILE"}
+                         </Badge>
+                       </TableCell>
+                       <TableCell className="text-right">
+                         <div className="flex gap-2 justify-end">
+                           <Button
+                             variant="ghost"
+                             size="sm"
+                             className="rounded-full p-2 bg-gray-100 hover:bg-gray-200 border border-gray-300"
+                             onClick={() => setPreviewFile(version)}
+                           >
+                             <Eye className="h-4 w-4 text-gray-900" />
+                           </Button>
+                           <Button
+                             variant="ghost"
+                             size="sm"
+                             className="rounded-full p-2 bg-gray-100 hover:bg-gray-200 border border-gray-300"
+                             onClick={() => setConfirmDelete({ open: true, file: version })}
+                           >
+                             <Trash2 className="h-4 w-4 text-red-500" />
+                           </Button>
+                           <Button
+                             variant="outline"
+                             size="sm"
+                             onClick={() => handleDownload(version.path, version.filename)}
+                             className="gap-1 px-3 border border-gray-300 bg-red-600 text-white hover:bg-red-700"
+                           >
+                             <Download className="h-4 w-4" />
+                           </Button>
+                         </div>
+                       </TableCell>
+                     </TableRow>
+                   ))}
+                 </>
+               )}
+            </>
           ))}
         </TableBody>
       </Table>
