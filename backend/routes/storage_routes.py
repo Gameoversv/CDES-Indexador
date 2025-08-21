@@ -8,7 +8,7 @@ from services.firebase_service import (
     get_storage_bucket,
     get_auth_client,  # Añadir esta importación
 )
-from firebase_admin import firestore  # Importar el módulo firestore para acceder a SERVER_TIMESTAMP
+#from firebase_admin import firestore  # Importar el módulo firestore para acceder a SERVER_TIMESTAMP
 from utils.audit_logger import log_event, log_error
 from typing import Dict, Any, List, Optional
 import unicodedata
@@ -26,14 +26,14 @@ router = APIRouter(
 )
 
 # Mapeo de roles del sistema a carpetas de Firebase Storage
-# Claves normalizadas (minúsculas, sin acentos, sin espacios/guiones/bajos)
+# Claves normalizadas (minúsculas, sin acentos, sin espacios)
 ROLE_TO_FOLDER_MAPPING: Dict[str, str] = {
     # Administrativos (verán toda la raíz: esta clave no se usa como carpeta)
     # 'DireccionEjecutiva' se trata aparte devolviendo None para acceso completo.
 
     # Unidades/roles con carpetas propias (usa exactamente el nombre de carpeta en Storage)
     "coordinadoradministrativa": "CoordinadorAdministrativa",
-    "coordinadorplanificacion": "CoordinadorPlanificacion", 
+    "coordinacionproyectosplanificacion": "CoordinacionProyectosPlanificacion", 
     "coordinacioncomunicaciones": "CoordinacionComunicaciones",
     "asistenciageneral": "AsistenciaGeneral",
 }
@@ -166,126 +166,30 @@ async def get_storage_tree(request: Request, token_data: Dict[str, Any] = Depend
     """
     uid = token_data.get("user_id")
     email = token_data.get("email")
-    firestore_client = get_firestore_client()
-    auth_client = get_auth_client()
+    firestore = get_firestore_client()
 
     try:
         print(f"🔍 DEBUG - UID: {uid}, Email: {email}")
         
-        # 1. Primero buscar usuario en Firebase Auth
-        user_role = None
-        firebase_user = None
+    # 1. Obtener el rol del usuario desde Firestore (o token como fallback)
+        user_doc_ref = firestore.collection("users").document(uid)
+        user_doc = user_doc_ref.get()
+
+        print(f"🔍 DEBUG - User doc exists: {user_doc.exists}")
         
-        try:
-            firebase_user = auth_client.get_user(uid)
-            print(f"🔍 DEBUG - Firebase Auth user found: {firebase_user.email}")
+        user_role = None
+        if user_doc.exists:
+            user_data = user_doc.to_dict()
+            user_role = user_data.get("role")
+            print(f"🔍 DEBUG - User data: {user_data}")
             
-            # Obtener custom claims del usuario
-            custom_claims = firebase_user.custom_claims or {}
-            user_role = custom_claims.get("role")
-            
-            if not user_role:
-                # Fallback: buscar en Firestore
-                user_doc_ref = firestore_client.collection("users").document(uid)
-                user_doc = user_doc_ref.get()
-                
-                if user_doc.exists:
-                    user_data = user_doc.to_dict()
-                    user_role = user_data.get("role")
-                    print(f"🔍 DEBUG - Role found in Firestore: {user_role}")
-                else:
-                    print(f"🔍 DEBUG - User not found in Firestore, will create document")
-                    
-                    # Asignar rol por defecto basado en email
-                    if email and any(pattern in email.lower() for pattern in ["director", "ejecutiv"]):
-                        user_role = "DireccionEjecutiva"
-                    else:
-                        user_role = "AsistenciaGeneral"  # Rol por defecto
-                    
-                    print(f"🔍 DEBUG - Assigned role: {user_role}")
-                    
-                    # Crear el documento del usuario en Firestore
-                    user_data = {
-                        "uid": uid,
-                        "email": email,
-                        "role": user_role,
-                        "display_name": firebase_user.display_name or email.split("@")[0] if email else "Usuario",
-                        "created_at": firestore.SERVER_TIMESTAMP,  # Usar firestore.SERVER_TIMESTAMP
-                        "status": "active",
-                        "is_active": True,
-                        "last_login": firestore.SERVER_TIMESTAMP
-                    }
-                    
-                    try:
-                        user_doc_ref.set(user_data)
-                        print(f"🔍 DEBUG - User document created successfully")
-                        
-                        # También establecer custom claims en Firebase Auth
-                        auth_client.set_custom_user_claims(uid, {"role": user_role})
-                        
-                        log_event(
-                            user_id=uid,
-                            event_type="USER_DOCUMENT_CREATED",
-                            details={
-                                "email": email,
-                                "role": user_role,
-                                "auto_created": True,
-                                "context": "storage_tree_access"
-                            },
-                            severity="INFO",
-                        )
-                    except Exception as create_error:
-                        print(f"🔍 DEBUG - Error creating user document: {create_error}")
-                        # Continuar con el rol detectado aunque no se pueda crear el documento
-                        pass
-                        
-        except Exception as auth_error:
-            print(f"🔍 DEBUG - Error getting user from Firebase Auth: {auth_error}")
-            
-            # ENFOQUE CONSERVADOR: Solo preservar roles existentes, no cambiar a AsistenciaGeneral
-            user_role = None
-            
-            # 1. Intentar obtener desde Firestore (preservar rol existente)
-            try:
-                user_doc_ref = firestore_client.collection("users").document(uid)
-                user_doc = user_doc_ref.get()
-                
-                if user_doc.exists:
-                    user_data = user_doc.to_dict()
-                    user_role = user_data.get("role")
-                    if user_role:
-                        print(f"🔍 DEBUG - Existing role preserved from Firestore: {user_role}")
-                    else:
-                        print(f"🔍 DEBUG - User exists in Firestore but no role defined")
-                        
-            except Exception as firestore_error:
-                print(f"🔍 DEBUG - Error accessing Firestore: {firestore_error}")
-            
-            # 2. Si no hay rol en Firestore, intentar desde token (sin asignar automáticamente)
-            if not user_role:
-                user_role = token_data.get("role") or (token_data.get("custom_claims", {}) or {}).get("role")
-                if user_role:
-                    print(f"🔍 DEBUG - Role from token: {user_role}")
-                else:
-                    print(f"⚠️ DEBUG - No role found anywhere")
-            
-            # 3. Si aún no hay rol, denegar acceso en lugar de asignar AsistenciaGeneral
-            if not user_role:
-                print(f"⚠️ DEBUG - No role found for user {uid}, access will be restricted")
-                log_event(
-                    user_id=uid,
-                    event_type="ACCESS_DENIED_NO_ROLE",
-                    details={
-                        "email": email,
-                        "reason": "No role assigned to user",
-                        "auth_error": str(auth_error)
-                    },
-                    severity="WARNING",
-                )
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Usuario sin rol asignado. Contacte al administrador para asignar permisos."
-                )
+            print(f"🔍 DEBUG - User role from Firestore: {user_role}")
+        else:
+            print(f"🔍 DEBUG - User not found in Firestore")
+            # Fallback a claims en el token
+            #user_role = token_data.get("role") or (token_data.get("custom_claims", {}) or {}).get("role")
+            #if not user_role:
+                #user_role = "AsistenciaGeneral"  # Rol por defecto
 
         print(f"🔍 DEBUG - Final user role: {user_role}")
 
@@ -301,6 +205,7 @@ async def get_storage_tree(request: Request, token_data: Dict[str, Any] = Depend
         else:
             # Usuario normal - ve solo su carpeta específica dentro de CDES_inst
             if storage_folder == "":
+                # Sin carpeta asignada para su rol
                 print("⚠️  DEBUG - Usuario sin carpeta para su rol; se devolverá lista vacía")
                 log_event(
                     user_id=uid,
