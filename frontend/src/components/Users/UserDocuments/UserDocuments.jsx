@@ -11,6 +11,7 @@ import {
   Calendar,
   HardDrive
 } from "lucide-react";
+import { groupVersionedDocuments } from "@/lib/documentUtils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -162,7 +163,8 @@ export default function UserDocuments() {
   };
 
   const sortedFiles = useMemo(() => {
-    return [...files].sort((a, b) => {
+    // First sort the files
+    const sorted = [...files].sort((a, b) => {
       let valA = a[sortBy],
         valB = b[sortBy];
       if (sortBy === "updated") {
@@ -179,6 +181,9 @@ export default function UserDocuments() {
       if (valA > valB) return sortOrder === "asc" ? 1 : -1;
       return 0;
     });
+    
+    // Then group versioned files
+    return groupVersionedDocuments(sorted);
   }, [files, sortBy, sortOrder]);
 
   const filteredFiles = useMemo(() => {

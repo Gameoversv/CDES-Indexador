@@ -3,6 +3,7 @@ import AdminLayout from "@/components/Admin/Layout/AdminLayout";
 import { documentsAPI } from "@/services/api";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
+import { groupVersionedDocuments } from "@/lib/documentUtils";
 
 import UploadDocumentDialog from "@/components/Admin/ModuloDocuments/UploadDocumentDialog";
 import PreviewFileDialog from "@/components/Admin/ModuloDocuments/PreviewFileDialog";
@@ -93,7 +94,8 @@ export default function AdminDocuments() {
   };
 
   const sortedFiles = useMemo(() => {
-    return [...files].sort((a, b) => {
+    // First sort the files
+    const sorted = [...files].sort((a, b) => {
       let valA = a[sortBy],
         valB = b[sortBy];
       if (sortBy === "updated") {
@@ -110,6 +112,9 @@ export default function AdminDocuments() {
       if (valA > valB) return sortOrder === "asc" ? 1 : -1;
       return 0;
     });
+    
+    // Then group versioned files
+    return groupVersionedDocuments(sorted);
   }, [files, sortBy, sortOrder]);
 
   const filteredFiles = useMemo(() => {
