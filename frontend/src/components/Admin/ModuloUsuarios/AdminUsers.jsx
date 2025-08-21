@@ -28,7 +28,7 @@ export default function Users() {
     display_name: "",
     email: "",
     password: "",
-    role: "asistenciaGeneral",
+    role: "AsistenciaGeneral",
     status: "active",
   });
 
@@ -52,12 +52,11 @@ export default function Users() {
 
   const validRoles = [
     "admin",
-    "asistenciaGeneral",
-    "CoordinadorPlanificacion",
-    "UnidadAdministrativa",
-    "UnidadComunicacion",
-    "UnidadPlanificacion",
-    "UnidadProyectos",
+    "DireccionEjecutiva",
+    "CoordinadorAdministrativa",
+    "CoordinacionProyectosPlanificacion",
+    "CoordinacionComunicaciones",
+    "AsistenciaGeneral",
   ];
 
   const handleCreateOrUpdate = async () => {
@@ -108,7 +107,7 @@ export default function Users() {
       display_name: "",
       email: "",
       password: "",
-      role: "asistenciaGeneral",
+      role: "AsistenciaGeneral",
       status: "active",
     });
     setSelectedUser(null);
@@ -179,13 +178,11 @@ export default function Users() {
   const stats = {
     total: users.length,
     active: users.filter((u) => u.status === "active").length,
-    admin: users.filter((u) => u.role === "admin").length,
-    asistenciaGeneral: users.filter((u) => u.role === "asistenciaGeneral").length,
-    CoordinadorPlanificacion: users.filter((u) => u.role === "CoordinadorPlanificacion").length,
-    UnidadAdministrativa: users.filter((u) => u.role === "UnidadAdministrativa").length,
-    UnidadComunicacion: users.filter((u) => u.role === "UnidadComunicacion").length,
-    UnidadPlanificacion: users.filter((u) => u.role === "UnidadPlanificacion").length,
-    UnidadProyectos: users.filter((u) => u.role === "UnidadProyectos").length,
+    DireccionEjecutiva: users.filter((u) => u.role === "DireccionEjecutiva").length,
+    AsistenciaGeneral: users.filter((u) => u.role === "AsistenciaGeneral").length,
+    CoordinacionProyectosPlanificacion: users.filter((u) => u.role === "CoordinacionProyectosPlanificacion").length,
+    CoordinacionComunicaciones: users.filter((u) => u.role === "CoordinacionComunicaciones").length,
+    CoordinadorAdministrativa: users.filter((u) => u.role === "CoordinadorAdministrativa").length,
   };
 
   return (

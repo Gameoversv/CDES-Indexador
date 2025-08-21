@@ -6,7 +6,9 @@ from services.firebase_service import (
     get_firestore_client,
     list_files_in_storage,
     get_storage_bucket,
+    get_auth_client,  # Añadir esta importación
 )
+from firebase_admin import firestore  # Importar el módulo firestore para acceder a SERVER_TIMESTAMP
 from utils.audit_logger import log_event, log_error
 from typing import Dict, Any, List, Optional
 import unicodedata
@@ -24,18 +26,16 @@ router = APIRouter(
 )
 
 # Mapeo de roles del sistema a carpetas de Firebase Storage
-# Claves normalizadas (minúsculas, sin acentos, sin espacios)
+# Claves normalizadas (minúsculas, sin acentos, sin espacios/guiones/bajos)
 ROLE_TO_FOLDER_MAPPING: Dict[str, str] = {
     # Administrativos (verán toda la raíz: esta clave no se usa como carpeta)
-    # 'admin' y 'direccionejecutiva' se tratan aparte devolviendo None.
+    # 'DireccionEjecutiva' se trata aparte devolviendo None para acceso completo.
 
     # Unidades/roles con carpetas propias (usa exactamente el nombre de carpeta en Storage)
-    "asistenciageneral": "asistenciaGeneral",
-    "coordinadorplanificacion": "CoordinadorPlanificacion",
-    "unidadadministrativa": "UnidadAdministrativa",
-    "unidadcomunicacion": "UnidadComunicacion",
-    "unidadplanificacion": "UnidadPlanificacion",
-    "unidadproyectos": "UnidadProyectos",
+    "coordinadoradministrativa": "CoordinadorAdministrativa",
+    "coordinadorplanificacion": "CoordinadorPlanificacion", 
+    "coordinacioncomunicaciones": "CoordinacionComunicaciones",
+    "asistenciageneral": "AsistenciaGeneral",
 }
 
 def _norm(text: Optional[str]) -> str:
@@ -51,39 +51,38 @@ def _norm(text: Optional[str]) -> str:
 def get_storage_folder_for_user(user_role: Optional[str], email: Optional[str]) -> Optional[str]:
     """
     Determina la carpeta de Firebase Storage basada en el rol del usuario.
-    Si es admin o dirección ejecutiva, retorna None para acceder a toda la raíz.
+    Si es DireccionEjecutiva, retorna None para acceder a toda la raíz.
     """
     nr = _norm(user_role)
 
-    # Usuarios administrativos ven toda la estructura
-    if nr in {"admin", "direccionejecutiva", "direccionexecutiva"}:
+    # Usuarios administrativos (Dirección Ejecutiva) ven toda la estructura
+    if nr in {"direccionejecutiva", "direccion ejecutiva"}:
         return None  # None significa acceso a toda la raíz CDES_inst/
+
+    # Detectar por email si no hay rol claro
+    if isinstance(email, str) and email:
+        e = email.lower()
+        # Verificar patrones administrativos en email
+        if any(pattern in e for pattern in ["director", "ejecutiv"]):
+            return None  # Acceso administrativo completo
+            
+        # Fallback por email pattern hacia carpetas específicas, no a 'admin'
+        if "asistente" in e or "general" in e:
+            return "AsistenciaGeneral"
+        if "coordinador" in e and "administrativa" in e:
+            return "CoordinadorAdministrativa"
+        if "proyectos" in e and "planificacion" in e:
+            return "CoordinacionProyectosPlanificacion"
+        if "comunicacion" in e:
+            return "CoordinacionComunicaciones"
 
     # Intentar por rol conocido
     if nr in ROLE_TO_FOLDER_MAPPING:
         return ROLE_TO_FOLDER_MAPPING[nr]
 
-    # Fallback por email pattern hacia carpetas específicas, no a 'admin'
-    if isinstance(email, str) and email:
-        e = email.lower()
-        if "asistente" in e or "general" in e:
-            return "asistenciaGeneral"
-        # Prioridad: si contiene 'coordinador' => carpeta de CoordinadorPlanificacion
-        if "coordinador" in e:
-            return "CoordinadorPlanificacion"
-        # Si es de planificación pero no coordinador => UnidadPlanificacion
-        if "planificacion" in e:
-            return "UnidadPlanificacion"
-        if "administrativa" in e:
-            return "UnidadAdministrativa"
-        if "comunicacion" in e:
-            return "UnidadComunicacion"
-        if "gestion" in e or "proyectos" in e:
-            return "UnidadProyectos"
-
-    # Sin coincidencias: no asignar carpeta arbitraria; devolver una cadena vacía
-    # para que el caller trate como "no posee carpeta" (se devolverá lista vacía)
-    return ""
+    # Sin coincidencias: para usuarios nuevos sin rol definido, dar acceso básico
+    # En lugar de devolver "", devolver None para acceso completo temporal
+    return None if not user_role else ""
 
 def _build_tree_from_paths(file_list: List[Dict[str, Any]], root_path: str) -> List[Dict[str, Any]]:
     """Construye un árbol jerárquico a partir de blobs, incluyendo carpetas vacías.
@@ -167,29 +166,128 @@ async def get_storage_tree(request: Request, token_data: Dict[str, Any] = Depend
     """
     uid = token_data.get("user_id")
     email = token_data.get("email")
-    firestore = get_firestore_client()
+    firestore_client = get_firestore_client()
+    auth_client = get_auth_client()
 
     try:
         print(f"🔍 DEBUG - UID: {uid}, Email: {email}")
         
-    # 1. Obtener el rol del usuario desde Firestore (o token como fallback)
-        user_doc_ref = firestore.collection("users").document(uid)
-        user_doc = user_doc_ref.get()
-
-        print(f"🔍 DEBUG - User doc exists: {user_doc.exists}")
-        
+        # 1. Primero buscar usuario en Firebase Auth
         user_role = None
-        if user_doc.exists:
-            user_data = user_doc.to_dict()
-            user_role = user_data.get("role")
-            print(f"🔍 DEBUG - User data: {user_data}")
-            print(f"🔍 DEBUG - User role from Firestore: {user_role}")
-        else:
-            print(f"🔍 DEBUG - User not found in Firestore")
-            # Fallback a claims en el token
-            user_role = token_data.get("role") or (token_data.get("custom_claims", {}) or {}).get("role")
-            if user_role:
-                print(f"🔍 DEBUG - User role from token: {user_role}")
+        firebase_user = None
+        
+        try:
+            firebase_user = auth_client.get_user(uid)
+            print(f"🔍 DEBUG - Firebase Auth user found: {firebase_user.email}")
+            
+            # Obtener custom claims del usuario
+            custom_claims = firebase_user.custom_claims or {}
+            user_role = custom_claims.get("role")
+            
+            if not user_role:
+                # Fallback: buscar en Firestore
+                user_doc_ref = firestore_client.collection("users").document(uid)
+                user_doc = user_doc_ref.get()
+                
+                if user_doc.exists:
+                    user_data = user_doc.to_dict()
+                    user_role = user_data.get("role")
+                    print(f"🔍 DEBUG - Role found in Firestore: {user_role}")
+                else:
+                    print(f"🔍 DEBUG - User not found in Firestore, will create document")
+                    
+                    # Asignar rol por defecto basado en email
+                    if email and any(pattern in email.lower() for pattern in ["director", "ejecutiv"]):
+                        user_role = "DireccionEjecutiva"
+                    else:
+                        user_role = "AsistenciaGeneral"  # Rol por defecto
+                    
+                    print(f"🔍 DEBUG - Assigned role: {user_role}")
+                    
+                    # Crear el documento del usuario en Firestore
+                    user_data = {
+                        "uid": uid,
+                        "email": email,
+                        "role": user_role,
+                        "display_name": firebase_user.display_name or email.split("@")[0] if email else "Usuario",
+                        "created_at": firestore.SERVER_TIMESTAMP,  # Usar firestore.SERVER_TIMESTAMP
+                        "status": "active",
+                        "is_active": True,
+                        "last_login": firestore.SERVER_TIMESTAMP
+                    }
+                    
+                    try:
+                        user_doc_ref.set(user_data)
+                        print(f"🔍 DEBUG - User document created successfully")
+                        
+                        # También establecer custom claims en Firebase Auth
+                        auth_client.set_custom_user_claims(uid, {"role": user_role})
+                        
+                        log_event(
+                            user_id=uid,
+                            event_type="USER_DOCUMENT_CREATED",
+                            details={
+                                "email": email,
+                                "role": user_role,
+                                "auto_created": True,
+                                "context": "storage_tree_access"
+                            },
+                            severity="INFO",
+                        )
+                    except Exception as create_error:
+                        print(f"🔍 DEBUG - Error creating user document: {create_error}")
+                        # Continuar con el rol detectado aunque no se pueda crear el documento
+                        pass
+                        
+        except Exception as auth_error:
+            print(f"🔍 DEBUG - Error getting user from Firebase Auth: {auth_error}")
+            
+            # ENFOQUE CONSERVADOR: Solo preservar roles existentes, no cambiar a AsistenciaGeneral
+            user_role = None
+            
+            # 1. Intentar obtener desde Firestore (preservar rol existente)
+            try:
+                user_doc_ref = firestore_client.collection("users").document(uid)
+                user_doc = user_doc_ref.get()
+                
+                if user_doc.exists:
+                    user_data = user_doc.to_dict()
+                    user_role = user_data.get("role")
+                    if user_role:
+                        print(f"🔍 DEBUG - Existing role preserved from Firestore: {user_role}")
+                    else:
+                        print(f"🔍 DEBUG - User exists in Firestore but no role defined")
+                        
+            except Exception as firestore_error:
+                print(f"🔍 DEBUG - Error accessing Firestore: {firestore_error}")
+            
+            # 2. Si no hay rol en Firestore, intentar desde token (sin asignar automáticamente)
+            if not user_role:
+                user_role = token_data.get("role") or (token_data.get("custom_claims", {}) or {}).get("role")
+                if user_role:
+                    print(f"🔍 DEBUG - Role from token: {user_role}")
+                else:
+                    print(f"⚠️ DEBUG - No role found anywhere")
+            
+            # 3. Si aún no hay rol, denegar acceso en lugar de asignar AsistenciaGeneral
+            if not user_role:
+                print(f"⚠️ DEBUG - No role found for user {uid}, access will be restricted")
+                log_event(
+                    user_id=uid,
+                    event_type="ACCESS_DENIED_NO_ROLE",
+                    details={
+                        "email": email,
+                        "reason": "No role assigned to user",
+                        "auth_error": str(auth_error)
+                    },
+                    severity="WARNING",
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Usuario sin rol asignado. Contacte al administrador para asignar permisos."
+                )
+
+        print(f"🔍 DEBUG - Final user role: {user_role}")
 
         # 2. Determinar la carpeta de storage usando el mapeo inteligente
         storage_folder = get_storage_folder_for_user(user_role, email)
@@ -197,13 +295,12 @@ async def get_storage_tree(request: Request, token_data: Dict[str, Any] = Depend
         
         # 3. Construir la ruta de búsqueda en Firebase Storage
         if storage_folder is None:
-            # Usuario administrativo - ve toda la estructura desde la raíz
+            # Usuario administrativo (DireccionEjecutiva) - ve toda la estructura desde la raíz
             root_path = ""  # Raíz completa de Firebase Storage
-            print(f"🔍 DEBUG - Admin access: viewing entire Firebase Storage root")
+            print(f"🔍 DEBUG - DireccionEjecutiva access: viewing entire Firebase Storage root")
         else:
             # Usuario normal - ve solo su carpeta específica dentro de CDES_inst
             if storage_folder == "":
-                # Sin carpeta asignada para su rol
                 print("⚠️  DEBUG - Usuario sin carpeta para su rol; se devolverá lista vacía")
                 log_event(
                     user_id=uid,
@@ -240,7 +337,12 @@ async def get_storage_tree(request: Request, token_data: Dict[str, Any] = Depend
                         "is_folder": True,
                     })
             # Asegurar carpetas de roles conocidas bajo CDES_inst/
-            role_folders = sorted({v for k, v in ROLE_TO_FOLDER_MAPPING.items() if '@' not in k})
+            role_folders = [
+                "CoordinadorAdministrativa",
+                "CoordinacionProyectosPlanificacion", 
+                "CoordinacionComunicaciones",
+                "AsistenciaGeneral"
+            ]
             for rf in role_folders:
                 role_marker = f"CDES_inst/{rf}/"
                 if not any(f.get("path") == role_marker for f in files_list):

@@ -13,13 +13,12 @@ import { Pencil, Trash2, Lock } from "lucide-react";
 
 // Mapeo de roles técnicos a nombres legibles
 const roleLabels = {
-  admin: "Dirección Ejecutiva",
-  asistenciaGeneral: "Asistencia General",
-  CoordinadorPlanificacion: "Coordinador de Planificación",
-  UnidadAdministrativa: "Unidad Administrativa",
-  UnidadComunicacion: "Unidad de Comunicación",
-  UnidadPlanificacion: "Unidad de Planificación",
-  UnidadProyectos: "Unidad de Gestión de Proyectos",
+  //admin: "Dirección Ejecutiva",
+  DireccionEjecutiva: "Dirección Ejecutiva",
+  CoordinadorAdministrativa: "Coordinador Administrativa",
+  CoordinacionProyectosPlanificacion: "Coordinación Proyectos y Planificación",
+  CoordinacionComunicaciones: "Coordinación de Comunicaciones",
+  AsistenciaGeneral: "Asistencia General"
 };
 
 export default function UserTable({ users, onEdit, onDelete, onChangePassword }) {

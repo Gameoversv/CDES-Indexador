@@ -12,13 +12,12 @@ import {
 
 // Nuevos roles oficiales
 const roleMap = {
-  admin: "Dirección Ejecutiva",
-  asistenciaGeneral: "Asistencia General",
-  CoordinadorPlanificacion: "Coordinador de Planificación",
-  UnidadAdministrativa: "Unidad Administrativa",
-  UnidadComunicacion: "Unidad de Comunicación y Difusión",
-  UnidadPlanificacion: "Unidad de Planificación",
-  UnidadProyectos: "Unidad de Gestión de Proyectos",
+  //admin: "Dirección Ejecutiva",
+  DireccionEjecutiva: "Dirección Ejecutiva",
+  CoordinadorAdministrativa: "Coordinador Administrativa",
+  CoordinacionProyectosPlanificacion: "Coordinación Proyectos y Planificación",
+  CoordinacionComunicaciones: "Coordinación de Comunicaciones",
+  AsistenciaGeneral: "Asistencia General"
 };
 
 export default function UserSearchBar({ search, setSearch, roleFilter, setRoleFilter }) {

@@ -37,7 +37,7 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
   const { userRole } = useAuth();
   const { uploading, progress, uploadFile, reset } = useFileUpload();
   
-  // ✅ ESTADOS DEL FORMULARIO
+  // ESTADOS DEL FORMULARIO
   const [file, setFile] = useState(null);
   const [apartado, setApartado] = useState("");
   const [estrategia, setEstrategia] = useState("");
@@ -59,7 +59,7 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
     }
   }, [userRole]);
 
-  // ✅ MANEJAR SELECCIÓN DE IMAGEN DE PORTADA
+  // MANEJAR SELECCIÓN DE IMAGEN DE PORTADA
   const handleCoverImageSelect = (e) => {
     if (e.target.files && e.target.files[0]) {
       setCoverImage(e.target.files[0]);

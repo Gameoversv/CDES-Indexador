@@ -1,5 +1,5 @@
 export const documentTypesByRole = {
-  admin: [
+  DireccionEjecutiva: [
     "presentaciones", "carta", "informe", "convenios", "contrato", 
     "minutas/ayuda_memoria", "actas", "mapas", "logos", "graficos", 
     "nota_prensa/comunicaciones", "plan", "ficha_tecnica", "estudio", 
@@ -7,7 +7,7 @@ export const documentTypesByRole = {
     "convocatorias", "Invitacion", "cuestionario/ instrumento de recolección de datos", 
     "TDER", "cronograma", "diagnostico", "listado", "declaracion ciudadana"
   ],
-  CoordinadorPlanificacion: [
+  CoordinadorAdministrativa: [
     "presentaciones", "carta", "informe", "convenios", "contrato", 
     "minutas/ayuda_memoria", "actas", "mapas", "logos", "graficos", 
     "nota_prensa/comunicaciones", "plan", "ficha_tecnica", "estudio", 
@@ -15,27 +15,18 @@ export const documentTypesByRole = {
     "convocatorias", "Invitacion", "cuestionario/ instrumento de recolección de datos", 
     "TDER", "cronograma", "diagnostico", "listado", "declaracion ciudadana"
   ],
-  UnidadProyectos: [
+  CoordinacionProyectosPlanificacion: [
     "presentaciones", "informe", "minutas/ayuda_memoria", "actas", "mapas", 
     "logos", "graficos", "plan", "ficha_tecnica", "estudio", "video", "foto", 
     "memorias institucionales", "Invitacion", "cuestionario/ instrumento de recolección de datos", 
     "TDER", "cronograma", "diagnostico", "listado", "declaracion ciudadana"
   ],
-  UnidadPlanificacion: [
-    "presentaciones", "informe", "minutas/ayuda_memoria", "actas", "mapas", 
-    "logos", "graficos", "plan", "ficha_tecnica", "estudio", "video", "foto", 
-    "memorias institucionales", "Invitacion", "cuestionario/ instrumento de recolección de datos", 
-    "TDER", "cronograma", "diagnostico", "listado", "declaracion ciudadana"
-  ],
-  asistenciaGeneral: [
-    "agendas", "carta", "minutas/ayuda_memoria", "logos", "convocatorias"
-  ],
-  UnidadAdministrativa: [
-    "convenio", "contrato", "plan"
-  ],
-  UnidadComunicacion: [
+  CoordinacionComunicaciones: [
     "nota_prensa/comunicaciones", "video", "foto", "convocatorias", 
     "Invitacion", "cronograma"
+  ],
+  AsistenciaGeneral: [
+    "agendas", "carta", "minutas/ayuda_memoria", "logos", "convocatorias"
   ]
 };
 

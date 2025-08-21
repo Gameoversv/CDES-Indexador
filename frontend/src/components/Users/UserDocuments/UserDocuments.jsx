@@ -90,21 +90,18 @@ export default function UserDocuments() {
 
   const getDepartmentDisplayName = (role) => {
     const roleNames = {
-      admin: "Administración",
-      "Dirección ejecutiva": "Dirección Ejecutiva",
+      //admin: "Administración",
+      "Dirección Ejecutiva": "Dirección Ejecutiva",
+      "Coordinador Administrativa": "Coordinador Administrativa",
+      "Coordinación Proyectos y Planificación": "Coordinación Proyectos y Planificación", 
+      "Coordinación de Comunicaciones": "Coordinación de Comunicaciones",
       "Asistencia General": "Asistencia General",
-      "Coordinador de Planificación": "Coordinador de Planificación",
-      "Unidad Administrativa": "Unidad Administrativa", 
-      "Unidad de Comunicación y Difusión": "Unidad de Comunicación y Difusión",
-      "Unidad de Planificación": "Unidad de Planificación",
-      "Unidad de Gestión de Proyectos": "Unidad de Gestión de Proyectos",
       // También mantener compatibilidad con los nombres antiguos
-      asistenciaGeneral: "Asistencia General",
-      CoordinadorPlanificacion: "Coordinador de Planificación",
-      UnidadAdministrativa: "Unidad Administrativa",
-      UnidadComunicacion: "Unidad de Comunicación y Difusión",
-      UnidadPlanificacion: "Unidad de Planificación",
-      UnidadProyectos: "Unidad de Gestión de Proyectos",
+      DireccionEjecutiva: "Dirección Ejecutiva",
+      CoordinadorAdministrativa: "Coordinador Administrativa",
+      CoordinacionProyectosPlanificacion: "Coordinación Proyectos y Planificación",
+      CoordinacionComunicaciones: "Coordinación de Comunicaciones",
+      AsistenciaGeneral: "Asistencia General"
     };
     return roleNames[role] || role || "Departamento";
   };
