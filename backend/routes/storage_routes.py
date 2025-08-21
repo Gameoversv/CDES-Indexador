@@ -7,6 +7,8 @@ from services.firebase_service import (
     list_files_in_storage,
     get_storage_bucket,
     get_auth_client,  # Añadir esta importación
+    list_cover_images,
+    get_cover_image_url,
 )
 #from firebase_admin import firestore  # Importar el módulo firestore para acceder a SERVER_TIMESTAMP
 from utils.audit_logger import log_event, log_error
@@ -426,3 +428,92 @@ async def upload_by_storage_path(
     except Exception as e:
         log_error(error=e, context="POST /storage/upload_by_path", user_id=uid, additional_details={"path": blob_path})
         raise HTTPException(status_code=500, detail="Error al subir el archivo")
+
+
+@router.get("/cover-images")
+async def get_cover_images(
+    request: Request,
+    token_data: Dict[str, Any] = Depends(verify_token)
+):
+    """
+    Lista todas las imágenes de portada almacenadas en Biblioteca_Portadas/
+    """
+    try:
+        user_id = token_data.get("user_id", "")
+        
+        images = list_cover_images()
+        
+        log_event(
+            user_id=user_id,
+            event_type="COVER_IMAGES_LISTED",
+            details={
+                "count": len(images),
+                "user_email": token_data.get("email", "")
+            },
+            severity="INFO"
+        )
+        
+        return {
+            "images": images,
+            "count": len(images)
+        }
+        
+    except Exception as e:
+        log_error(
+            error=e,
+            context="GET /storage/cover-images",
+            user_id=token_data.get("user_id", ""),
+            additional_details={"user_email": token_data.get("email", "")}
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error al obtener imágenes de portada: {str(e)}"
+        )
+
+
+@router.get("/cover-images/{image_name}/url")
+async def get_cover_image_url_endpoint(
+    image_name: str,
+    request: Request,
+    token_data: Dict[str, Any] = Depends(verify_token)
+):
+    """
+    Genera una URL firmada para una imagen de portada específica
+    """
+    try:
+        user_id = token_data.get("user_id", "")
+        image_path = f"Biblioteca_Portadas/{image_name}"
+        
+        url = get_cover_image_url(image_path)
+        
+        log_event(
+            user_id=user_id,
+            event_type="COVER_IMAGE_URL_GENERATED",
+            details={
+                "image_name": image_name,
+                "image_path": image_path,
+                "user_email": token_data.get("email", "")
+            },
+            severity="INFO"
+        )
+        
+        return {
+            "url": url,
+            "image_name": image_name,
+            "image_path": image_path
+        }
+        
+    except Exception as e:
+        log_error(
+            error=e,
+            context="GET /storage/cover-images/{image_name}/url",
+            user_id=token_data.get("user_id", ""),
+            additional_details={
+                "image_name": image_name,
+                "user_email": token_data.get("email", "")
+            }
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error al generar URL para imagen: {str(e)}"
+        )

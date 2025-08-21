@@ -313,6 +313,26 @@ def list_files_in_storage(prefix: str = "") -> List[Dict[str, Any]]:
     except Exception as e:
         raise Exception(f"Error listando archivos: {e}")
 
+def list_cover_images() -> List[Dict[str, Any]]:
+    """Lista las imágenes de portada almacenadas en Biblioteca_Portadas/"""
+    try:
+        return list_files_in_storage("Biblioteca_Portadas/")
+    except Exception as e:
+        raise Exception(f"Error listando imágenes de portada: {e}")
+
+def get_cover_image_url(image_path: str) -> str:
+    """Genera una URL pública para una imagen de portada"""
+    try:
+        bucket = get_storage_bucket()
+        blob = bucket.blob(image_path)
+        
+        # Genera una URL firmada válida por 1 hora
+        from datetime import timedelta
+        url = blob.generate_signed_url(expiration=timedelta(hours=1))
+        return url
+    except Exception as e:
+        raise Exception(f"Error generando URL para imagen: {e}")
+
 def delete_file_from_storage(blob_path: str) -> None:
     try:
         bucket = get_storage_bucket()

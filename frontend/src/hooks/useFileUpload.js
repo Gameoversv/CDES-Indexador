@@ -21,6 +21,14 @@ export function useFileUpload() {
       const formData = new FormData();
       formData.append("file", file);
       
+      // Agregar imagen de portada si existe en metadata
+      if (metadata.cover_image) {
+        formData.append("cover_image", metadata.cover_image);
+        // Remover del metadata para evitar duplicación
+        const { cover_image, ...otherMetadata } = metadata;
+        metadata = otherMetadata;
+      }
+      
       // Agregar metadatos al FormData
       Object.entries(metadata).forEach(([key, value]) => {
         if (value !== null && value !== undefined && value !== "") {

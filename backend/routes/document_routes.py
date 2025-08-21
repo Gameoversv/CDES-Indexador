@@ -90,12 +90,14 @@ def _save_metadata_locally(metadata: Dict[str, Any], filename: str) -> Path:
 async def upload_document(
     request: Request,
     file: UploadFile = File(...),
+    cover_image: Optional[UploadFile] = File(None),  # Imagen de portada opcional
     is_public: bool = Form(False),
     apartado: str = Form(None),
     categoria: str = Form(None),
     tags: str = Form(None),
     user_role: str = Form(None),
     puesto: str = Form(None),  # Alternativa para user_role (compatibilidad)
+    puesto_trabajo: str = Form(None),  # Puesto de trabajo específico del formulario
     estrategia: str = Form(None),  # Campo para PES 2030
     proyecto: str = Form(None),  # Campo para proyecto específico
     token_data=Depends(verify_firebase_token)
@@ -120,6 +122,25 @@ async def upload_document(
         existing_doc = check_file_hash(file_hash)
         if existing_doc:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Archivo duplicado detectado")
+
+        # Procesar imagen de portada si se proporciona
+        cover_image_path = None
+        if cover_image and cover_image.filename:
+            # Validar que sea una imagen
+            if not cover_image.content_type or not cover_image.content_type.startswith("image/"):
+                raise HTTPException(status_code=400, detail="El archivo de portada debe ser una imagen")
+            
+            cover_image_bytes = await cover_image.read()
+            if not cover_image_bytes:
+                raise HTTPException(status_code=400, detail="La imagen de portada está vacía")
+            
+            # Subir imagen a la carpeta Biblioteca_Portadas/ con el mismo nombre
+            cover_storage_path = f"Biblioteca_Portadas/{cover_image.filename}"
+            try:
+                upload_file_to_storage(cover_image_bytes, cover_storage_path, cover_image.content_type)
+                cover_image_path = cover_storage_path
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Error subiendo imagen de portada: {str(e)}")
 
         # Versionado
         file_stem = Path(file.filename).stem
@@ -148,6 +169,8 @@ async def upload_document(
             custom_metadata["tags"] = tags.split(",") if isinstance(tags, str) else tags
         if effective_user_role:
             custom_metadata["user_role"] = effective_user_role
+        if puesto_trabajo:
+            custom_metadata["puesto_trabajo"] = puesto_trabajo
         if estrategia:
             custom_metadata["estrategia"] = estrategia
         if proyecto:
@@ -170,12 +193,12 @@ async def upload_document(
             month = f"{today.month:02d}"
             
             if apartado == "CDES inst.":
-                # Get user_role from metadata (prefer form data, fallback to extracted_metadata)
-                actual_user_role = effective_user_role or extracted_metadata.get("user_role")
-                # Build path: CDES_inst/{user_role}/{categoria}/{año}/{mes}/filename
+                # Use puesto_trabajo from form (prioritize form data over extracted metadata)
+                actual_puesto_trabajo = puesto_trabajo or extracted_metadata.get("puesto_trabajo")
+                # Build path: CDES_inst/{puesto_trabajo}/{categoria}/{año}/{mes}/filename
                 subfolders = ["CDES_inst"]
-                if actual_user_role:
-                    subfolders.append(str(actual_user_role))
+                if actual_puesto_trabajo:
+                    subfolders.append(str(actual_puesto_trabajo))
                 if categoria:
                     subfolders.append(str(categoria))
                 subfolders.extend([year, month])
@@ -211,6 +234,10 @@ async def upload_document(
             "uploader_email": user_email,
             **custom_metadata
         }
+        
+        # Agregar imagen de portada si se proporcionó
+        if cover_image_path:
+            complete_metadata["cover_image_path"] = cover_image_path
         
         # Ensure required fields exist in metadata for DocumentMetadata model
         if "apartado" not in complete_metadata:
