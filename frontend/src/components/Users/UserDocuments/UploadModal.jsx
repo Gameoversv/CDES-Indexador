@@ -50,7 +50,7 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
 
   const availableDocumentTypes =
-    apartado === "PES 2030"
+    apartado === "PES 2030" || apartado === "CDES inst."
       ? allDocumentTypes
       : userRole
       ? documentTypesByRole[userRole] || []

@@ -8,6 +8,7 @@ import {
   DialogFooter,
   DialogClose,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -16,7 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { UploadCloud } from "lucide-react";
+import { UploadCloud, X, Image as ImageIcon } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
@@ -54,7 +55,16 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
   const [estrategia, setEstrategia] = useState("");
   const [tipoDocumento, setTipoDocumento] = useState("");
   const [puestoTrabajo, setPuestoTrabajo] = useState("");
+  const [publico, setPublico] = useState(false);
+  const [coverImage, setCoverImage] = useState(null);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+
+  // MANEJAR SELECCIÓN DE IMAGEN DE PORTADA
+  const handleCoverImageSelect = (e) => {
+    if (e.target.files && e.target.files[0]) {
+      setCoverImage(e.target.files[0]);
+    }
+  };
 
   // VALIDACIÓN SIMPLIFICADA
   const validateForm = () => {
@@ -69,6 +79,11 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
     }
     if (apartado === "CDES inst." && !puestoTrabajo) {
       toast.warning("Debes seleccionar un puesto de trabajo para CDES inst.");
+      return false;
+    }
+    
+    if (publico && !coverImage) {
+      toast.warning("Debes seleccionar una imagen de portada para un documento público.");
       return false;
     }
     
@@ -91,7 +106,7 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
       apartado,
       categoria: tipoDocumento,
       user_role: userRole || 'admin',
-      is_public: false, // Admin documents are private by default
+      is_public: publico,
     };
     
     if (apartado === "PES 2030") {
@@ -99,6 +114,10 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
     }
     if (apartado === "CDES inst.") {
       metadata.puesto_trabajo = puestoTrabajo;
+    }
+    
+    if (publico && coverImage) {
+      metadata.cover_image = coverImage;
     }
 
     const success = await uploadFile(
@@ -124,6 +143,8 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
     setEstrategia("");
     setTipoDocumento("");
     setPuestoTrabajo("");
+    setPublico(false);
+    setCoverImage(null);
     reset();
   };
 
@@ -241,6 +262,40 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
               </SelectContent>
             </Select>
           </div>
+
+          {/* Público */}
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="publico"
+              checked={publico}
+              onChange={(e) => setPublico(e.target.checked)}
+              className="h-4 w-4 rounded border-gray-300 text-blue-600"
+            />
+            <label htmlFor="publico" className="text-sm">
+              Habilitar en biblioteca pública
+            </label>
+          </div>
+
+          {/* Imagen de portada */}
+          {publico && (
+            <div className="space-y-2">
+              <label className="block text-sm font-medium">Imagen de Portada</label>
+              <FileUpload
+                file={coverImage}
+                onFileSelect={setCoverImage}
+                onFileRemove={() => setCoverImage(null)}
+                variant="compact"
+                acceptedTypes="image/*"
+                acceptedMimeTypes={["image/*"]}
+                placeholder="Selecciona una imagen de portada"
+                showProgress={false}
+              />
+              <p className="text-xs text-gray-500">
+                Sube una imagen para la portada del documento en la biblioteca pública.
+              </p>
+            </div>
+          )}
 
           {/* Botones */}
           <div className="flex justify-end gap-3 pt-4">
