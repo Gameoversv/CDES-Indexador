@@ -18,13 +18,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { UploadCloud, X, Image as ImageIcon } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import FileUpload from "@/components/ui/FileUpload";
 import { useFileUpload } from "@/hooks/useFileUpload";
 import { puestosTrabajo } from "@/constants/jobPositions";
 import { pesEstrategias } from "@/constants/pesEstrategias";
+import { documentsAPI } from "@/services/documentsAPI";
 
 // CONFIGURACIÓN SIMPLIFICADA PARA ADMIN
 const adminDocumentTypes = [
@@ -55,9 +56,11 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
   const [estrategia, setEstrategia] = useState("");
   const [tipoDocumento, setTipoDocumento] = useState("");
   const [puestoTrabajo, setPuestoTrabajo] = useState("");
+  const [proyecto, setProyecto] = useState("");
   const [publico, setPublico] = useState(false);
   const [coverImage, setCoverImage] = useState(null);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [strategyProjects, setStrategyProjects] = useState([]);
 
   // MANEJAR SELECCIÓN DE IMAGEN DE PORTADA
   const handleCoverImageSelect = (e) => {
@@ -65,6 +68,34 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
       setCoverImage(e.target.files[0]);
     }
   };
+
+  useEffect(() => {
+    if (apartado === "PES 2030" && estrategia) {
+      documentsAPI.getProjectsByStrategy(estrategia)
+        .then(response => {
+          console.log("Response from API:", response);
+          const projects = new Set();
+          const files = response.data?.files || [];
+          files.forEach(file => {
+            const pathParts = file.path.split('/');
+            if (pathParts.length >= 3 && pathParts[0] === 'PES_2030' && pathParts[1] === estrategia) {
+              const projectName = pathParts[2];
+              if (projectName && !projectName.match(/^\d{4}$/)) {
+                projects.add(projectName);
+              }
+            }
+          });
+          setStrategyProjects(Array.from(projects).sort());
+        })
+        .catch(error => {
+          console.error("Error fetching projects by strategy:", error);
+          setStrategyProjects([]);
+        });
+    } else {
+      setStrategyProjects([]);
+      setProyecto("");
+    }
+  }, [apartado, estrategia]);
 
   // VALIDACIÓN SIMPLIFICADA
   const validateForm = () => {
@@ -111,6 +142,9 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
     
     if (apartado === "PES 2030") {
       metadata.estrategia = estrategia;
+      if (proyecto) {
+        metadata.proyecto = proyecto;
+      }
     }
     if (apartado === "CDES inst.") {
       metadata.puesto_trabajo = puestoTrabajo;
@@ -143,6 +177,7 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
     setEstrategia("");
     setTipoDocumento("");
     setPuestoTrabajo("");
+    setProyecto("");
     setPublico(false);
     setCoverImage(null);
     reset();
@@ -179,6 +214,7 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
                   setEstrategia("");
                   setTipoDocumento("");
                   setPuestoTrabajo("");
+                  setProyecto("");
                 }}
               >
                 <SelectTrigger className="border border-gray-300">
@@ -212,7 +248,10 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
             {apartado === "PES 2030" && (
               <div className="space-y-2">
                 <label className="block text-sm font-medium">Estrategia</label>
-                <Select value={estrategia} onValueChange={setEstrategia}>
+                <Select value={estrategia} onValueChange={(value) => {
+                  setEstrategia(value);
+                  setProyecto("");
+                }}>
                   <SelectTrigger className="border border-gray-300">
                     <SelectValue placeholder="Selecciona una estrategia" />
                   </SelectTrigger>
@@ -221,6 +260,22 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
                       <SelectItem key={est} value={est}>
                         {est}
                       </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {apartado === "PES 2030" && estrategia && strategyProjects.length > 0 && (
+              <div className="space-y-2">
+                <label className="block text-sm font-medium">Proyecto</label>
+                <Select value={proyecto} onValueChange={setProyecto}>
+                  <SelectTrigger className="border border-gray-300">
+                    <SelectValue placeholder="Selecciona un proyecto" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {strategyProjects.map(proj => (
+                      <SelectItem key={proj} value={proj}>{proj}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>

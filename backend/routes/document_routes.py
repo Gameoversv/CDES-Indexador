@@ -97,6 +97,7 @@ async def upload_document(
     user_role: str = Form(None),
     puesto: str = Form(None),  # Alternativa para user_role (compatibilidad)
     estrategia: str = Form(None),  # Campo para PES 2030
+    proyecto: str = Form(None),  # Campo para proyecto específico
     token_data=Depends(verify_firebase_token)
 ):
     user_id = token_data["user_id"]
@@ -149,6 +150,8 @@ async def upload_document(
             custom_metadata["user_role"] = effective_user_role
         if estrategia:
             custom_metadata["estrategia"] = estrategia
+        if proyecto:
+            custom_metadata["proyecto"] = proyecto
             
         # Create final filename with version if needed
         final_filename = file.filename
@@ -178,12 +181,16 @@ async def upload_document(
                 subfolders.extend([year, month])
                 storage_filename = "/".join(subfolders + [final_filename])
             elif apartado == "PES 2030":
-                # Get estrategia from form data (prefer form data, fallback to extracted_metadata)
+                # Get estrategia and proyecto from form data
                 actual_estrategia = estrategia or extracted_metadata.get("estrategia")
-                # Build path: PES_2030/{estrategia}/{categoria}/{año}/{mes}/filename
+                actual_proyecto = proyecto or extracted_metadata.get("proyecto")
+                
+                # Build path: PES_2030/{estrategia}/{proyecto}/{categoria}/{año}/{mes}/filename
                 subfolders = ["PES_2030"]
                 if actual_estrategia:
                     subfolders.append(str(actual_estrategia))
+                if actual_proyecto:
+                    subfolders.append(str(actual_proyecto))
                 if categoria:
                     subfolders.append(str(categoria))
                 subfolders.extend([year, month])

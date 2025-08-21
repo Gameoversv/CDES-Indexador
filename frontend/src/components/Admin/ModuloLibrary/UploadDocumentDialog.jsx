@@ -25,7 +25,7 @@ import {
 } from "lucide-react";
 import { useState, useCallback, useEffect } from "react";
 import { toast } from "sonner";
-import { documentsAPI } from "@/services/api";
+import { documentsAPI } from "@/services/documentsAPI";
 import { Progress } from "@/components/ui/progress";
 import { useAuth } from "@/contexts/AuthContext";
 import { puestosTrabajo } from "@/constants/jobPositions";
@@ -55,6 +55,7 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
   const [apartado, setApartado] = useState("");
   const [estrategia, setEstrategia] = useState("");
   const [puestoTrabajo, setPuestoTrabajo] = useState("");
+  const [proyecto, setProyecto] = useState("");
   const [tipoDocumento, setTipoDocumento] = useState("");
   const [publico, setPublico] = useState(false);
   const [coverImage, setCoverImage] = useState(null);
@@ -62,12 +63,43 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
   const [progress, setProgress] = useState({});
   const [isDragging, setIsDragging] = useState(false);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [strategyProjects, setStrategyProjects] = useState([]);
 
   useEffect(() => {
     if (userRole) {
       setTipoDocumento("");
     }
   }, [userRole]);
+
+  useEffect(() => {
+    if (apartado === "PES 2030" && estrategia) {
+      documentsAPI.getProjectsByStrategy(estrategia)
+        .then(response => {
+          console.log("Response from API:", response);
+          // Extraer los nombres únicos de carpetas/proyectos
+          const projects = new Set();
+          const files = response.data?.files || [];
+          files.forEach(file => {
+            const pathParts = file.path.split('/');
+            // Estructura: PES_2030/{estrategia}/{proyecto}/...
+            if (pathParts.length >= 3 && pathParts[0] === 'PES_2030' && pathParts[1] === estrategia) {
+              const projectName = pathParts[2];
+              if (projectName && !projectName.match(/^\d{4}$/)) { // No es un año
+                projects.add(projectName);
+              }
+            }
+          });
+          setStrategyProjects(Array.from(projects).sort());
+        })
+        .catch(error => {
+          console.error("Error fetching projects by strategy:", error);
+          setStrategyProjects([]);
+        });
+    } else {
+      setStrategyProjects([]);
+      setProyecto("");
+    }
+  }, [apartado, estrategia]);
 
   const handleFileSelect = (selectedFile) => {
     setFile(selectedFile);
@@ -136,6 +168,9 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
       formData.append("apartado", apartado);
       if (apartado === "PES 2030") {
         formData.append("estrategia", estrategia);
+        if (proyecto) {
+          formData.append("proyecto", proyecto);
+        }
       } else if (apartado === "CDES inst.") {
         formData.append("puesto_trabajo", puestoTrabajo);
       }
@@ -161,6 +196,7 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
       setApartado("");
       setEstrategia("");
       setPuestoTrabajo("");
+      setProyecto("");
       setTipoDocumento("");
       setPublico(false);
       setCoverImage(null);
@@ -202,6 +238,7 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
                   setApartado(value);
                   setEstrategia("");
                   setPuestoTrabajo("");
+                  setProyecto("");
                   setTipoDocumento("");
                 }}
               >
@@ -234,13 +271,32 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
             {apartado === "PES 2030" && (
               <div className="space-y-2">
                 <label className="block text-sm font-medium">Estrategia</label>
-                <Select value={estrategia} onValueChange={setEstrategia}>
+                <Select value={estrategia} onValueChange={(value) => {
+                  setEstrategia(value);
+                  setProyecto("");
+                }}>
                   <SelectTrigger className="border border-gray-300">
                     <SelectValue placeholder="Selecciona una estrategia" />
                   </SelectTrigger>
                   <SelectContent>
                     {pesEstrategias.map(est => (
                       <SelectItem key={est} value={est}>{est}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {apartado === "PES 2030" && estrategia && strategyProjects.length > 0 && (
+              <div className="space-y-2">
+                <label className="block text-sm font-medium">Proyecto</label>
+                <Select value={proyecto} onValueChange={setProyecto}>
+                  <SelectTrigger className="border border-gray-300">
+                    <SelectValue placeholder="Selecciona un proyecto" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {strategyProjects.map(proj => (
+                      <SelectItem key={proj} value={proj}>{proj}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>

@@ -30,6 +30,7 @@ import { useFileUpload } from "@/hooks/useFileUpload";
 import { documentTypesByRole, formatDocumentType } from "@/constants/documentTypes";
 import { puestosTrabajo } from "@/constants/jobPositions";
 import { pesEstrategias } from "@/constants/pesEstrategias";
+import { documentsAPI } from "@/services/documentsAPI";
 
 const allDocumentTypes = [
   ...new Set(Object.values(documentTypesByRole).flat()),
@@ -45,9 +46,11 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
   const [estrategia, setEstrategia] = useState("");
   const [tipoDocumento, setTipoDocumento] = useState("");
   const [puestoTrabajo, setPuestoTrabajo] = useState("");
+  const [proyecto, setProyecto] = useState("");
   const [publico, setPublico] = useState(false);
   const [coverImage, setCoverImage] = useState(null);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [strategyProjects, setStrategyProjects] = useState([]);
 
   const availableDocumentTypes =
     apartado === "PES 2030" || apartado === "CDES inst."
@@ -61,6 +64,67 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
       setTipoDocumento("");
     }
   }, [userRole]);
+
+  useEffect(() => {
+    console.log("🔍 useEffect triggered:", { apartado, estrategia });
+    
+    if (apartado === "PES 2030" && estrategia) {
+      console.log("� Making API call for strategy:", estrategia);
+      
+      documentsAPI.getProjectsByStrategy(estrategia)
+        .then(response => {
+          console.log("✅ API Response received:", response);
+          console.log("✅ Response data structure:", JSON.stringify(response.data, null, 2));
+          
+          const projects = new Set();
+          const files = response.data?.files || [];
+          console.log("📁 Files array:", files);
+          console.log("📁 Files count:", files.length);
+          
+          files.forEach((file, index) => {
+            console.log(`📄 Processing file ${index}:`, file.path);
+            
+            const pathParts = file.path.split('/');
+            console.log(`🔗 Path parts:`, pathParts);
+            
+            // Para archivos: PES_2030/Economía/carta/2025/08/archivo.pdf
+            // Queremos extraer "carta" (índice 2)
+            if (pathParts.length >= 3 && pathParts[0] === 'PES_2030' && pathParts[1] === estrategia) {
+              const projectName = pathParts[2];
+              console.log(`🎯 Found project from file path: "${projectName}"`);
+              
+              if (projectName && !projectName.match(/^\d{4}$/)) {
+                console.log(`✅ Adding project: "${projectName}"`);
+                projects.add(projectName);
+              } else {
+                console.log(`❌ Rejected project (year pattern): "${projectName}"`);
+              }
+            } else {
+              console.log(`❌ Path doesn't match pattern:`, {
+                length: pathParts.length,
+                part0: pathParts[0],
+                part1: pathParts[1],
+                expectedPart1: estrategia
+              });
+            }
+          });
+          
+          const projectsList = Array.from(projects).sort();
+          console.log("🏁 Final projects list:", projectsList);
+          setStrategyProjects(projectsList);
+        })
+        .catch(error => {
+          console.error("❌ API Error:", error);
+          console.error("❌ Error response:", error.response?.data);
+          console.error("❌ Error status:", error.response?.status);
+          setStrategyProjects([]);
+        });
+    } else {
+      console.log("🔄 Resetting projects (no valid apartado/estrategia)");
+      setStrategyProjects([]);
+      setProyecto("");
+    }
+  }, [apartado, estrategia]);
 
   // MANEJAR SELECCIÓN DE IMAGEN DE PORTADA
   const handleCoverImageSelect = (e) => {
@@ -114,6 +178,9 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
     
     if (apartado === "PES 2030") {
       metadata.estrategia = estrategia;
+      if (proyecto) {
+        metadata.proyecto = proyecto;
+      }
     }
     if (apartado === "CDES inst.") {
       metadata.puesto_trabajo = puestoTrabajo;
@@ -146,6 +213,7 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
     setEstrategia("");
     setTipoDocumento("");
     setPuestoTrabajo("");
+    setProyecto("");
     setPublico(false);
     setCoverImage(null);
     reset();
@@ -182,6 +250,7 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
                   setEstrategia("");
                   setTipoDocumento("");
                   setPuestoTrabajo("");
+                  setProyecto("");
                 }}
               >
                 <SelectTrigger className="border border-gray-300">
@@ -215,7 +284,10 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
             {apartado === "PES 2030" && (
               <div className="space-y-2">
                 <label className="block text-sm font-medium">Estrategia</label>
-                <Select value={estrategia} onValueChange={setEstrategia}>
+                <Select value={estrategia} onValueChange={(value) => {
+                  setEstrategia(value);
+                  setProyecto("");
+                }}>
                   <SelectTrigger className="border border-gray-300">
                     <SelectValue placeholder="Selecciona una estrategia" />
                   </SelectTrigger>
@@ -224,6 +296,22 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
                       <SelectItem key={est} value={est}>
                         {est}
                       </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {apartado === "PES 2030" && estrategia && strategyProjects.length > 0 && (
+              <div className="space-y-2">
+                <label className="block text-sm font-medium">Proyecto</label>
+                <Select value={proyecto} onValueChange={setProyecto}>
+                  <SelectTrigger className="border border-gray-300">
+                    <SelectValue placeholder="Selecciona un proyecto" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {strategyProjects.map(proj => (
+                      <SelectItem key={proj} value={proj}>{proj}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
