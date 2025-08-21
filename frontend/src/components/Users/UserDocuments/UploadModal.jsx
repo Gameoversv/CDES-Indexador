@@ -28,6 +28,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import FileUpload from "@/components/ui/FileUpload";
 import { useFileUpload } from "@/hooks/useFileUpload";
 import { documentTypesByRole, formatDocumentType } from "@/constants/documentTypes";
+import { puestosTrabajo } from "@/constants/jobPositions";
+import { pesEstrategias } from "@/constants/pesEstrategias";
 
 const allDocumentTypes = [
   ...new Set(Object.values(documentTypesByRole).flat()),
@@ -42,6 +44,7 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
   const [apartado, setApartado] = useState("");
   const [estrategia, setEstrategia] = useState("");
   const [tipoDocumento, setTipoDocumento] = useState("");
+  const [puestoTrabajo, setPuestoTrabajo] = useState("");
   const [publico, setPublico] = useState(false);
   const [coverImage, setCoverImage] = useState(null);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
@@ -77,6 +80,10 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
       toast.warning("Debes seleccionar una estrategia para PES 2030.");
       return false;
     }
+    if (apartado === "CDES inst." && !puestoTrabajo) {
+      toast.warning("Debes seleccionar un puesto de trabajo para CDES inst.");
+      return false;
+    }
     
     if (publico && !coverImage) {
       toast.warning("Debes seleccionar una imagen de portada para un documento público.");
@@ -108,6 +115,9 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
     if (apartado === "PES 2030") {
       metadata.estrategia = estrategia;
     }
+    if (apartado === "CDES inst.") {
+      metadata.puesto_trabajo = puestoTrabajo;
+    }
     
     if (publico && coverImage) {
       metadata.cover_image = coverImage;
@@ -135,6 +145,7 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
     setApartado("");
     setEstrategia("");
     setTipoDocumento("");
+    setPuestoTrabajo("");
     setPublico(false);
     setCoverImage(null);
     reset();
@@ -170,6 +181,7 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
                   setApartado(value);
                   setEstrategia("");
                   setTipoDocumento("");
+                  setPuestoTrabajo("");
                 }}
               >
                 <SelectTrigger className="border border-gray-300">
@@ -182,6 +194,24 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
               </Select>
             </div>
             
+            {apartado === "CDES inst." && (
+              <div className="space-y-2">
+                <label className="block text-sm font-medium">Puesto de Trabajo</label>
+                <Select value={puestoTrabajo} onValueChange={setPuestoTrabajo}>
+                  <SelectTrigger className="border border-gray-300">
+                    <SelectValue placeholder="Selecciona un puesto" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {puestosTrabajo.map((puesto) => (
+                      <SelectItem key={puesto} value={puesto}>
+                        {puesto}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
             {apartado === "PES 2030" && (
               <div className="space-y-2">
                 <label className="block text-sm font-medium">Estrategia</label>
@@ -190,10 +220,11 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
                     <SelectValue placeholder="Selecciona una estrategia" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Estrategia I">Estrategia I</SelectItem>
-                    <SelectItem value="Estrategia II">Estrategia II</SelectItem>
-                    <SelectItem value="Estrategia III">Estrategia III</SelectItem>
-                    <SelectItem value="Estrategia IV">Estrategia IV</SelectItem>
+                    {pesEstrategias.map((est) => (
+                      <SelectItem key={est} value={est}>
+                        {est}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
