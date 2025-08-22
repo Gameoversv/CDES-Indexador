@@ -99,6 +99,7 @@ export default function DocumentsTable({
   handleDownload,
   formatSize,
   formatDate,
+  isDirectorEjecutivo = false,
 }) {
   const [expandedFiles, setExpandedFiles] = useState({});
 
@@ -217,14 +218,16 @@ export default function DocumentsTable({
                     >
                       <Eye className="h-4 w-4 text-gray-900" />
                     </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="rounded-full p-2 bg-gray-100 hover:bg-gray-200 border border-gray-300"
-                      onClick={() => setConfirmDelete({ open: true, file })}
-                    >
-                      <Trash2 className="h-4 w-4 text-red-500" />
-                    </Button>
+                    {isDirectorEjecutivo && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="rounded-full p-2 bg-gray-100 hover:bg-gray-200 border border-gray-300"
+                        onClick={() => setConfirmDelete({ open: true, file })}
+                      >
+                        <Trash2 className="h-4 w-4 text-red-500" />
+                      </Button>
+                    )}
                     <Button
                       variant="outline"
                       size="sm"
@@ -280,14 +283,16 @@ export default function DocumentsTable({
                           >
                             <Eye className="h-4 w-4 text-gray-900" />
                           </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="rounded-full p-2 bg-gray-100 hover:bg-gray-200 border border-gray-300"
-                            onClick={() => setConfirmDelete({ open: true, file: file.originalFile })}
-                          >
-                            <Trash2 className="h-4 w-4 text-red-500" />
-                          </Button>
+                          {isDirectorEjecutivo && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="rounded-full p-2 bg-gray-100 hover:bg-gray-200 border border-gray-300"
+                              onClick={() => setConfirmDelete({ open: true, file: file.originalFile })}
+                            >
+                              <Trash2 className="h-4 w-4 text-red-500" />
+                            </Button>
+                          )}
                           <Button
                             variant="outline"
                             size="sm"
@@ -343,14 +348,16 @@ export default function DocumentsTable({
                           >
                             <Eye className="h-4 w-4 text-gray-900" />
                           </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="rounded-full p-2 bg-gray-100 hover:bg-gray-200 border border-gray-300"
-                            onClick={() => setConfirmDelete({ open: true, file: version })}
-                          >
-                            <Trash2 className="h-4 w-4 text-red-500" />
-                          </Button>
+                          {isDirectorEjecutivo && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="rounded-full p-2 bg-gray-100 hover:bg-gray-200 border border-gray-300"
+                              onClick={() => setConfirmDelete({ open: true, file: version })}
+                            >
+                              <Trash2 className="h-4 w-4 text-red-500" />
+                            </Button>
+                          )}
                           <Button
                             variant="outline"
                             size="sm"

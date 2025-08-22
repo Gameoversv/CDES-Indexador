@@ -319,7 +319,7 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
               uploading={uploading}
               progress={progress}
               placeholder="Arrastra tu archivo aquí o selecciónalo manualmente"
-              acceptedTypes=".pdf,.docx,.xlsx,.pptx"
+              acceptedTypes=".pdf,.docx,.xlsx,.pptx,.mp4"
             />
           </div>
 

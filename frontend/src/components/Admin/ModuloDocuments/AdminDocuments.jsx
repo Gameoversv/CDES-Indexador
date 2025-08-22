@@ -22,6 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useAuth } from "@/contexts/AuthContext";
 
 import UploadDocumentDialog from "@/components/Admin/ModuloDocuments/UploadDocumentDialog";
 import PreviewFileDialog from "@/components/Admin/ModuloDocuments/PreviewFileDialog";
@@ -47,6 +48,7 @@ export default function AdminDocuments() {
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [userDepartment, setUserDepartment] = useState("Administración");
+  const [isDirectorEjecutivo, setIsDirectorEjecutivo] = useState(false);
   
   // Estados de paginación
   const [currentPage, setCurrentPage] = useState(1);
@@ -57,12 +59,25 @@ export default function AdminDocuments() {
     getUserDepartment();
   }, []);
 
+  const { userRole } = useAuth();
+
   const getUserDepartment = async () => {
     try {
+      // Verificamos si el usuario es Director Ejecutivo
+      if (userRole === "DireccionEjecutiva") {
+        setIsDirectorEjecutivo(true);
+      }
+
       // For admin, we'll always use "Administración" but we'll try to get the actual admin name
       const response = await authAPI.getCurrentUser();
-      if (response.data && response.data.admin) {
-        setUserDepartment("Administración");
+      if (response.data) {
+        if (response.data.admin) {
+          setUserDepartment("Administración");
+        }
+        // Verificar si el rol en los datos del usuario es Director Ejecutivo
+        if (response.data.role === "DireccionEjecutiva" || response.data.role === "Dirección Ejecutiva") {
+          setIsDirectorEjecutivo(true);
+        }
         return;
       }
     } catch (error) {
@@ -76,6 +91,10 @@ export default function AdminDocuments() {
         const parsedUser = JSON.parse(userData);
         if (parsedUser.admin) {
           setUserDepartment("Administración");
+        }
+        // Verificar si el rol en localStorage es Director Ejecutivo
+        if (parsedUser.role === "DireccionEjecutiva" || parsedUser.role === "Dirección Ejecutiva") {
+          setIsDirectorEjecutivo(true);
         }
       }
     } catch (error) {
@@ -91,15 +110,19 @@ export default function AdminDocuments() {
       const data = res?.data || {};
       const items = data.files || data.documents || data.hits || [];
       // Normalize minimal fields expected by the table
-      const normalized = items.map((d) => ({
-        filename: d.filename || d.original_filename || d.title || "",
-        size: d.size ?? d.file_size_bytes ?? 0,
-        updated: d.updated || d.updated_at || d.created_at || d.date || d.upload_timestamp,
-        path: d.storage_path || d.path || "",
-        tipo: d.tipo || d.tipo_documento || "",
-        categoria: d.categoria || d.apartado || "",
-        public: d.public ?? d.publico ?? false,
-      }));
+      const normalized = items.map((d) => {
+        const rawPath = d.storage_path || d.path || "";
+        const nameFromPath = rawPath ? rawPath.split("/").pop() : "";
+        return {
+          filename: nameFromPath || d.filename || d.original_filename || d.title || "",
+          size: d.size ?? d.file_size_bytes ?? 0,
+          updated: d.updated || d.updated_at || d.created_at || d.date || d.upload_timestamp,
+          path: rawPath,
+          tipo: d.tipo || d.tipo_documento || "",
+          categoria: d.categoria || d.apartado || "",
+          public: d.public ?? d.publico ?? false,
+        };
+      });
       setFiles(normalized);
     } catch (error) {
       console.error(error);
@@ -251,6 +274,14 @@ export default function AdminDocuments() {
 
   const handleDelete = async () => {
     if (!confirmDelete.file) return;
+    
+    // Verificar que el usuario tenga permisos para eliminar (Director Ejecutivo)
+    if (!isDirectorEjecutivo) {
+      toast.error("No tienes permisos para eliminar documentos");
+      setConfirmDelete({ open: false, file: null });
+      return;
+    }
+    
     try {
       await documentsAPI.deleteByPath(confirmDelete.file.path);
       toast.success("Archivo eliminado correctamente");
@@ -368,6 +399,7 @@ export default function AdminDocuments() {
             handleDownload={handleDownload}
             formatSize={formatSize}
             formatDate={formatDate}
+            isDirectorEjecutivo={isDirectorEjecutivo}
           />
         ) : (
           <DocumentsGrid
@@ -377,6 +409,7 @@ export default function AdminDocuments() {
             handleDownload={handleDownload}
             setPreviewFile={setPreviewFile}
             setConfirmDelete={setConfirmDelete}
+            isDirectorEjecutivo={isDirectorEjecutivo}
           />
         )}
 

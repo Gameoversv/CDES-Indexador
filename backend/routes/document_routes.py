@@ -42,8 +42,8 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 LOCAL_METADATA_DIR = ROOT_DIR / ".." / "meilisearch-data" / "indexes" / "documents"
 LOCAL_METADATA_DIR.mkdir(parents=True, exist_ok=True)
 
-MAX_FILE_SIZE = 50 * 1024 * 1024
-ALLOWED_EXTENSIONS = {'.pdf', '.docx', '.pptx', '.xlsx', '.txt', '.md'}
+MAX_FILE_SIZE = 1024 * 1024 * 1024  # 1GB (effectively removing the 50MB limit)
+ALLOWED_EXTENSIONS = {'.pdf', '.docx', '.pptx', '.xlsx', '.txt', '.md', '.mp4'}
 
 # ===============================
 # Utilidad de contexto para logs
@@ -623,26 +623,74 @@ async def delete_document_by_path(
     user_email = token_data.get("email", "") if token_data else ""
 
     try:
-        from services.firebase_service import delete_file_from_storage
+        from services.firebase_service import delete_file_from_storage, get_documents_by_storage_path, delete_document_from_firestore
+        from services.meilisearch_service import delete_document
 
-        delete_file_from_storage(path)
+        # Paso 1: Buscar documentos en Firestore relacionados con esta ruta de almacenamiento
+        firestore_docs = get_documents_by_storage_path(path)
+        firestore_doc_ids = [doc.get("id") for doc in firestore_docs if "id" in doc]
+        firestore_file_ids = [doc.get("file_id") for doc in firestore_docs if "file_id" in doc]
+        
+        # Combinar IDs (pueden ser diferentes o iguales)
+        all_doc_ids = list(set(firestore_doc_ids + firestore_file_ids))
+        
+        # Crear un diccionario para almacenar resultados de la eliminación
+        delete_results = {
+            "storage_deleted": False,
+            "firestore_deleted": [],
+            "meilisearch_deleted": []
+        }
+        
+        # Paso 2: Intentar eliminar el archivo de Storage (incluso si falla, continuar con los otros pasos)
+        try:
+            delete_file_from_storage(path)
+            delete_results["storage_deleted"] = True
+        except FileNotFoundError:
+            print(f"Archivo no encontrado en Storage: {path}")
+            # Continuamos con los otros pasos aunque el archivo no exista en Storage
+        except Exception as storage_error:
+            print(f"Error eliminando archivo de Storage: {storage_error}")
+            # Continuamos con los otros pasos aunque haya un error en Storage
+        
+        # Paso 3: Eliminar documentos de Firestore
+        for doc_id in all_doc_ids:
+            try:
+                if delete_document_from_firestore(doc_id):
+                    delete_results["firestore_deleted"].append(doc_id)
+            except Exception as firestore_error:
+                print(f"Error eliminando documento {doc_id} de Firestore: {firestore_error}")
+                # Continuamos con otros documentos
+        
+        # Paso 4: Eliminar documentos de Meilisearch
+        for doc_id in all_doc_ids:
+            try:
+                if delete_document(doc_id):
+                    delete_results["meilisearch_deleted"].append(doc_id)
+            except Exception as meilisearch_error:
+                print(f"Error eliminando documento {doc_id} de Meilisearch: {meilisearch_error}")
+                # Continuamos con otros documentos
 
+        # Registrar en el log los resultados de la eliminación
         audit_log(user_id, 'CUSTOM_DOCUMENT_DELETE', _ctx(request, {
             'user_email': user_email,
             'path': path,
-            'filename': Path(path).name
+            'filename': Path(path).name,
+            'delete_results': delete_results
         }), severity="WARNING")
 
-        return {"message": "Archivo eliminado exitosamente", "path": path}
+        # Si no se eliminó de ningún sistema, considerar un error
+        if not delete_results["storage_deleted"] and not delete_results["firestore_deleted"] and not delete_results["meilisearch_deleted"]:
+            raise HTTPException(status_code=404, detail="No se encontró el documento en ningún sistema")
 
-    except FileNotFoundError:
-        audit_log(user_id, 'CUSTOM_DOCUMENT_DELETE', _ctx(request, {
-            'user_email': user_email,
-            'path': path,
-            'status': 'FAILED',
-            'error': 'FileNotFoundError'
-        }), severity="WARNING")
-        raise HTTPException(status_code=404, detail="Archivo no encontrado")
+        return {
+            "message": "Archivo eliminado exitosamente", 
+            "path": path,
+            "delete_results": delete_results
+        }
+
+    except HTTPException:
+        # Re-lanzar excepciones HTTP
+        raise
     except Exception as e:
         log_error(e, "DELETE_/delete_by_path", user_id=user_id, additional_details=_ctx(request, {
             'user_email': user_email,
@@ -741,8 +789,9 @@ async def list_all_documents(
         # Normalize fields for frontend table
         def map_doc(doc: Dict[str, Any]) -> Dict[str, Any]:
             # Derive filename/path safely
-            filename = doc.get("filename") or doc.get("original_filename") or doc.get("title") or ""
             storage_path = doc.get("storage_path") or doc.get("path") or ""
+            name_from_path = Path(storage_path).name if storage_path else ""
+            filename = doc.get("filename") or name_from_path or doc.get("original_filename") or doc.get("title") or ""
             # Sizes and dates
             size = doc.get("file_size_bytes") or doc.get("size") or 0
             updated = doc.get("updated_at") or doc.get("created_at") or doc.get("date") or doc.get("upload_timestamp")

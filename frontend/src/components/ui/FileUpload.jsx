@@ -18,17 +18,19 @@ const ACCEPTED_TYPES = {
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document": { icon: FileText, label: "DOCX" },
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": { icon: FileSpreadsheet, label: "XLSX" },
   "application/vnd.openxmlformats-officedocument.presentationml.presentation": { icon: Presentation, label: "PPTX" },
-  "image/*": { icon: FileImage, label: "Imagen" }
+  "image/*": { icon: FileImage, label: "Imagen" },
+  "video/mp4": { icon: File, label: "MP4" }
 };
 
-const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+// Removing the 50MB limit
+const MAX_FILE_SIZE = 1024 * 1024 * 1024; // 1GB (effectively removing the limit)
 
 export default function FileUpload({
   file,
   onFileSelect,
   onFileRemove,
-  acceptedTypes = ".pdf,.docx,.xlsx,.pptx",
-  acceptedMimeTypes = Object.keys(ACCEPTED_TYPES).filter(type => !type.includes("image")),
+  acceptedTypes = ".pdf,.docx,.xlsx,.pptx,.mp4",
+  acceptedMimeTypes = Object.keys(ACCEPTED_TYPES).filter(type => type !== "image/*"),
   maxSize = MAX_FILE_SIZE,
   uploading = false,
   progress = 0,
@@ -132,6 +134,7 @@ export default function FileUpload({
       case 'docx': return FileText;
       case 'xlsx': return FileSpreadsheet;
       case 'pptx': return Presentation;
+      case 'mp4': return File; // Added MP4 support
       default: return File;
     }
   };

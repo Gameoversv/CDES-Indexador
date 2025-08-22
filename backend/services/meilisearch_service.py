@@ -410,6 +410,159 @@ def add_documents(documents, index_name=INDEX_NAME):
 
 
 def delete_document(document_id: str) -> bool:
+    """
+    Elimina un documento del índice de Meilisearch por su ID.
+    
+    Args:
+        document_id: ID del documento a eliminar
+        
+    Returns:
+        True si la eliminación fue exitosa o si Meilisearch no está disponible,
+        False si hubo un error específico al eliminar
+    """
+    if not check_meilisearch_health():
+        print(f"Meilisearch unavailable when deleting document {document_id}")
+        # Consideramos esto como "exitoso" ya que no necesitamos bloquear otras operaciones
+        return True
+    
+    try:
+        # Sanitize document ID
+        sanitized_id = sanitize_document_id(document_id)
+        
+        index = client.index(INDEX_NAME)
+        task = index.delete_document(sanitized_id)
+        
+        # Check task status using the helper function
+        task_uid, task_status = get_task_details(task)
+        if task_uid and task_status:
+            print(f"Delete document task status: {task_status}")
+            
+            # Handle task status object
+            if hasattr(task_status, 'status'):
+                if task_status.status == "failed":
+                    error = task_status.error if hasattr(task_status, 'error') else "Unknown error"
+                    print(f"Failed to delete document: {error}")
+                    # Si el error es "document_not_found", consideramos exitoso
+                    if "document_not_found" in str(error).lower() or "not found" in str(error).lower():
+                        print(f"Document {sanitized_id} not found in Meilisearch, skipping")
+                        return True
+                    return False
+                elif task_status.status in ["enqueued", "processing"]:
+                    print(f"Document {sanitized_id} deletion is being processed")
+                    return True
+                elif task_status.status == "succeeded":
+                    print(f"Document {sanitized_id} deleted successfully")
+                    return True
+            # Handle task status dict
+            elif isinstance(task_status, dict):
+                if task_status.get("status") == "failed":
+                    error = task_status.get('error', '')
+                    print(f"Failed to delete document: {error}")
+                    # Si el error es "document_not_found", consideramos exitoso
+                    if "document_not_found" in str(error).lower() or "not found" in str(error).lower():
+                        print(f"Document {sanitized_id} not found in Meilisearch, skipping")
+                        return True
+                    return False
+                elif task_status.get("status") in ["enqueued", "processing"]:
+                    print(f"Document {sanitized_id} deletion is being processed")
+                    return True
+                elif task_status.get("status") == "succeeded":
+                    print(f"Document {sanitized_id} deleted successfully")
+                    return True
+                
+            # Unknown status
+            print(f"Unknown status when deleting document: {task_status}")
+            return False
+        else:
+            print("Could not get task details from delete_document result")
+            return False
+        
+    except Exception as e:
+        print(f"Error deleting document from Meilisearch: {str(e)}")
+        # Si el error indica que el documento no existe, consideramos exitoso
+        if "document_not_found" in str(e).lower() or "not found" in str(e).lower():
+            print(f"Document {document_id} not found in Meilisearch, skipping")
+            return True
+        return False
+
+
+def delete_document(document_id: str) -> bool:
+    """
+    Elimina un documento del índice de Meilisearch por su ID.
+    
+    Args:
+        document_id: ID del documento a eliminar
+        
+    Returns:
+        True si la eliminación fue exitosa o si Meilisearch no está disponible,
+        False si hubo un error específico al eliminar
+    """
+    if not check_meilisearch_health():
+        print(f"Meilisearch unavailable when deleting document {document_id}")
+        # Consideramos esto como "exitoso" ya que no necesitamos bloquear otras operaciones
+        return True
+    
+    try:
+        # Sanitize document ID
+        sanitized_id = sanitize_document_id(document_id)
+        
+        index = client.index(INDEX_NAME)
+        task = index.delete_document(sanitized_id)
+        
+        # Check task status using the helper function
+        task_uid, task_status = get_task_details(task)
+        if task_uid and task_status:
+            print(f"Delete document task status: {task_status}")
+            
+            # Handle task status object
+            if hasattr(task_status, 'status'):
+                if task_status.status == "failed":
+                    error = task_status.error if hasattr(task_status, 'error') else "Unknown error"
+                    print(f"Failed to delete document: {error}")
+                    # Si el error es "document_not_found", consideramos exitoso
+                    if "document_not_found" in str(error).lower() or "not found" in str(error).lower():
+                        print(f"Document {sanitized_id} not found in Meilisearch, skipping")
+                        return True
+                    return False
+                elif task_status.status in ["enqueued", "processing"]:
+                    print(f"Document {sanitized_id} deletion is being processed")
+                    return True
+                elif task_status.status == "succeeded":
+                    print(f"Document {sanitized_id} deleted successfully")
+                    return True
+            # Handle task status dict
+            elif isinstance(task_status, dict):
+                if task_status.get("status") == "failed":
+                    error = task_status.get('error', '')
+                    print(f"Failed to delete document: {error}")
+                    # Si el error es "document_not_found", consideramos exitoso
+                    if "document_not_found" in str(error).lower() or "not found" in str(error).lower():
+                        print(f"Document {sanitized_id} not found in Meilisearch, skipping")
+                        return True
+                    return False
+                elif task_status.get("status") in ["enqueued", "processing"]:
+                    print(f"Document {sanitized_id} deletion is being processed")
+                    return True
+                elif task_status.get("status") == "succeeded":
+                    print(f"Document {sanitized_id} deleted successfully")
+                    return True
+                
+            # Unknown status
+            print(f"Unknown status when deleting document: {task_status}")
+            return False
+        else:
+            print("Could not get task details from delete_document result")
+            return False
+        
+    except Exception as e:
+        print(f"Error deleting document from Meilisearch: {str(e)}")
+        # Si el error indica que el documento no existe, consideramos exitoso
+        if "document_not_found" in str(e).lower() or "not found" in str(e).lower():
+            print(f"Document {document_id} not found in Meilisearch, skipping")
+            return True
+        return False
+        
+def update_documents(documents: List[Dict[str, Any]]) -> bool:
     if not check_meilisearch_health():
         print(f"Meilisearch unavailable when deleting document {document_id}")
         return False

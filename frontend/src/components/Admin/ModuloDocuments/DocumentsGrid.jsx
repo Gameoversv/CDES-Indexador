@@ -51,6 +51,7 @@ export default function DocumentsGrid({
   handleDownload,
   setPreviewFile,
   setConfirmDelete,
+  isDirectorEjecutivo = false,
 }) {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -174,18 +175,20 @@ export default function DocumentsGrid({
                                     >
                                       <Eye className="h-3 w-3" />
                                     </Button>
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      className="rounded-full p-1 h-7 w-7 bg-gray-100"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setConfirmDelete({ open: true, file: file.originalFile });
-                                      }}
-                                      title="Eliminar"
-                                    >
-                                      <Trash2 className="h-3 w-3 text-red-500" />
-                                    </Button>
+                                    {isDirectorEjecutivo && (
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="rounded-full p-1 h-7 w-7 bg-gray-100"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setConfirmDelete({ open: true, file: file.originalFile });
+                                        }}
+                                        title="Eliminar"
+                                      >
+                                        <Trash2 className="h-3 w-3 text-red-500" />
+                                      </Button>
+                                    )}
                                     <Button
                                       variant="ghost"
                                       size="sm"
@@ -239,18 +242,20 @@ export default function DocumentsGrid({
                                   >
                                     <Eye className="h-3 w-3" />
                                   </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="rounded-full p-1 h-7 w-7 bg-gray-100"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setConfirmDelete({ open: true, file: version });
-                                    }}
-                                    title="Eliminar"
-                                  >
-                                    <Trash2 className="h-3 w-3 text-red-500" />
-                                  </Button>
+                                  {isDirectorEjecutivo && (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="rounded-full p-1 h-7 w-7 bg-gray-100"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setConfirmDelete({ open: true, file: version });
+                                      }}
+                                      title="Eliminar"
+                                    >
+                                      <Trash2 className="h-3 w-3 text-red-500" />
+                                    </Button>
+                                  )}
                                   <Button
                                     variant="ghost"
                                     size="sm"
@@ -270,16 +275,18 @@ export default function DocumentsGrid({
                         </DropdownMenuContent>
                       </DropdownMenu>
                     ) : (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="rounded-full p-1.5 bg-gray-100 hover:bg-gray-200 border border-gray-300"
-                        onClick={() => setConfirmDelete({ open: true, file })}
-                        title="Eliminar"
-                        aria-label="eliminar"
-                    >
-                        <Trash2 className="h-4 w-4 text-red-500" />
-                      </Button>
+                      isDirectorEjecutivo && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="rounded-full p-1.5 bg-gray-100 hover:bg-gray-200 border border-gray-300"
+                          onClick={() => setConfirmDelete({ open: true, file })}
+                          title="Eliminar"
+                          aria-label="eliminar"
+                        >
+                          <Trash2 className="h-4 w-4 text-red-500" />
+                        </Button>
+                      )
                     )}
 
                     {/* Descargar */}

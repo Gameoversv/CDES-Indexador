@@ -157,7 +157,9 @@ DOCUMENTOS = {
 }
 
 def is_large_file(file_size_bytes: int) -> bool:
-    return file_size_bytes > 20 * 1024 * 1024
+    # No usamos un umbral para archivos grandes, todos se procesarán de la misma manera
+    # Esto asegura que todos los archivos se envíen completos a Gemini
+    return True
 
 class AIService(ABC):
     def __init__(self):
@@ -179,22 +181,36 @@ IMPORTANTE: Responde ÚNICAMENTE con el objeto JSON, sin bloques de código mark
 """
     
     def _parse_response(self, raw_response: str) -> Dict[str, Any]:
+        """Intenta extraer un objeto JSON válido de la respuesta de la IA."""
+        import json
+        import re
+        
+        # Log para depuración
+        print(f"Analizando respuesta ({len(raw_response)} caracteres)")
+        
         try:
+            # Intento 1: Parsear directamente como JSON
             data = json.loads(raw_response.strip())
             if isinstance(data, dict):
+                print("Respuesta analizada como JSON directamente")
                 return data
         except json.JSONDecodeError:
+            print("No es JSON válido directamente, probando otras opciones...")
             pass
 
+        # Intento 2: Buscar JSON dentro de bloques de código
         json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', raw_response, re.DOTALL)
         if json_match:
             try:
                 data = json.loads(json_match.group(1).strip())
                 if isinstance(data, dict):
+                    print("Respuesta extraída de bloque de código")
                     return data
             except json.JSONDecodeError:
+                print("Error al analizar JSON en bloque de código")
                 pass
 
+        # Intento 3: Buscar el primer par de llaves
         start_brace = raw_response.find('{')
         end_brace = raw_response.rfind('}')
 
@@ -202,10 +218,14 @@ IMPORTANTE: Responde ÚNICAMENTE con el objeto JSON, sin bloques de código mark
             try:
                 data = json.loads(raw_response[start_brace:end_brace + 1])
                 if isinstance(data, dict):
+                    print("Respuesta extraída de llaves en texto")
                     return data
             except json.JSONDecodeError:
+                print("Error al analizar JSON con llaves en texto")
                 pass
 
+        # Fallback: Si no pudimos extraer JSON, devolvemos un objeto por defecto
+        print("No se pudo extraer JSON, usando valores predeterminados")
         return {
             "title": "Error de parseo",
             "summary": "No se pudo extraer el resumen.",
@@ -261,6 +281,8 @@ class GeminiService(AIService):
     def __init__(self):
         super().__init__()
         self.model_name = "gemini-1.5-flash-latest"
+        # Aumentamos el timeout para la API
+        self.api_timeout = 300  # 5 minutos para casos extremos
         genai.configure(api_key=settings.GEMINI_API_KEY)
         self.model = genai.GenerativeModel(self.model_name)
 
@@ -291,22 +313,97 @@ class GeminiService(AIService):
             return ""
 
     def _upload_to_gemini(self, file_bytes: bytes, filename: str, mime_type: str) -> genai.File:
-        uploaded_file = genai.upload_file(
-            path=None,
-            display_name=filename,
-            mime_type=mime_type,
-            file=file_bytes
-        )
+        """Sube bytes a Gemini usando el método soportado para la versión actual del SDK."""
+        import tempfile
+        import os as _os
+        import time
+        tmp_path = None
         
-        while uploaded_file.state.name == "PROCESSING":
-            import time
-            time.sleep(1)
-            uploaded_file = genai.get_file(uploaded_file.name)
-        
-        if uploaded_file.state.name == "FAILED":
-            raise ValueError(f"Error subiendo archivo a Gemini: {uploaded_file.state.name}")
+        try:
+            # Escribimos a un archivo temporal para usar el arg soportado 'path'
+            with tempfile.NamedTemporaryFile(delete=False, suffix=Path(filename).suffix) as tmp:
+                tmp.write(file_bytes)
+                tmp.flush()
+                tmp_path = tmp.name
+                
+            print(f"Archivo temporal creado: {tmp_path} ({_os.path.getsize(tmp_path)/1024/1024:.2f} MB)")
             
-        return uploaded_file
+            # Intentamos determinar la versión del SDK de genai
+            genai_version = getattr(genai, "__version__", "0.0.0")
+            print(f"Usando genai versión: {genai_version}")
+            
+            # Usamos los parámetros correctos según la versión
+            try:
+                # Método para versiones recientes (>=0.6.0)
+                uploaded_file = genai.upload_file(
+                    path=tmp_path,
+                    display_name=filename,
+                    mime_type=mime_type
+                )
+                print(f"Archivo subido con nueva API: {getattr(uploaded_file, 'name', 'unknown')}")
+            except TypeError as e:
+                # Si falla por TypeError, probamos con la API anterior
+                print(f"Error con API nueva: {e}, probando API anterior...")
+                uploaded_file = genai.upload_file(
+                    file_path=tmp_path,
+                    display_name=filename
+                )
+                print(f"Archivo subido con API anterior: {getattr(uploaded_file, 'name', 'unknown')}")
+                
+            # Esperar a que se procese el archivo (máximo 30 segundos)
+            state = "UNKNOWN"
+            for i in range(30):
+                # Intentar obtener el estado actual
+                try:
+                    if hasattr(uploaded_file, "state"):
+                        if hasattr(uploaded_file.state, "name"):
+                            state = uploaded_file.state.name
+                        else:
+                            state = str(uploaded_file.state)
+                    else:
+                        # Intentar obtener el estado mediante get_file
+                        updated_file = genai.get_file(uploaded_file.name)
+                        if hasattr(updated_file, "state"):
+                            if hasattr(updated_file.state, "name"):
+                                state = updated_file.state.name
+                            else:
+                                state = str(updated_file.state)
+                        else:
+                            state = "UNKNOWN"
+                    
+                    print(f"Estado del archivo: {state}")
+                    
+                    # Si está activo, podemos usarlo
+                    if state == "ACTIVE":
+                        return uploaded_file
+                    # Si falló, lanzamos error
+                    elif state == "FAILED":
+                        raise ValueError(f"Falló el procesamiento del archivo: {state}")
+                    # Si está procesando, esperamos
+                    elif state == "PROCESSING":
+                        time.sleep(1)
+                        continue
+                    else:
+                        # Estado desconocido, seguimos esperando
+                        time.sleep(1)
+                        continue
+                except Exception as e:
+                    print(f"Error verificando estado: {e}")
+                    time.sleep(1)
+                    continue
+            
+            # Si llegamos aquí, continuamos con el archivo tal como está
+            print("Tiempo de espera agotado, continuando con el archivo...")
+            return uploaded_file
+            
+        finally:
+            # Limpiamos el archivo temporal
+            if tmp_path and _os.path.exists(tmp_path):
+                try:
+                    _os.unlink(tmp_path)
+                    print(f"Archivo temporal eliminado: {tmp_path}")
+                except Exception as e:
+                    print(f"Error eliminando archivo temporal: {e}")
     
     def _get_mime_type(self, filename: str) -> str:
         ext = Path(filename).suffix.lower()
@@ -335,24 +432,49 @@ class GeminiService(AIService):
                 if not extracted_text:
                     raise ValueError(f"El archivo '{filename}' está vacío o no se pudo extraer texto.")
                 
-                file_bytes_for_ai = extracted_text.encode('utf-8')
-                mime_type = 'text/plain'
+                # En este caso, añadimos el contenido extraído al prompt
+                enhanced_prompt = f"{prompt}\n\nContenido del archivo:\n{extracted_text[:5000]}..."
+                
+                # Usamos solo el prompt para la generación (sin archivos)
+                response = self.model.generate_content(
+                    enhanced_prompt,
+                    request_options={"timeout": self.api_timeout}
+                )
             else:
-                file_bytes_for_ai = file_bytes
+                # Para PDFs y otros archivos binarios
                 mime_type = self._get_mime_type(filename)
-
-            if is_large_file(len(file_bytes_for_ai)):
-                uploaded_file = self._upload_to_gemini(file_bytes_for_ai, filename, mime_type)
-                response = self.model.generate_content([uploaded_file, prompt])
-                genai.delete_file(uploaded_file.name)
-            else:
-                file_data = {
-                    "mime_type": mime_type,
-                    "data": file_bytes_for_ai
-                }
-                response = self.model.generate_content([file_data, prompt])
+                print(f"Procesando archivo {filename} ({len(file_bytes)/1024/1024:.2f} MB) como {mime_type}")
+                
+                # Subir y usar el archivo
+                uploaded_file = self._upload_to_gemini(file_bytes, filename, mime_type)
+                print(f"Archivo subido exitosamente: {getattr(uploaded_file, 'name', 'desconocido')}")
+                
+                try:
+                    # Crear un objeto "Part" para el prompt
+                    text_part = prompt
+                    
+                    # Generar contenido con un timeout extendido para archivos grandes
+                    print(f"Generando contenido con Gemini para {filename}")
+                    
+                    # En 0.8.x la forma recomendada es pasar [uploaded_file, prompt]
+                    response = self.model.generate_content(
+                        [uploaded_file, text_part],
+                        request_options={"timeout": self.api_timeout}
+                    )
+                    
+                    print(f"Contenido generado exitosamente para {filename}")
+                finally:
+                    # Intentar limpiar el archivo subido
+                    try:
+                        if hasattr(genai, 'delete_file') and hasattr(uploaded_file, 'name'):
+                            genai.delete_file(uploaded_file.name)
+                            print(f"Archivo eliminado de Gemini: {uploaded_file.name}")
+                    except Exception as cleanup_error:
+                        print(f"Error al limpiar archivo en Gemini: {cleanup_error}")
             
+            # Procesar respuesta
             raw_text = response.text
+            print(f"Respuesta recibida, longitud: {len(raw_text)} caracteres")
             parsed_data = self._parse_response(raw_text)
             
             return {

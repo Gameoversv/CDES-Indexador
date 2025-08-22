@@ -416,6 +416,50 @@ def delete_document_from_firestore(doc_id: str) -> bool:
         print(f"Error eliminando documento de Firestore: {e}")
         return False
 
+def get_documents_by_storage_path(storage_path: str) -> List[Dict[str, Any]]:
+    """
+    Busca documentos en Firestore que tengan un determinado storage_path.
+    
+    Args:
+        storage_path: Ruta del archivo en Firebase Storage
+        
+    Returns:
+        Lista de documentos encontrados con ese storage_path
+    """
+    try:
+        db = get_firestore_client()
+        # Buscar documentos que tengan este storage_path
+        docs = db.collection("documents").where(filter=FieldFilter("storage_path", "==", storage_path)).stream()
+        
+        results = []
+        for doc in docs:
+            data = doc.to_dict()
+            data["id"] = doc.id
+            results.append(data)
+            
+        return results
+    except Exception as e:
+        print(f"Error buscando documentos por storage_path: {e}")
+        return []
+
+def delete_document_from_firestore(doc_id: str) -> bool:
+    """
+    Elimina un documento de Firestore por su ID.
+    
+    Args:
+        doc_id: ID del documento en Firestore
+        
+    Returns:
+        True si la eliminación fue exitosa, False en caso contrario
+    """
+    try:
+        db = get_firestore_client()
+        db.collection("documents").document(doc_id).delete()
+        return True
+    except Exception as e:
+        print(f"Error eliminando documento de Firestore: {e}")
+        return False
+
 def delete_folder_from_storage(folder_path: str) -> Dict[str, Any]:
     """
     Elimina una carpeta y todo su contenido de Firebase Storage.
