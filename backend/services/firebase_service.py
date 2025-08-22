@@ -385,7 +385,7 @@ def get_documents_by_storage_path(storage_path: str) -> List[Dict[str, Any]]:
     try:
         db = get_firestore_client()
         # Buscar documentos que tengan este storage_path
-        docs = db.collection("documents").where("storage_path", "==", storage_path).stream()
+        docs = db.collection("documents").where(filter=FieldFilter("storage_path", "==", storage_path)).stream()
         
         results = []
         for doc in docs:

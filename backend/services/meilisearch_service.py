@@ -24,7 +24,11 @@ INDEX_CONFIG = {
         "summary",
         "keywords",
         "filename",
-        "text_content"
+        "text_content",
+        "id",
+        "file_id",
+        "storage_path",
+        "path"
     ],
     "filterableAttributes": [
         "file_extension",
@@ -39,7 +43,9 @@ INDEX_CONFIG = {
         "categoria",
         "user_role",
         "puesto_trabajo",
-        "estrategia"
+        "estrategia",
+        "storage_path",
+        "path"
     ],
     "sortableAttributes": [
         "date",
@@ -93,8 +99,7 @@ def check_meilisearch_health() -> bool:
         if health_status and health_status.get('status') == 'available':
             _meilisearch_available = True
             return True
-    except Exception as e:
-        print(f"Error checking Meilisearch health: {str(e)}")
+    except Exception:
         pass
     
     try:
@@ -102,16 +107,14 @@ def check_meilisearch_health() -> bool:
         if version:
             _meilisearch_available = True
             return True
-    except Exception as e:
-        print(f"Error checking Meilisearch version: {str(e)}")
+    except Exception:
         pass
     
     try:
         client.get_indexes()
         _meilisearch_available = True
         return True
-    except Exception as e:
-        print(f"Error getting Meilisearch indexes: {str(e)}")
+    except Exception:
         pass
     
     _meilisearch_available = False
@@ -143,6 +146,12 @@ def get_task_details(task):
 def initialize_meilisearch() -> None:
     global client, _meilisearch_available
     
+    if client is not None:
+        # Ya está inicializado, solo verificar estado
+        if check_meilisearch_health():
+            _meilisearch_available = True
+        return
+    
     try:
         client = Client(
             url=settings.MEILISEARCH_HOST,
@@ -150,11 +159,12 @@ def initialize_meilisearch() -> None:
         )
         
         if check_meilisearch_health():
-            print("Meilisearch está disponible")
             # Check for failed tasks to help with debugging
-            check_failed_tasks()
+            # Comentamos esto para evitar mensajes redundantes
+            # check_failed_tasks()
             if _ensure_index_exists(INDEX_NAME):
-                print(f"Índice '{INDEX_NAME}' verificado y configurado correctamente")
+                pass
+                # print(f"Índice '{INDEX_NAME}' verificado y configurado correctamente")
             else:
                 print(f"Hubo un problema al configurar el índice '{INDEX_NAME}'")
         else:
@@ -176,9 +186,12 @@ def check_failed_tasks(limit=5):
         try:
             tasks = client.get_tasks({"limit": limit, "statuses": "failed"})
         except Exception as e:
-            print(f"Error checking failed tasks: {e}")
+            # Comentado para reducir mensajes
+            # print(f"Error checking failed tasks: {e}")
             return
             
+        # Desactivamos la salida de errores de tareas para reducir mensajes
+        """
         if hasattr(tasks, 'results') and tasks.results:
             print(f"Found {len(tasks.results)} failed tasks:")
             for task in tasks.results:
@@ -195,9 +208,12 @@ def check_failed_tasks(limit=5):
                 print(f"  - Task type: {task_type}, Error: {error}, Details: {details}")
         else:
             print("No failed tasks found")
+        """
             
     except Exception as e:
-        print(f"Error checking failed tasks: {e}")
+        # Comentado para reducir mensajes
+        # print(f"Error checking failed tasks: {e}")
+        pass
 
 
 def sanitize_document_id(doc_id):
@@ -249,11 +265,14 @@ def _ensure_index_exists(index_name=INDEX_NAME) -> bool:
                 
             if index_name in index_names:
                 # El índice ya existe, no es necesario crearlo
-                print(f"El índice '{index_name}' ya existe")
+                # Desactivamos mensaje para reducir verbosidad
+                # print(f"El índice '{index_name}' ya existe")
                 return _configure_index(index_name)
         except Exception as e:
-            print(f"Error al verificar índices existentes: {e}")
+            # Desactivamos mensaje para reducir verbosidad
+            # print(f"Error al verificar índices existentes: {e}")
             # Continuamos para intentar crear el índice de todos modos
+            pass
         
         # Crear el índice si no existe
         try:
@@ -264,7 +283,8 @@ def _ensure_index_exists(index_name=INDEX_NAME) -> bool:
             # Check task status using the helper function
             task_uid, task_status = get_task_details(task)
             if task_uid and task_status:
-                print(f"Create index task status: {task_status}")
+                # Desactivamos mensaje para reducir verbosidad
+                # print(f"Create index task status: {task_status}")
                 
                 if hasattr(task_status, 'status') and task_status.status == "failed":
                     error = task_status.error if hasattr(task_status, 'error') else "Unknown error"
@@ -273,13 +293,15 @@ def _ensure_index_exists(index_name=INDEX_NAME) -> bool:
             
             return _configure_index(index_name)
         except Exception as e:
-            print(f"Error al crear índice: {e}")
+            # Desactivamos mensaje para reducir verbosidad
+            # print(f"Error al crear índice: {e}")
             # Intentar obtener el índice incluso si falló la creación
             # (podría haber fallado porque ya existe)
             try:
                 index = client.index(index_name)
                 if index:
-                    print(f"El índice '{index_name}' parece existir a pesar del error")
+                    # Desactivamos mensaje para reducir verbosidad
+                    # print(f"El índice '{index_name}' parece existir a pesar del error")
                     return _configure_index(index_name)
             except:
                 pass
@@ -320,7 +342,9 @@ def _configure_index(index_name=INDEX_NAME) -> bool:
                         error = task_status.error if hasattr(task_status, 'error') else "Unknown error"
                         print(f"Failed to update {config_type} attributes: {error}")
             except Exception as e:
-                print(f"Error updating {config_type} attributes: {str(e)}")
+                # Desactivamos mensaje para reducir verbosidad
+                # print(f"Error updating {config_type} attributes: {str(e)}")
+                pass
                 
         return True
                 
@@ -700,4 +724,6 @@ def get_index_stats() -> Dict[str, Any]:
 def is_available() -> bool:
     return _meilisearch_available
 
-initialize_meilisearch()
+# Iniciamos MeiliSearch solo si no está ya inicializado
+if client is None:
+    initialize_meilisearch()

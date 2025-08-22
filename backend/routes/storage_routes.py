@@ -12,6 +12,7 @@ from services.firebase_service import (
     get_documents_by_storage_path,
     delete_document_from_firestore,
 )
+from google.cloud.firestore_v1.base_query import FieldFilter
 #from firebase_admin import firestore  # Importar el módulo firestore para acceder a SERVER_TIMESTAMP
 from utils.audit_logger import log_event, log_error
 from typing import Dict, Any, List, Optional
@@ -307,7 +308,8 @@ async def get_storage_tree(request: Request, token_data: Dict[str, Any] = Depend
             # Intentar localizar por email si el doc por UID no existe
             try:
                 if email:
-                    candidates = list(firestore.collection("users").where("email", "==", email).limit(1).stream())
+                    # Buscar el usuario por email (usando filter keyword)
+                    candidates = list(firestore.collection("users").where(filter=FieldFilter("email", "==", email)).limit(1).stream())
                     if candidates:
                         cdoc = candidates[0]
                         cdata = cdoc.to_dict() or {}

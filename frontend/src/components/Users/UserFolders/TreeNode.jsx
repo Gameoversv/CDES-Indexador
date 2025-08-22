@@ -49,10 +49,7 @@ export default function TreeNode({
   const handleDelete = (e) => {
     e.stopPropagation();
     if (onDelete) {
-      const confirmed = window.confirm(`¿Estás seguro de eliminar ${node.name}? Esta acción no se puede deshacer.`);
-      if (confirmed) {
-        onDelete(node.path, node.name);
-      }
+      onDelete(node.path, node.name);
     }
   };
 

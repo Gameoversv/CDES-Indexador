@@ -9,6 +9,7 @@ Modelos incluidos:
 - DocumentMetadata: Metadatos completos de un documento procesado
 - DocumentSearchResult: Resultado de búsqueda con información destacada
 - DocumentUploadResponse: Respuesta del proceso de subida
+- DocumentListResponse: Respuesta para el endpoint list
 
 Características de Pydantic:
 - Validación automática de tipos de datos
@@ -269,8 +270,37 @@ class DocumentUploadResponse(BaseModel):
 
 
 # ==================================================================================
-#                           MODELOS DE SOLICITUD
+#                           MODELOS DE RESPUESTA DE LISTA
 # ==================================================================================
+
+class DocumentFile(BaseModel):
+    """
+    Modelo para un archivo individual en la respuesta de lista de documentos.
+    """
+    id: str
+    filename: str
+    size: int = 0
+    updated: Optional[str] = None
+    path: str = ""
+    content_type: str = "application/octet-stream"
+    categoria: Optional[str] = None
+    public: bool = False
+    puesto_trabajo: Optional[str] = None
+    tipo: Optional[str] = None
+    storage_path: str = ""
+
+class DocumentListResponse(BaseModel):
+    """
+    Modelo para la respuesta del endpoint de lista de documentos.
+    
+    Attributes:
+        files: Lista de archivos de documentos
+        count: Lista con el conteo total (para compatibilidad con FastAPI)
+        source: Lista con la fuente de datos (para compatibilidad con FastAPI)
+    """
+    files: List[DocumentFile]
+    count: List[int]
+    source: List[str]
 
 class DocumentSearchRequest(BaseModel):
     """

@@ -20,6 +20,7 @@ import {
 // Import seguro: si el módulo no expone getFileTypeColor, usamos un fallback local
 import * as docUtils from "@/lib/documentUtils";
 import { documentsAPI } from "@/services/api";
+import api from "@/services/api"; // Importar instancia API directa para endpoints personalizados
 
 // -------------------- helpers --------------------
 const getExt = (name = "") => name.split(".").pop()?.toUpperCase() || "FILE";
@@ -113,39 +114,51 @@ export default function PreviewFileDialog({
 
     if (!file) return;
 
-    const needTitle =
-      !file?.title && !file?.meta?.title && !file?.details?.title;
-    const needSummary =
-      !file?.summary && !file?.meta?.summary && !file?.details?.summary;
-    const needCategoria =
-      !file?.categoria &&
-      !file?.tipo &&
-      !file?.tipo_documento &&
-      !file?.meta?.tipo_documento &&
-      !file?.details?.tipo;
-
-    if (!needTitle && !needSummary && !needCategoria) return;
+    // Extraer ID del archivo si existe
+    const fileId = file?.id || file?.file_id || stripExt(file?.filename || "");
 
     (async () => {
       setLoadingMeta(true);
       try {
-        // 1) Intento por ruta exacta
-        if (rutaBase) {
+        // 1) Intentar obtener información directamente usando el nuevo endpoint info
+        if (rutaBase || fileId) {
           try {
-            const resp = await documentsAPI.getMetaByPath(rutaBase);
-            const payload =
-              resp?.data?.data || resp?.data?.document || resp?.data || null;
-            if (!canceled && payload && typeof payload === "object") {
-              setMeta(payload);
-              setLoadingMeta(false);
-              return;
+            // Primero intentar por path si existe
+            if (rutaBase) {
+              const resp = await api.get("/documents/info", { 
+                params: { storage_path: rutaBase } 
+              });
+              const payload = resp?.data?.document || null;
+              
+              if (!canceled && payload && typeof payload === "object") {
+                console.log("Documento encontrado por storage_path:", payload);
+                setMeta(payload);
+                setLoadingMeta(false);
+                return;
+              }
             }
-          } catch {
+            
+            // Luego intentar por ID si no se encontró por path
+            if (fileId) {
+              const resp = await api.get("/documents/info", { 
+                params: { file_id: fileId } 
+              });
+              const payload = resp?.data?.document || null;
+              
+              if (!canceled && payload && typeof payload === "object") {
+                console.log("Documento encontrado por file_id:", payload);
+                setMeta(payload);
+                setLoadingMeta(false);
+                return;
+              }
+            }
+          } catch (err) {
+            console.error("Error obteniendo metadatos:", err);
             /* seguir con fallback */
           }
         }
 
-        // 2) Búsqueda por nombre (sin extensión)
+        // 2) Búsqueda por nombre (sin extensión) - fallback
         const baseName = stripExt(nombreArchivo || file?.filename || "");
         if (baseName) {
           try {
@@ -156,34 +169,19 @@ export default function PreviewFileDialog({
               const match =
                 hits.find(
                   (h) =>
-                    (rutaBase && h.storage_path === rutaBase) ||
+                    (rutaBase && (h.storage_path === rutaBase || h.path === rutaBase)) ||
                     h.filename === file?.filename
                 ) || hits[0];
               if (!canceled && match) {
+                console.log("Documento encontrado por búsqueda:", match);
                 setMeta(match);
                 setLoadingMeta(false);
                 return;
               }
             }
-          } catch {
-            /* seguir con último fallback */
-          }
-        }
-
-        // 3) Intento por id (si existiera)
-        const anyId =
-          file?.id || file?.file_id || stripExt(file?.filename || "");
-        if (anyId) {
-          try {
-            const resp = await documentsAPI.getDocument(anyId);
-            const payload = resp?.data?.data || resp?.data || null;
-            if (!canceled && payload) {
-              setMeta(payload);
-              setLoadingMeta(false);
-              return;
-            }
-          } catch {
-            /* noop */
+          } catch (err) {
+            console.error("Error en búsqueda:", err);
+            /* ignorar y continuar */
           }
         }
       } finally {

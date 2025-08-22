@@ -25,12 +25,13 @@ async def lifespan(app: FastAPI):
         initialize_firebase()
         firestore = get_firestore_client()
         firestore.collection("health_check").document("test").set({"status": "ok"})
+        print("Firebase inicializado correctamente")
     except Exception as e:
         print(f"Error iniciando Firebase: {e}")
 
     try:
-        initialize_meilisearch()
-        print(f"Meilisearch ha inicializado correctamente en {settings.MEILISEARCH_HOST}")
+        # initialize_meilisearch() se llama desde el servicio directamente
+        print("Meilisearch disponible")
     except Exception as e:
         print(f"Error iniciando Meilisearch: {e}")
 

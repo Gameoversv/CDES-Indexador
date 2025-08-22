@@ -17,40 +17,30 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { UploadCloud, X, Image as ImageIcon } from "lucide-react";
+import {
+  UploadCloud,
+  Image as ImageIcon,
+  X,
+} from "lucide-react";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import FileUpload from "@/components/ui/FileUpload";
 import { useFileUpload } from "@/hooks/useFileUpload";
+import { documentTypesByRole, formatDocumentType } from "@/constants/documentTypes";
 import { puestosTrabajo } from "@/constants/jobPositions";
 import { pesEstrategias } from "@/constants/pesEstrategias";
 import { documentsAPI } from "@/services/documentsAPI";
 
-// CONFIGURACIÓN SIMPLIFICADA PARA ADMIN
-const adminDocumentTypes = [
-  "presentaciones", "carta", "informe", "convenios", "contrato", 
-  "minutas/ayuda_memoria", "actas", "mapas", "logos", "graficos", 
-  "nota_prensa/comunicaciones", "plan", "ficha_tecnica", "estudio", 
-  "video", "foto", "discursos", "memorias institucionales", 
-  "convocatorias", "Invitacion", "cuestionario", "TDER", 
-  "cronograma", "diagnostico", "listado", "declaracion ciudadana"
-];
-
-const formatDocumentType = (type) => {
-  if (!type) return "";
-  return type
-    .replace(/_/g, " ")
-    .split(/([ /])/)
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join("");
-};
+const allDocumentTypes = [
+  ...new Set(Object.values(documentTypesByRole).flat()),
+].sort();
 
 export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
   const { userRole } = useAuth();
   const { uploading, progress, uploadFile, reset } = useFileUpload();
   
-  // ESTADOS SIMPLIFICADOS PARA ADMIN
+  // ESTADOS DEL FORMULARIO
   const [file, setFile] = useState(null);
   const [apartado, setApartado] = useState("");
   const [estrategia, setEstrategia] = useState("");
@@ -62,6 +52,70 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [strategyProjects, setStrategyProjects] = useState([]);
 
+  // Los administradores tienen acceso a todos los tipos de documentos
+  const availableDocumentTypes = allDocumentTypes;
+
+  useEffect(() => {
+    console.log("🔍 useEffect triggered:", { apartado, estrategia });
+    
+    if (apartado === "PES 2030" && estrategia) {
+      console.log("� Making API call for strategy:", estrategia);
+      
+      documentsAPI.getProjectsByStrategy(estrategia)
+        .then(response => {
+          console.log("✅ API Response received:", response);
+          console.log("✅ Response data structure:", JSON.stringify(response.data, null, 2));
+          
+          const projects = new Set();
+          const files = response.data?.files || [];
+          console.log("📁 Files array:", files);
+          console.log("📁 Files count:", files.length);
+          
+          files.forEach((file, index) => {
+            console.log(`📄 Processing file ${index}:`, file.path);
+            
+            const pathParts = file.path.split('/');
+            console.log(`🔗 Path parts:`, pathParts);
+            
+            // Para archivos: PES_2030/Economía/carta/2025/08/archivo.pdf
+            // Queremos extraer "carta" (índice 2)
+            if (pathParts.length >= 3 && pathParts[0] === 'PES_2030' && pathParts[1] === estrategia) {
+              const projectName = pathParts[2];
+              console.log(`🎯 Found project from file path: "${projectName}"`);
+              
+              if (projectName && !projectName.match(/^\d{4}$/)) {
+                console.log(`✅ Adding project: "${projectName}"`);
+                projects.add(projectName);
+              } else {
+                console.log(`❌ Rejected project (year pattern): "${projectName}"`);
+              }
+            } else {
+              console.log(`❌ Path doesn't match pattern:`, {
+                length: pathParts.length,
+                part0: pathParts[0],
+                part1: pathParts[1],
+                expectedPart1: estrategia
+              });
+            }
+          });
+          
+          const projectsList = Array.from(projects).sort();
+          console.log("🏁 Final projects list:", projectsList);
+          setStrategyProjects(projectsList);
+        })
+        .catch(error => {
+          console.error("❌ API Error:", error);
+          console.error("❌ Error response:", error.response?.data);
+          console.error("❌ Error status:", error.response?.status);
+          setStrategyProjects([]);
+        });
+    } else {
+      console.log("🔄 Resetting projects (no valid apartado/estrategia)");
+      setStrategyProjects([]);
+      setProyecto("");
+    }
+  }, [apartado, estrategia]);
+
   // MANEJAR SELECCIÓN DE IMAGEN DE PORTADA
   const handleCoverImageSelect = (e) => {
     if (e.target.files && e.target.files[0]) {
@@ -69,35 +123,7 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
     }
   };
 
-  useEffect(() => {
-    if (apartado === "PES 2030" && estrategia) {
-      documentsAPI.getProjectsByStrategy(estrategia)
-        .then(response => {
-          console.log("Response from API:", response);
-          const projects = new Set();
-          const files = response.data?.files || [];
-          files.forEach(file => {
-            const pathParts = file.path.split('/');
-            if (pathParts.length >= 3 && pathParts[0] === 'PES_2030' && pathParts[1] === estrategia) {
-              const projectName = pathParts[2];
-              if (projectName && !projectName.match(/^\d{4}$/)) {
-                projects.add(projectName);
-              }
-            }
-          });
-          setStrategyProjects(Array.from(projects).sort());
-        })
-        .catch(error => {
-          console.error("Error fetching projects by strategy:", error);
-          setStrategyProjects([]);
-        });
-    } else {
-      setStrategyProjects([]);
-      setProyecto("");
-    }
-  }, [apartado, estrategia]);
-
-  // VALIDACIÓN SIMPLIFICADA
+  // ✅ VALIDAR FORMULARIO
   const validateForm = () => {
     if (!file || !apartado || !tipoDocumento) {
       toast.warning("Debes seleccionar un archivo, una iniciativa y un tipo de documento.");
@@ -121,7 +147,7 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
     return true;
   };
 
-  // MANEJAR SOLICITUD DE SUBIDA
+  // ✅ MANEJAR SOLICITUD DE SUBIDA
   const handleUploadRequest = (e) => {
     e.preventDefault();
     if (validateForm()) {
@@ -129,14 +155,14 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
     }
   };
 
-  // CONFIRMAR Y SUBIR
+  // ✅ CONFIRMAR Y SUBIR
   const handleConfirmUpload = async () => {
     setShowConfirmDialog(false);
     
     const metadata = {
       apartado,
       categoria: tipoDocumento,
-      user_role: userRole || 'admin',
+      user_role: userRole || "admin",
       is_public: publico,
     };
     
@@ -169,7 +195,7 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
     );
   };
 
-  // CERRAR DIÁLOGO Y LIMPIAR
+  // ✅ CERRAR DIÁLOGO Y LIMPIAR
   const handleCloseDialog = () => {
     setOpen(false);
     setFile(null);
@@ -186,19 +212,19 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="destructive" className="gap-2 px-4 py-2 rounded-lg">
+        <Button variant="destructive" className="gap-2 px-3 py-2 rounded-lg">
           <UploadCloud className="h-4 w-4" />
-          <span>Subir Documento</span>
+          <span className="hidden sm:inline">Subir Documento</span>
         </Button>
       </DialogTrigger>
       
-      <DialogContent className="rounded-xl max-w-2xl p-6">
+      <DialogContent className="rounded-xl max-w-3xl p-6">
         <DialogHeader>
           <DialogTitle className="text-xl font-semibold">
             Subir Documento (Admin)
           </DialogTitle>
           <DialogDescription>
-            Sube un documento al sistema de gestión.
+            Sube un documento para indexación con privilegios de administrador.
           </DialogDescription>
         </DialogHeader>
 
@@ -283,7 +309,7 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
             )}
           </div>
 
-          {/* COMPONENTE DE SUBIDA MODULAR */}
+          {/* ✅ COMPONENTE DE SUBIDA MODULAR */}
           <div className="space-y-2">
             <label className="block text-sm font-medium">Archivo</label>
             <FileUpload
@@ -309,7 +335,7 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
                 <SelectValue placeholder="Selecciona el tipo de documento" />
               </SelectTrigger>
               <SelectContent>
-                {adminDocumentTypes.map((type) => (
+                {availableDocumentTypes.map((type) => (
                   <SelectItem key={type} value={type}>
                     {formatDocumentType(type)}
                   </SelectItem>
@@ -353,7 +379,7 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
           )}
 
           {/* Botones */}
-          <div className="flex justify-end gap-3 pt-4">
+          <div className="flex justify-end gap-3 pt-2">
             <Button
               type="button"
               variant="outline"
@@ -362,7 +388,7 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
             >
               Cancelar
             </Button>
-            <Button type="submit" variant="destructive" disabled={uploading || !file}>
+            <Button type="submit" variant="destructive" disabled={uploading}>
               {uploading ? `Subiendo... ${Math.round(progress)}%` : "Subir documento"}
             </Button>
           </div>

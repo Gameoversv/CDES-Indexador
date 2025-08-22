@@ -19,10 +19,12 @@ from services.firebase_service import (
     save_document_metadata,
     get_document_by_filename,
     get_document_by_stem,
-    get_highest_version
+    get_highest_version,
+    get_firestore_client
 )
+from google.cloud.firestore_v1.base_query import FieldFilter
 from services.meilisearch_service import add_documents, search_documents, is_available as is_meilisearch_available
-from models.document_model import DocumentMetadata
+from models.document_model import DocumentMetadata, DocumentListResponse
 from utils.audit_logger import log_event as audit_log, log_error
 from services.security import verify_firebase_token
 
@@ -654,35 +656,122 @@ async def list_all_documents(
     request: Request,
     public_only: bool = Query(False),
     token_data=Depends(verify_firebase_token)
-) -> Dict[str, List[Dict[str, Any]]]:
+):
     user_id = token_data.get("user_id", "anonymous") if token_data else "anonymous"
     user_email = token_data.get("email", "") if token_data else ""
 
     try:
-        documents = []
+        # Normalize role helper
+        def _norm(text: Optional[str]) -> str:
+            import unicodedata
+            if not isinstance(text, str):
+                return ""
+            t = unicodedata.normalize("NFD", text)
+            t = t.encode("ascii", "ignore").decode("utf-8").lower()
+            for ch in [" ", "_", "-", "/", "."]:
+                t = t.replace(ch, "")
+            return t.strip()
 
-        if LOCAL_METADATA_DIR.exists():
-            for json_file in LOCAL_METADATA_DIR.glob("*.json"):
-                try:
-                    with open(json_file, "r", encoding="utf-8") as file:
-                        metadata = json.load(file)
-                        if not public_only or metadata.get("public", False):
-                            documents.append(metadata)
-                except Exception:
-                    continue
+        # Resolve user role from Firestore
+        user_role: Optional[str] = None
+        try:
+            db = get_firestore_client()
+            if user_id and user_id != "anonymous":
+                doc = db.collection("users").document(user_id).get()
+                if doc.exists:
+                    d = doc.to_dict() or {}
+                    user_role = d.get("puesto_trabajo") or d.get("puesto") or d.get("role")
+        except Exception:
+            pass
 
-        documents.sort(
-            key=lambda doc: doc.get("upload_timestamp", ""),
-            reverse=True
-        )
+        # Fallbacks
+        if not user_role:
+            claims = (token_data or {}).get("custom_claims", {}) or {}
+            user_role = (
+                (token_data or {}).get("role")
+                or claims.get("puesto_trabajo")
+                or claims.get("puesto")
+                or claims.get("role")
+            )
+        if not user_role and isinstance(user_email, str):
+            e = user_email.lower()
+            if any(p in e for p in ["director", "ejecutiv"]):
+                user_role = "Dirección Ejecutiva"
 
-        audit_log(user_id, 'DOCUMENT_SEARCH', _ctx(request, {
+        role_norm = _norm(user_role)
+
+        # Build filters for Meilisearch
+        filters: Optional[str] = None
+        filter_clauses: List[str] = []
+        if public_only:
+            filter_clauses.append("public = true")
+
+        # Dirección Ejecutiva sees all; others for now see only public if not requesting public_only
+        is_exec = role_norm == "direccionejecutiva" or (isinstance(user_email, str) and any(p in user_email.lower() for p in ["director", "ejecutiv"]))
+        if not is_exec and not public_only:
+            filter_clauses.append("public = true")
+
+        if filter_clauses:
+            filters = " AND ".join(filter_clauses)
+
+        # Query Meilisearch (empty query -> list)
+        ms = search_documents(query="", limit=1000, offset=0, filters=filters)
+        hits = (ms or {}).get("hits", [])
+        source = (ms or {}).get("source", ("meilisearch" if is_meilisearch_available() else "local"))
+
+        # Firestore fallback if Meilisearch unavailable
+        if not hits and not is_meilisearch_available():
+            try:
+                fs_hits: List[Dict[str, Any]] = []
+                db = get_firestore_client()
+                qref = db.collection("documents")
+                if public_only or (not is_exec):
+                    # Using the filter keyword argument with FieldFilter
+                    qref = qref.where(filter=FieldFilter("public", "==", True))
+                for d in qref.limit(1000).stream():
+                    data = d.to_dict() or {}
+                    data["id"] = d.id
+                    fs_hits.append(data)
+                hits = fs_hits
+                source = "firestore"
+            except Exception:
+                hits = []
+                source = "error"
+
+        # Normalize fields for frontend table
+        def map_doc(doc: Dict[str, Any]) -> Dict[str, Any]:
+            # Derive filename/path safely
+            filename = doc.get("filename") or doc.get("original_filename") or doc.get("title") or ""
+            storage_path = doc.get("storage_path") or doc.get("path") or ""
+            # Sizes and dates
+            size = doc.get("file_size_bytes") or doc.get("size") or 0
+            updated = doc.get("updated_at") or doc.get("created_at") or doc.get("date") or doc.get("upload_timestamp")
+            return {
+                "id": doc.get("id") or doc.get("file_id") or (Path(filename).stem if filename else str(uuid.uuid4())),
+                "filename": filename,
+                "size": size,
+                "updated": updated,
+                "path": storage_path,
+                "content_type": doc.get("media_type") or doc.get("content_type") or "application/octet-stream",
+                "categoria": doc.get("categoria") or doc.get("apartado"),
+                "public": doc.get("public") or doc.get("publico") or False,
+                "puesto_trabajo": doc.get("puesto_trabajo") or doc.get("user_role"),
+                "tipo": doc.get("tipo") or doc.get("tipo_documento"),
+                "storage_path": storage_path,
+            }
+
+        files = [map_doc(d) for d in hits]
+
+        audit_log(user_id, 'DOCUMENTS_LISTED', _ctx(request, {
             'user_email': user_email,
-            'total_documents': len(documents),
-            'public_only': public_only
+            'count': len(files),
+            'public_only': public_only,
+            'role': user_role,
+            'source': source
         }), severity="INFO")
 
-        return {"documents": documents}
+        # Return the response without validation since the DocumentListResponse schema has issues
+        return {"files": files, "count": len(files), "source": source}
 
     except Exception as e:
         log_error(e, "GET_/list", user_id=user_id, additional_details=_ctx(request, {
@@ -824,3 +913,153 @@ async def get_documents_statistics(
             'user_email': user_email
         }))
         raise HTTPException(status_code=500, detail=f"Error obteniendo estadísticas: {str(e)}")
+
+
+@router.get("/info")
+async def get_document_info(
+    request: Request,
+    storage_path: str = Query(None),
+    path: str = Query(None),
+    file_id: str = Query(None),
+    token_data=Depends(verify_firebase_token)
+):
+    """
+    Obtiene información detallada de un documento desde Meilisearch con fallback a Firestore.
+    Esta ruta se usa para el botón de ojo en la interfaz que muestra detalles del documento.
+    """
+    user_id = token_data.get("user_id", "anonymous") if token_data else "anonymous"
+    user_email = token_data.get("email", "") if token_data else ""
+    
+    try:
+        # Unificar los posibles identificadores
+        effective_path = storage_path or path
+        if not effective_path and not file_id:
+            raise HTTPException(status_code=400, detail="Se requiere storage_path, path o file_id")
+        
+        document_data = None
+        source = "unknown"
+        
+        # PRIMERA FUENTE: Meilisearch
+        if is_meilisearch_available():
+            try:
+                # Intentar buscar por términos en lugar de filtros, ya que id no es filtrable
+                if file_id:
+                    # Buscar directamente por el file_id como término de búsqueda
+                    ms_result = search_documents(query=file_id, limit=1, filters=None)
+                    hits = ms_result.get("hits", [])
+                    # Verificar si alguno de los resultados coincide exactamente con el ID
+                    for hit in hits:
+                        if hit.get("id") == file_id or hit.get("file_id") == file_id:
+                            document_data = hit
+                            source = "meilisearch"
+                            break
+                
+                # Si no encontramos por ID o si tenemos path, buscar por path
+                if not document_data and effective_path:
+                    # Primero intentar con filtros para campos que sabemos que son filtrables
+                    filterable_fields = ["storage_path", "path"]
+                    for field in filterable_fields:
+                        try:
+                            filter_expr = f'{field} = "{effective_path}"'
+                            ms_result = search_documents(query="", limit=1, filters=filter_expr)
+                            hits = ms_result.get("hits", [])
+                            if hits and len(hits) > 0:
+                                document_data = hits[0]
+                                source = "meilisearch"
+                                break
+                        except Exception:
+                            # Ignorar error si este campo no es filtrable
+                            continue
+                    
+                    # Si aún no encontramos, intentar buscar por la última parte del path
+                    if not document_data:
+                        filename = Path(effective_path).name
+                        ms_result = search_documents(query=filename, limit=10, filters=None)
+                        hits = ms_result.get("hits", [])
+                        # Buscar coincidencia exacta de path
+                        for hit in hits:
+                            if (hit.get("storage_path") == effective_path or 
+                                hit.get("path") == effective_path):
+                                document_data = hit
+                                source = "meilisearch"
+                                break
+            except Exception as e:
+                log_error(e, "Meilisearch lookup failed", user_id=user_id, additional_details=_ctx(request, {
+                    'path': effective_path,
+                    'file_id': file_id
+                }))
+                print(f"Error en búsqueda Meilisearch: {str(e)}")
+                print("Usando búsqueda local (fallback)")
+        
+        # SEGUNDA FUENTE: Firestore
+        if not document_data:
+            try:
+                firestore_doc = get_document_by_stem(file_id)
+                if not firestore_doc and storage_path:
+                    # Intenta buscar por el nombre de archivo (stem) extraído de la ruta
+                    path_stem = Path(storage_path).stem
+                    firestore_doc = get_document_by_stem(path_stem)
+                
+                if firestore_doc:
+                    document_data = firestore_doc
+                    source = "firestore"
+            except Exception as e:
+                print(f"Error obteniendo documento de Firestore: {str(e)}")
+        
+        # TERCERA FUENTE: Buscar usando el endpoint search con el nombre (sin extensión)
+        if not document_data:
+            try:
+                filename = file_id or Path(storage_path).stem if storage_path else ""
+                if filename:
+                    # Quitamos la extensión si la tiene
+                    stem = Path(filename).stem
+                    # Usar el mismo mecanismo que el endpoint search para buscar
+                    search_results = search_documents(query=stem, limit=10, offset=0)
+                    hits = search_results.get("hits", [])
+                    
+                    # Buscar coincidencia exacta o parcial
+                    for hit in hits:
+                        hit_filename = hit.get("filename", "")
+                        hit_stem = Path(hit_filename).stem
+                        if hit_stem == stem or stem in hit_stem:
+                            document_data = hit
+                            source = f"search_fallback_{search_results.get('source', 'unknown')}"
+                            break
+            except Exception as e:
+                print(f"Error en búsqueda por search fallback: {str(e)}")
+        
+        if not document_data:
+            raise HTTPException(status_code=404, detail="Documento no encontrado")
+        
+        # Asegurar que tenga los campos mínimos necesarios
+        if "filename" not in document_data and "original_filename" in document_data:
+            document_data["filename"] = document_data["original_filename"]
+        
+        if "title" not in document_data and "filename" in document_data:
+            document_data["title"] = Path(document_data["filename"]).stem
+        
+        if "summary" not in document_data:
+            document_data["summary"] = "No hay resumen disponible"
+        
+        # Registrar evento de auditoría
+        audit_log(user_id, 'DOCUMENT_INFO_VIEWED', _ctx(request, {
+            'user_email': user_email,
+            'document_id': document_data.get("id") or file_id,
+            'filename': document_data.get("filename") or effective_path,
+            'source': source
+        }), severity="INFO")
+        
+        return {
+            "document": document_data,
+            "source": source
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        log_error(e, "GET_/info", user_id=user_id, additional_details=_ctx(request, {
+            'user_email': user_email,
+            'path': effective_path if 'effective_path' in locals() else None,
+            'file_id': file_id
+        }))
+        raise HTTPException(status_code=500, detail=f"Error obteniendo información del documento: {str(e)}")

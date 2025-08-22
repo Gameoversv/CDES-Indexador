@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import {
   Folder, FolderOpen, FileText, ChevronRight, ChevronDown, Home,
   Search, Loader2, Plus, Upload, List, Grid3X3, Filter, ChevronDown as CD, RefreshCw,
-  Download, Trash2
+  Download, Trash2, AlertTriangle, ArrowLeft
 } from "lucide-react";
 import TreeNode from "./TreeNode";
 import { useAuth } from "@/contexts/AuthContext";
@@ -60,6 +60,37 @@ function Modal({ open, onClose, title, children, footer }) {
   );
 }
 
+function DeleteConfirmationModal({ open, onClose, onConfirm, itemName, isFolder }) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-[70]">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="absolute inset-0 flex items-center justify-center p-4">
+        <div className="w-full max-w-md rounded-lg bg-white shadow-xl border border-gray-200">
+          <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2">
+            <AlertTriangle className="h-5 w-5 text-amber-500" />
+            <h3 className="font-semibold">Confirmar eliminación</h3>
+          </div>
+          <div className="px-4 py-4">
+            <p className="text-gray-700">
+              ¿Está seguro de que desea eliminar {isFolder ? "la carpeta" : "el documento"} <span className="font-semibold">{itemName}</span>?
+            </p>
+            <p className="text-sm text-gray-500 mt-2">
+              Esta acción no se puede deshacer.
+            </p>
+          </div>
+          <div className="px-4 py-3 border-t border-gray-100 flex items-center justify-end gap-2">
+            <Button variant="outline" onClick={onClose}>Cancelar</Button>
+            <Button onClick={onConfirm} className="bg-red-600 hover:bg-red-700">
+              Eliminar
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ===================== Componente principal =====================
 export default function UserFolders() {
   // Obtener datos de autenticación
@@ -106,6 +137,10 @@ export default function UserFolders() {
   const [showUpload, setShowUpload] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadFileObj, setUploadFileObj] = useState(null);
+  
+  // Modal de confirmación de eliminación
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState({ path: '', name: '', isFolder: false });
 
   // ===================== Helpers de datos =====================
   const currentPathText = useMemo(
@@ -468,6 +503,52 @@ export default function UserFolders() {
     setError(null);
     setLoading(true);
     try {
+      // Si la ruta es raíz, cargar directamente el contenido de raíz (sin depender de selectedPath)
+      if (!path) {
+        setOpenMap(prev => ({ ...prev, "": true }));
+        setBreadcrumbs(buildBreadcrumbs(""));
+
+        try {
+          const response = await documentsAPI.getStorageTree();
+          const treeData = response.data || [];
+
+          // Procesar sidebar raíz
+          const rootFolders = treeData.filter(node => node.type === 'folder');
+          setSidebarRoot(rootFolders.map(f => ({
+            name: f.name,
+            path: f.path,
+            count: f.children?.length || 0,
+          })));
+          setSidebarChildren(prev => ({
+            ...prev,
+            "": rootFolders.map(f => ({
+              name: f.name,
+              path: f.path,
+              count: f.children?.length || 0,
+            }))
+          }));
+
+          // Contenido de raíz
+          setFolders(rootFolders.map(f => ({
+            name: f.name,
+            path: f.path,
+            count: f.children?.length || 0,
+          })));
+          const rootFiles = treeData.filter(node => node.type === 'file');
+          setFiles(rootFiles.map(f => ({
+            name: f.name,
+            path: f.path,
+            contentType: f.contentType || '',
+            size: f.size || 0,
+            updated: f.updated,
+          })));
+        } catch (e) {
+          console.error('Error al cargar raíz:', e);
+          setError('No se pudo cargar el contenido de la raíz.');
+        }
+        return;
+      }
+
       // Asegurarse de que todos los nodos padres están abiertos en el árbol
       const parts = path.split('/').filter(Boolean);
       let currentPath = '';
@@ -498,6 +579,19 @@ export default function UserFolders() {
   };
 
   const onBreadcrumbClick = (path) => onOpenPath(path);
+
+  const goToPreviousFolder = () => {
+    if (!selectedPath || selectedPath === "") return; // Already at root
+    
+    // Get parent path by removing the last segment
+    const pathParts = selectedPath.split('/').filter(Boolean);
+    if (pathParts.length === 0) return; // At root
+    
+    // Remove the last path segment
+    pathParts.pop();
+    const parentPath = pathParts.join('/');
+    onOpenPath(parentPath);
+  };
 
   const refreshAll = async () => {
     setError(null);
@@ -571,30 +665,41 @@ export default function UserFolders() {
     }
   }, []);
   
-  // Función para eliminar carpetas/archivos
-  const handleDelete = useCallback(async (path, name, isFolder = path.endsWith('/')) => {
+  // Mostrar modal de confirmación para eliminar
+  const confirmDelete = useCallback((path, name, isFolder = path.endsWith('/')) => {
     if (!canDelete) return;
+    setItemToDelete({ path, name, isFolder });
+    setShowDeleteConfirm(true);
+  }, [canDelete]);
+  
+  // Función para eliminar carpetas/archivos
+  const handleDelete = useCallback(async () => {
+    if (!canDelete || !itemToDelete.path) return;
     
     try {
       setLoading(true);
-      await documentsAPI.deleteStorageItem(path);
+      setShowDeleteConfirm(false);
+      
+      await documentsAPI.deleteStorageItem(itemToDelete.path);
       
       // Refrescar datos después de eliminar
       await fetchTreeData();
       
       // Si estábamos en la carpeta eliminada, ir a su padre
-      if (selectedPath === path || selectedPath.startsWith(path)) {
-        const parentPath = path.split('/').slice(0, -2).join('/');
+      if (selectedPath === itemToDelete.path || selectedPath.startsWith(itemToDelete.path)) {
+        const parentPath = itemToDelete.path.split('/').slice(0, -2).join('/');
         await onOpenPath(parentPath);
       }
       
     } catch (e) {
       console.error('Error al eliminar', e);
-      setError(`No fue posible eliminar ${isFolder ? 'la carpeta' : 'el archivo'}`);
+      setError(`No fue posible eliminar ${itemToDelete.isFolder ? 'la carpeta' : 'el archivo'}`);
     } finally {
       setLoading(false);
+      // Limpiar el item que se intentó eliminar
+      setItemToDelete({ path: '', name: '', isFolder: false });
     }
-  }, [canDelete, fetchTreeData, selectedPath]);
+  }, [canDelete, fetchTreeData, selectedPath, itemToDelete]);
   
   useEffect(() => {
     (async () => {
@@ -694,7 +799,19 @@ export default function UserFolders() {
       <div className="grid grid-cols-12 gap-4 mt-0">
         {/* Sidebar (árbol) */}
         <aside className="col-span-12 md:col-span-3 bg-white rounded-lg border border-gray-200">
-          <div className="p-3 border-b border-gray-100 text-xs font-semibold text-gray-600">CARPETAS</div>
+          <div className="p-3 border-b border-gray-100 flex justify-between items-center">
+            <span className="text-xs font-semibold text-gray-600">CARPETAS</span>
+            {selectedPath && selectedPath !== "" && (
+              <button
+                onClick={goToPreviousFolder}
+                className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800"
+                title="Volver a la carpeta anterior"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>Atrás</span>
+              </button>
+            )}
+          </div>
           <div className="h-[540px] overflow-auto">
             {/* Raíz */}
             <div className="mb-1">
@@ -774,7 +891,7 @@ export default function UserFolders() {
                         
                         {canDelete && (
                           <button 
-                            onClick={() => handleDelete(f.path, f.name, true)}
+                            onClick={() => confirmDelete(f.path, f.name, true)}
                             className="text-gray-400 hover:text-red-500 p-1"
                             title="Eliminar carpeta"
                           >
@@ -821,7 +938,7 @@ export default function UserFolders() {
                             </button>
                             {canDelete && (
                               <button 
-                                onClick={() => handleDelete(file.path, file.name, false)}
+                                onClick={() => confirmDelete(file.path, file.name, false)}
                                 className="text-gray-400 hover:text-red-500"
                                 title="Eliminar archivo"
                               >
@@ -862,7 +979,7 @@ export default function UserFolders() {
                                 </button>
                                 {canDelete && (
                                   <button 
-                                    onClick={() => handleDelete(file.path, file.name, false)}
+                                    onClick={() => confirmDelete(file.path, file.name, false)}
                                     className="text-gray-400 hover:text-red-500"
                                     title="Eliminar archivo"
                                   >
@@ -937,6 +1054,15 @@ export default function UserFolders() {
           <p className="text-xs text-gray-500">Formatos comunes: PDF, DOCX, XLSX, PPTX (según valide tu backend).</p>
         </div>
       </Modal>
+      
+      {/* Modal de confirmación de eliminación */}
+      <DeleteConfirmationModal
+        open={showDeleteConfirm}
+        onClose={() => setShowDeleteConfirm(false)}
+        onConfirm={handleDelete}
+        itemName={itemToDelete.name}
+        isFolder={itemToDelete.isFolder}
+      />
     </div>
   );
 }

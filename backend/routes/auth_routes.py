@@ -1,6 +1,7 @@
 from typing import Optional, Dict, Any
 import unicodedata
 from fastapi import APIRouter, Depends, HTTPException, status, Request
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 from services.firebase_service import verify_token as verify_firebase_token
 from services.firebase_admin_tools import db
@@ -51,7 +52,7 @@ async def get_me(request: Request, token_data=Depends(verify_firebase_token)):
             firestore_user = user_doc.to_dict() or {}
         else:
             # 2. Buscar por campo 'uid' (patrón usado en creación aleatoria de ID)
-            query = db.collection("users").where("uid", "==", uid).limit(1).stream()
+            query = db.collection("users").where(filter=FieldFilter("uid", "==", uid)).limit(1).stream()
             for doc in query:
                 firestore_user = doc.to_dict() or {}
                 break
@@ -166,7 +167,7 @@ async def get_current_admin_user(request: Request, token_data=Depends(verify_fir
                 if user_doc.exists:
                     fs_user = user_doc.to_dict() or {}
                 else:
-                    query = db.collection("users").where("uid", "==", uid).limit(1).stream()
+                    query = db.collection("users").where(filter=FieldFilter("uid", "==", uid)).limit(1).stream()
                     for d in query:
                         fs_user = d.to_dict() or {}
                         break

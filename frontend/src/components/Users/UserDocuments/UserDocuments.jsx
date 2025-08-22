@@ -110,12 +110,21 @@ export default function UserDocuments() {
   const fetchFiles = async () => {
     setLoading(true);
     try {
-      const res = await documentsAPI.listStorage();
-      if (res.data) {
-        setFiles(res.data.files || []);
-      } else {
-        setFiles([]);
-      }
+      // Prefer new documents endpoint (Meilisearch with Firestore fallback)
+      const res = await documentsAPI.list();
+      const data = res?.data || {};
+      const items = data.files || data.documents || data.hits || [];
+      // Normalize minimal fields expected by the table
+      const normalized = items.map((d) => ({
+        filename: d.filename || d.original_filename || d.title || "",
+        size: d.size ?? d.file_size_bytes ?? 0,
+        updated: d.updated || d.updated_at || d.created_at || d.date || d.upload_timestamp,
+        path: d.storage_path || d.path || "",
+        tipo: d.tipo || d.tipo_documento || "",
+        categoria: d.categoria || d.apartado || "",
+        public: d.public ?? d.publico ?? false,
+      }));
+      setFiles(normalized);
     } catch (error) {
       console.error(error);
       setFiles([]);

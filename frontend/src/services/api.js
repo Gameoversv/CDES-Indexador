@@ -159,7 +159,7 @@ export const documentsAPI = {
     }),
 
   // Obtener metadatos por ID
-  getDocument: (id) => api.get(`/documents/${id}`),
+  getDocument: (id) => api.get("/documents/info", { params: { file_id: id } }),
 
   // Listar todos los documentos
   list: () => api.get("/documents/list"),
@@ -191,7 +191,7 @@ export const documentsAPI = {
     // Fallback final: /documents/list y buscar coincidencia
     try {
       const list = await api.get("/documents/list");
-      const items = list?.data?.data || list?.data || [];
+      const items = list?.data?.files || list?.data?.data || list?.data || [];
       if (Array.isArray(items)) {
         const found =
           items.find((x) => x.storage_path === storagePathOrPath) ||
@@ -336,10 +336,28 @@ export const libraryAPI = {
       }),
 
   // Búsqueda en documentos públicos con Meilisearch
-  search: (query, limit = 20, offset = 0) =>
-    api.get("/documents/public", {
-      params: { q: query, limit, offset },
-    }),
+  search: async (query, limit = 20, offset = 0) => {
+    try {
+      const res = await api.get("/documents/public", {
+        params: { q: query, limit, offset },
+      });
+      const data = res?.data || {};
+      // Si Meilisearch no está disponible o la respuesta indica error, fallback
+      if (data?.meilisearch_available === false || data?.source === "error") {
+        const local = await api.get(`/documents/public-local`, {
+          params: { q: query, limit, offset },
+        });
+        return local;
+      }
+      return res;
+    } catch (err) {
+      // Fallback a fuente local
+      const local = await api.get(`/documents/public-local`, {
+        params: { q: query, limit, offset },
+      });
+      return local;
+    }
+  },
 
   // Subir documento (reutiliza la misma función)
   upload: (formData) => documentsAPI.upload(formData),
