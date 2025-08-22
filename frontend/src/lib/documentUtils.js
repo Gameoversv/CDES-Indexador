@@ -152,3 +152,18 @@ export function getFileDisplayName(file) {
   
   return file.filename;
 }
+
+// Devuelve clases Tailwind para pintar el badge por extensión
+export const getFileTypeColor = (filename = "") => {
+  const ext = filename.split(".").pop()?.toLowerCase();
+  switch (ext) {
+    case "pdf":  return "bg-red-100 text-red-700 border border-gray-300";
+    case "doc":
+    case "docx": return "bg-blue-100 text-blue-700 border border-gray-300";
+    case "xls":
+    case "xlsx": return "bg-green-100 text-green-700 border border-gray-300";
+    case "ppt":
+    case "pptx": return "bg-orange-100 text-orange-700 border border-gray-300";
+    default:     return "bg-gray-100 text-gray-700 border border-gray-300";
+  }
+};

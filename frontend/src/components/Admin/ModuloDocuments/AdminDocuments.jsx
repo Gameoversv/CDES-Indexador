@@ -22,11 +22,11 @@ export default function AdminDocuments() {
   const [dateRange, setDateRange] = useState({ from: null, to: null });
   const [sortBy, setSortBy] = useState("updated");
   const [sortOrder, setSortOrder] = useState("desc");
+
   const [previewFile, setPreviewFile] = useState(null);
-  const [confirmDelete, setConfirmDelete] = useState({
-    open: false,
-    file: null,
-  });
+  const [previewOpen, setPreviewOpen] = useState(false);
+
+  const [confirmDelete, setConfirmDelete] = useState({ open: false, file: null });
   const [viewMode, setViewMode] = useState("list");
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -94,10 +94,8 @@ export default function AdminDocuments() {
   };
 
   const sortedFiles = useMemo(() => {
-    // First sort the files
     const sorted = [...files].sort((a, b) => {
-      let valA = a[sortBy],
-        valB = b[sortBy];
+      let valA = a[sortBy], valB = b[sortBy];
       if (sortBy === "updated") {
         valA = new Date(valA || 0);
         valB = new Date(valB || 0);
@@ -112,20 +110,15 @@ export default function AdminDocuments() {
       if (valA > valB) return sortOrder === "asc" ? 1 : -1;
       return 0;
     });
-    
-    // Then group versioned files
     return groupVersionedDocuments(sorted);
   }, [files, sortBy, sortOrder]);
 
   const filteredFiles = useMemo(() => {
     setCurrentPage(1);
     return sortedFiles.filter((f) => {
-      const matchesSearch = (f.filename || "")
-        .toLowerCase()
-        .includes(search.toLowerCase());
+      const matchesSearch = (f.filename || "").toLowerCase().includes(search.toLowerCase());
       const matchesTypeFilter =
-        typeFilter === "all" ||
-        (f.filename || "").toLowerCase().endsWith(`.${typeFilter}`);
+        typeFilter === "all" || (f.filename || "").toLowerCase().endsWith(`.${typeFilter}`);
       const matchesContentType =
         typeContent === "all" || (f.tipo || "").toLowerCase() === typeContent;
       const updatedAt = new Date(f.updated);
@@ -133,9 +126,7 @@ export default function AdminDocuments() {
         (!dateRange.from || updatedAt >= new Date(dateRange.from)) &&
         (!dateRange.to || updatedAt <= new Date(dateRange.to));
 
-      return (
-        matchesSearch && matchesTypeFilter && matchesContentType && inDateRange
-      );
+      return matchesSearch && matchesTypeFilter && matchesContentType && inDateRange;
     });
   }, [sortedFiles, search, typeFilter, typeContent, dateRange]);
 
@@ -151,9 +142,7 @@ export default function AdminDocuments() {
   const stats = {
     total: files.length,
     totalSize: formatSize(files.reduce((acc, f) => acc + (f.size || 0), 0)),
-    filteredCount: files.filter((f) =>
-      f.filename?.toLowerCase().endsWith(`.${statType}`)
-    ).length,
+    filteredCount: files.filter((f) => f.filename?.toLowerCase().endsWith(`.${statType}`)).length,
   };
 
   const handleDownload = async (path, filename) => {
@@ -183,12 +172,21 @@ export default function AdminDocuments() {
     }
   };
 
+  // ✅ helper para abrir/cerrar la vista previa
+  const openPreview = (f) => {
+    setPreviewFile(f);
+    setPreviewOpen(true);
+  };
+
+  const closePreview = () => {
+    setPreviewOpen(false);
+    setPreviewFile(null);
+  };
+
   return (
     <AdminLayout>
       <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-bold text-gray-900">
-          Gestión de Documentos
-        </h2>
+        <h2 className="text-2xl font-bold text-gray-900">Gestión de Documentos</h2>
         <UploadDocumentDialog
           open={uploadModalOpen}
           setOpen={setUploadModalOpen}
@@ -222,9 +220,7 @@ export default function AdminDocuments() {
           <Loader2 className="w-6 h-6 animate-spin" />
         </div>
       ) : filteredFiles.length === 0 ? (
-        <p className="text-center text-gray-500 py-10">
-          No hay documentos para mostrar.
-        </p>
+        <p className="text-center text-gray-500 py-10">No hay documentos para mostrar.</p>
       ) : (
         <div className="border rounded-lg overflow-hidden">
           {viewMode === "list" ? (
@@ -232,7 +228,7 @@ export default function AdminDocuments() {
               files={paginatedFiles}
               handleSort={handleSort}
               sortBy={sortBy}
-              setPreviewFile={setPreviewFile}
+              setPreviewFile={openPreview}      
               setConfirmDelete={setConfirmDelete}
               handleDownload={handleDownload}
               formatSize={formatSize}
@@ -244,7 +240,7 @@ export default function AdminDocuments() {
               formatDate={formatDate}
               formatSize={formatSize}
               handleDownload={handleDownload}
-              setPreviewFile={setPreviewFile}
+              setPreviewFile={openPreview}      
               setConfirmDelete={setConfirmDelete}
             />
           )}
@@ -258,9 +254,11 @@ export default function AdminDocuments() {
         </div>
       )}
 
+      {/* ✅ Dialog controlado */}
       <PreviewFileDialog
+        open={previewOpen}
         file={previewFile}
-        onClose={() => setPreviewFile(null)}
+        onClose={closePreview}
         handleDownload={handleDownload}
         formatSize={formatSize}
         formatDate={formatDate}

@@ -1,50 +1,344 @@
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { FileText } from "lucide-react";
+import React, { useEffect, useMemo, useState } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { getFileTypeColor } from "@/components/utils/fileUtils"; // ✅ nuevo import
+import { Button } from "@/components/ui/button";
+import {
+  Download,
+  Copy,
+  FileText,
+  FileSpreadsheet,
+  FileBarChart,
+  File,
+} from "lucide-react";
 
-export default function PreviewFileDialog({ file, onClose, handleDownload, formatSize, formatDate }) {
+// Import seguro: si el módulo no expone getFileTypeColor, usamos un fallback local
+import * as docUtils from "@/lib/documentUtils";
+import { documentsAPI } from "@/services/api";
+
+// -------------------- helpers --------------------
+const getExt = (name = "") => name.split(".").pop()?.toUpperCase() || "FILE";
+const stripExt = (s = "") => s.replace(/\.[^.]+$/, "");
+const pickFirst = (...vals) =>
+  vals.find((v) => v !== undefined && v !== null && v !== "") ?? "";
+
+const getFileIcon = (filename = "") => {
+  const ext = filename.split(".").pop()?.toLowerCase();
+  switch (ext) {
+    case "pdf":
+      return <FileText className="h-5 w-5 text-red-600" />;
+    case "doc":
+    case "docx":
+      return <FileText className="h-5 w-5 text-blue-600" />;
+    case "xls":
+    case "xlsx":
+      return <FileSpreadsheet className="h-5 w-5 text-green-600" />;
+    case "ppt":
+    case "pptx":
+      return <FileBarChart className="h-5 w-5 text-orange-600" />;
+    default:
+      return <File className="h-5 w-5 text-gray-600" />;
+  }
+};
+
+// Fallback local si no existe en documentUtils
+const localGetFileTypeColor = (filename = "") => {
+  const ext = filename.split(".").pop()?.toLowerCase();
+  switch (ext) {
+    case "pdf":
+      return "bg-red-100 text-red-700 border border-gray-300";
+    case "doc":
+    case "docx":
+      return "bg-blue-100 text-blue-700 border border-gray-300";
+    case "xls":
+    case "xlsx":
+      return "bg-green-100 text-green-700 border border-gray-300";
+    case "ppt":
+    case "pptx":
+      return "bg-orange-100 text-orange-700 border border-gray-300";
+    default:
+      return "bg-gray-100 text-gray-700 border border-gray-300";
+  }
+};
+const getFileTypeColor =
+  typeof docUtils.getFileTypeColor === "function"
+    ? docUtils.getFileTypeColor
+    : localGetFileTypeColor;
+
+// -------------------- componente --------------------
+export default function PreviewFileDialog({
+  file,
+  onClose,
+  handleDownload,
+  formatSize,
+  formatDate,
+}) {
+  const [meta, setMeta] = useState(null);
+  const [loadingMeta, setLoadingMeta] = useState(false);
+
+  // Ruta base conocida
+  const rutaBase = useMemo(
+    () =>
+      pickFirst(
+        file?.storage_path,
+        file?.path,
+        file?.meta?.storage_path,
+        file?.details?.storage_path
+      ),
+    [file]
+  );
+
+  // Nombre a mostrar
+  const nombreArchivo = useMemo(
+    () =>
+      pickFirst(
+        meta?.filename,
+        file?.filename,
+        file?.original_filename,
+        file?.name,
+        "-"
+      ),
+    [meta, file]
+  );
+
+  // Enriquecer metadatos si faltan (título/resumen/categoría)
+  useEffect(() => {
+    let canceled = false;
+    setMeta(null);
+
+    if (!file) return;
+
+    const needTitle =
+      !file?.title && !file?.meta?.title && !file?.details?.title;
+    const needSummary =
+      !file?.summary && !file?.meta?.summary && !file?.details?.summary;
+    const needCategoria =
+      !file?.categoria &&
+      !file?.tipo &&
+      !file?.tipo_documento &&
+      !file?.meta?.tipo_documento &&
+      !file?.details?.tipo;
+
+    if (!needTitle && !needSummary && !needCategoria) return;
+
+    (async () => {
+      setLoadingMeta(true);
+      try {
+        // 1) Intento por ruta exacta
+        if (rutaBase) {
+          try {
+            const resp = await documentsAPI.getMetaByPath(rutaBase);
+            const payload =
+              resp?.data?.data || resp?.data?.document || resp?.data || null;
+            if (!canceled && payload && typeof payload === "object") {
+              setMeta(payload);
+              setLoadingMeta(false);
+              return;
+            }
+          } catch {
+            /* seguir con fallback */
+          }
+        }
+
+        // 2) Búsqueda por nombre (sin extensión)
+        const baseName = stripExt(nombreArchivo || file?.filename || "");
+        if (baseName) {
+          try {
+            const resp = await documentsAPI.search(baseName);
+            const hits =
+              resp?.data?.hits || resp?.data?.data || resp?.data || [];
+            if (Array.isArray(hits) && hits.length) {
+              const match =
+                hits.find(
+                  (h) =>
+                    (rutaBase && h.storage_path === rutaBase) ||
+                    h.filename === file?.filename
+                ) || hits[0];
+              if (!canceled && match) {
+                setMeta(match);
+                setLoadingMeta(false);
+                return;
+              }
+            }
+          } catch {
+            /* seguir con último fallback */
+          }
+        }
+
+        // 3) Intento por id (si existiera)
+        const anyId =
+          file?.id || file?.file_id || stripExt(file?.filename || "");
+        if (anyId) {
+          try {
+            const resp = await documentsAPI.getDocument(anyId);
+            const payload = resp?.data?.data || resp?.data || null;
+            if (!canceled && payload) {
+              setMeta(payload);
+              setLoadingMeta(false);
+              return;
+            }
+          } catch {
+            /* noop */
+          }
+        }
+      } finally {
+        if (!canceled) setLoadingMeta(false);
+      }
+    })();
+
+    return () => {
+      canceled = true;
+    };
+  }, [file, rutaBase, nombreArchivo]);
+
+  if (!file) return null;
+
+  // ------ campos mostrados (meta -> file) ------
+  const titulo = pickFirst(
+    meta?.title,
+    file?.title,
+    file?.meta?.title,
+    file?.details?.title,
+    "Título no encontrado"
+  );
+
+  const bytes = pickFirst(
+    meta?.file_size_bytes,
+    file?.size,
+    file?.file_size_bytes,
+    0
+  );
+  const tamano = formatSize?.(bytes) ?? `${bytes} B`;
+
+  const categoria = pickFirst(
+    meta?.categoria,
+    meta?.tipo,
+    meta?.tipo_documento,
+    file?.categoria,
+    file?.tipo,
+    file?.tipo_documento,
+    file?.meta?.tipo_documento,
+    file?.details?.tipo,
+    getExt(nombreArchivo) // fallback
+  );
+
+  const formato = getExt(nombreArchivo);
+
+  const resumen = pickFirst(
+    meta?.summary,
+    file?.summary,
+    file?.meta?.summary,
+    file?.details?.summary,
+    "Resumen no disponible"
+  );
+
+  const ruta = pickFirst(meta?.storage_path, rutaBase, "-");
+
+  const updatedISO = pickFirst(
+    meta?.updated_at,
+    meta?.upload_timestamp,
+    meta?.processing_timestamp,
+    file?.updated,
+    file?.upload_timestamp,
+    file?.processing_timestamp
+  );
+  const updatedAt = updatedISO ? (formatDate?.(updatedISO) ?? updatedISO) : null;
+
+  const copyPath = async () => {
+    try {
+      await navigator.clipboard.writeText(ruta);
+    } catch {
+      /* noop */
+    }
+  };
+
   return (
-    <Dialog open={!!file} onOpenChange={onClose}>
-      <DialogContent className="rounded-xl bg-white border border-gray-300">
+    <Dialog open={!!file} onOpenChange={(isOpen) => { if (!isOpen) onClose?.(); }}>
+      <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-gray-900">
-            <FileText className="h-5 w-5" />
-            Detalle del Documento
+          <DialogTitle className="flex items-center gap-2">
+            {getFileIcon(nombreArchivo)}
+            Detalles del documento
+            <Badge
+              variant="secondary"
+              className={`${getFileTypeColor(nombreArchivo)} rounded-full ml-2 px-2`}
+            >
+              {formato}
+            </Badge>
           </DialogTitle>
+          {updatedAt && (
+            <DialogDescription>
+              Última modificación: {updatedAt}
+            </DialogDescription>
+          )}
         </DialogHeader>
-        <div className="space-y-4">
+
+        <div className="space-y-5">
+          {/* Metadatos principales */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <p className="text-sm text-gray-700">Nombre</p>
-              <p className="font-medium text-gray-900">{file?.filename}</p>
+              <label className="text-sm font-medium">Nombre del archivo</label>
+              <p className="text-sm text-gray-900 break-all">{nombreArchivo}</p>
             </div>
+
             <div>
-              <p className="text-sm text-gray-700">Tamaño</p>
-              <p className="font-medium text-gray-900">{formatSize(file?.size)}</p>
+              <label className="text-sm font-medium">Título del documento</label>
+              <p className="text-sm text-gray-900 break-words">
+                {loadingMeta ? "Cargando…" : titulo}
+              </p>
             </div>
+
             <div>
-              <p className="text-sm text-gray-700">Tipo</p>
-              <Badge variant="secondary" className={getFileTypeColor(file?.filename)}>
-                {file?.filename?.split('.').pop()?.toUpperCase() || "FILE"}
-              </Badge>
+              <label className="text-sm font-medium">Tamaño</label>
+              <p className="text-sm text-gray-900">{tamano}</p>
             </div>
+
             <div>
-              <p className="text-sm text-gray-700">Última modificación</p>
-              <p className="font-medium text-gray-900">{formatDate(file?.updated)}</p>
+              <label className="text-sm font-medium">Tipo/Categoría</label>
+              <p className="text-sm text-gray-900">{categoria}</p>
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="text-sm font-medium">Resumen</label>
+              <p className="text-sm text-gray-700 whitespace-pre-wrap">
+                {loadingMeta ? "Cargando…" : resumen}
+              </p>
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="text-sm font-medium">Ruta del Archivo</label>
+              <div className="flex items-center gap-2">
+                <p className="text-sm text-gray-900 break-all flex-1">{ruta}</p>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="rounded-full"
+                  onClick={copyPath}
+                  title="Copiar ruta"
+                >
+                  <Copy className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
           </div>
-          <div>
-            <p className="text-sm text-gray-700">Ruta del archivo</p>
-            <p className="font-mono text-sm bg-gray-100 p-2 rounded break-all text-gray-900 border border-gray-300">
-              {file?.path}
-            </p>
-          </div>
-          <div className="flex justify-end gap-3 pt-4">
-            <Button variant="outline" onClick={onClose} className="border border-gray-300 text-gray-900">Cerrar</Button>
-            <Button onClick={() => handleDownload(file?.path, file?.filename)} className="text-white" style={{ backgroundColor: "#ef4444" }}>
-              Descargar documento
+
+          {/* Acciones */}
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={onClose}>
+              Cerrar
+            </Button>
+            <Button
+              variant="destructive"
+              className="rounded-full px-5"
+              onClick={() => handleDownload?.(ruta, nombreArchivo)}
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Descargar
             </Button>
           </div>
         </div>

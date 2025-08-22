@@ -143,8 +143,8 @@ export const documentsAPI = {
       params: { path },
     }),
 
-  // Búsqueda
-  search: (query) => api.get("/documents/search", { params: { query } }),
+  // ✅ Búsqueda (el backend espera `q`, no `query`)
+  search: (q) => api.get("/documents/search", { params: { q } }),
 
   // Descargar por ID
   download: (id) =>
@@ -152,11 +152,57 @@ export const documentsAPI = {
       responseType: "blob",
     }),
 
-  // Obtener metadatos de documento
+  // Obtener metadatos por ID
   getDocument: (id) => api.get(`/documents/${id}`),
 
   // Listar todos los documentos
   list: () => api.get("/documents/list"),
+
+  /**
+   * 🔎 Obtener metadatos por storage_path/path (para el Preview)
+   * Intenta varios endpoints por si el backend tiene otra ruta.
+   * Si no existen, hace fallback a /documents/list y devuelve { data: found }.
+   */
+  getMetaByPath: async (storagePathOrPath) => {
+    const tries = [
+      { url: "/documents/info",        params: { storage_path: storagePathOrPath } },
+      { url: "/documents/by-path",     params: { storage_path: storagePathOrPath } },
+      { url: "/documents/metadata",    params: { storage_path: storagePathOrPath } },
+      { url: "/documents/info",        params: { path: storagePathOrPath } },
+      { url: "/documents/by-path",     params: { path: storagePathOrPath } },
+      { url: "/documents/metadata",    params: { path: storagePathOrPath } },
+    ];
+
+    // Intentos directos (devuelven la respuesta axios)
+    for (const t of tries) {
+      try {
+        return await api.get(t.url, { params: t.params });
+      } catch {
+        // continuar probando
+      }
+    }
+
+    // Fallback final: /documents/list y buscar coincidencia
+    try {
+      const list = await api.get("/documents/list");
+      const items = list?.data?.data || list?.data || [];
+      if (Array.isArray(items)) {
+        const found =
+          items.find((x) => x.storage_path === storagePathOrPath) ||
+          items.find((x) => x.path === storagePathOrPath) ||
+          null;
+        if (found) {
+          // normalizamos para que el consumidor use resp.data...
+          return { data: found };
+        }
+      }
+    } catch {
+      // ignorar
+    }
+
+    // Si nada funcionó, lanzamos un error genérico
+    throw new Error("No se encontraron metadatos para la ruta especificada.");
+  },
 };
 
 // ===============================
@@ -189,7 +235,7 @@ export const auditAPI = {
       event_type: String(event_type || "").toUpperCase(),
       details: {
         ...details,
-        timestamp_iso: new Date().toISOString(), // evita colisión con 'timestamp' del server
+        timestamp_iso: new Date().toISOString(),
         user_agent: navigator.userAgent,
         source: "frontend",
       },
@@ -198,8 +244,6 @@ export const auditAPI = {
 
   /**
    * Obtiene logs con filtros
-   * params UI: { limit, offset, eventType, userId, severity, source, dateRange, start_date, end_date }
-   * backend:   { limit, offset, event_type, user_id, severity, source, start_date, end_date }
    */
   getLogs: (params = {}) => {
     const {
@@ -276,9 +320,7 @@ export const libraryAPI = {
   list: (limit = 20, offset = 0) =>
     api
       .get(`/documents/public?limit=${limit}&offset=${offset}`)
-      .then((res) => {
-        return res.data?.hits || [];
-      })
+      .then((res) => res.data?.hits || [])
       .catch((error) => {
         console.error("Error cargando documentos públicos:", error);
         // Intentar con endpoint local si falla
@@ -290,11 +332,7 @@ export const libraryAPI = {
   // Búsqueda en documentos públicos con Meilisearch
   search: (query, limit = 20, offset = 0) =>
     api.get("/documents/public", {
-      params: {
-        q: query,
-        limit,
-        offset,
-      },
+      params: { q: query, limit, offset },
     }),
 
   // Subir documento (reutiliza la misma función)
@@ -310,5 +348,4 @@ export const libraryAPI = {
   deleteDocument: (id) => api.delete(`/documents/${id}`),
 };
 
-// Export default
 export default api;
