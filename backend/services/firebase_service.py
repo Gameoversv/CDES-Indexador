@@ -298,6 +298,7 @@ def list_files_in_storage(prefix: str = "") -> List[Dict[str, Any]]:
         bucket = get_storage_bucket()
         files: List[Dict[str, Any]] = []
 
+        # Lista todos los blobs que comienzan con el prefijo dado
         for blob in bucket.list_blobs(prefix=prefix):
             is_folder = blob.name.endswith("/")
             files.append({
@@ -308,6 +309,34 @@ def list_files_in_storage(prefix: str = "") -> List[Dict[str, Any]]:
                 "content_type": (blob.content_type or ("application/x-directory" if is_folder else "application/octet-stream")),
                 "is_folder": is_folder,
             })
+
+        # Para carpetas profundamente anidadas, necesitamos asegurarnos de que se incluyan todos los marcadores de carpeta intermedios
+        # Extraer todos los directorios padres de las rutas de archivos para crear marcadores de carpeta
+        folder_markers = set()
+        for file_info in files:
+            path = file_info.get("path", "")
+            if not path:
+                continue
+                
+            # Generar todos los marcadores de carpeta intermedios
+            parts = path.split('/')
+            for i in range(1, len(parts)):
+                folder_path = '/'.join(parts[:i]) + '/'
+                if folder_path.startswith(prefix) and folder_path not in folder_markers:
+                    folder_markers.add(folder_path)
+        
+        # Agregar marcadores de carpeta para todas las carpetas intermedias que no existen explícitamente
+        for folder_path in folder_markers:
+            if not any(f.get("path") == folder_path for f in files):
+                folder_name = os.path.basename(folder_path.rstrip("/")) or folder_path.rstrip("/")
+                files.append({
+                    "path": folder_path,
+                    "filename": folder_name,
+                    "size": 0,
+                    "updated": None,
+                    "content_type": "application/x-directory",
+                    "is_folder": True,
+                })
 
         return files
     except Exception as e:
@@ -342,6 +371,92 @@ def delete_file_from_storage(blob_path: str) -> None:
         blob.delete()
     except Exception as e:
         raise Exception(f"Error eliminando archivo: {e}")
+
+def get_documents_by_storage_path(storage_path: str) -> List[Dict[str, Any]]:
+    """
+    Busca documentos en Firestore que tengan un determinado storage_path.
+    
+    Args:
+        storage_path: Ruta del archivo en Firebase Storage
+        
+    Returns:
+        Lista de documentos encontrados con ese storage_path
+    """
+    try:
+        db = get_firestore_client()
+        # Buscar documentos que tengan este storage_path
+        docs = db.collection("documents").where("storage_path", "==", storage_path).stream()
+        
+        results = []
+        for doc in docs:
+            data = doc.to_dict()
+            data["id"] = doc.id
+            results.append(data)
+            
+        return results
+    except Exception as e:
+        print(f"Error buscando documentos por storage_path: {e}")
+        return []
+
+def delete_document_from_firestore(doc_id: str) -> bool:
+    """
+    Elimina un documento de Firestore por su ID.
+    
+    Args:
+        doc_id: ID del documento en Firestore
+        
+    Returns:
+        True si la eliminación fue exitosa, False en caso contrario
+    """
+    try:
+        db = get_firestore_client()
+        db.collection("documents").document(doc_id).delete()
+        return True
+    except Exception as e:
+        print(f"Error eliminando documento de Firestore: {e}")
+        return False
+
+def delete_folder_from_storage(folder_path: str) -> Dict[str, Any]:
+    """
+    Elimina una carpeta y todo su contenido de Firebase Storage.
+    
+    Args:
+        folder_path: Ruta de la carpeta, debe terminar con '/'
+        
+    Returns:
+        Dict con información sobre la eliminación:
+        - deleted_count: Número de archivos eliminados
+        
+    Raises:
+        FileNotFoundError: Si la carpeta no existe
+        Exception: Si hay errores durante la eliminación
+    """
+    if not folder_path.endswith('/'):
+        folder_path = folder_path + '/'
+    
+    try:
+        bucket = get_storage_bucket()
+        blobs = list(bucket.list_blobs(prefix=folder_path))
+        
+        if not blobs:
+            # Verificar si la carpeta existe como un blob marcador
+            marker_blob = bucket.blob(folder_path)
+            if marker_blob.exists():
+                marker_blob.delete()
+                return {"deleted_count": 1}
+            else:
+                raise FileNotFoundError(f"Carpeta no encontrada: {folder_path}")
+        
+        deleted_count = 0
+        for blob in blobs:
+            blob.delete()
+            deleted_count += 1
+            
+        return {"deleted_count": deleted_count}
+    except Exception as e:
+        if "not found" in str(e).lower():
+            raise FileNotFoundError(f"Carpeta no encontrada: {folder_path}")
+        raise Exception(f"Error eliminando carpeta: {e}")
 
 async def create_admin_user(email: str, password: str) -> Dict[str, Any]:
     try:

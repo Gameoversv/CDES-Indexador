@@ -38,6 +38,7 @@ INDEX_CONFIG = {
         "uploader_id",
         "categoria",
         "user_role",
+        "puesto_trabajo",
         "estrategia"
     ],
     "sortableAttributes": [
@@ -73,7 +74,10 @@ INDEX_CONFIG = {
         "uploader_email",
         "categoria",
         "user_role",
-        "estrategia"
+        "puesto_trabajo",
+        "estrategia",
+        "proyecto",
+        "cover_image_path"
     ]
 }
 

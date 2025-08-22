@@ -137,6 +137,12 @@ export const documentsAPI = {
       timeout: UPLOAD_TIMEOUT,
     }),
 
+  // Eliminar por ruta en Storage
+  deleteStorageItem: (path) =>
+    api.delete("/documents/storage/delete", {
+      params: { path },
+    }),
+
   // Eliminar por ruta
   deleteByPath: (path) =>
     api.delete("/documents/delete_by_path", {

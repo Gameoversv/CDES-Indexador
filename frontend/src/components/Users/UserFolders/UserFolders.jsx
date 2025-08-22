@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import {
   Folder, FolderOpen, FileText, ChevronRight, ChevronDown, Home,
   Search, Loader2, Plus, Upload, List, Grid3X3, Filter, ChevronDown as CD, RefreshCw,
-  Download
+  Download, Trash2
 } from "lucide-react";
 import TreeNode from "./TreeNode";
 import { useAuth } from "@/contexts/AuthContext";
@@ -67,6 +67,13 @@ export default function UserFolders() {
   
   // Determinar si el usuario puede crear carpetas/subir documentos
   const canCreateOrUpload = useMemo(() => {
+    if (isAdmin) return true;
+    if (userRole === "Dirección ejecutiva") return true;
+    return false;
+  }, [isAdmin, userRole]);
+  
+  // Determinar si el usuario puede eliminar carpetas/archivos
+  const canDelete = useMemo(() => {
     if (isAdmin) return true;
     if (userRole === "Dirección ejecutiva") return true;
     return false;
@@ -213,6 +220,14 @@ export default function UserFolders() {
     };
     
     searchNode(treeData);
+    
+    // Si no encontramos el nodo y el árbol está disponible,
+    // podríamos tener un problema con carpetas muy anidadas
+    if (!result && treeData && treeData.length > 0 && normalizedPath.includes('/')) {
+      console.log('No se encontró el nodo para la ruta profunda:', normalizedPath);
+      // Para carpetas profundas, podríamos necesitar hacer una solicitud específica
+    }
+    
     return result;
   }, []);
 
@@ -254,6 +269,7 @@ export default function UserFolders() {
         folderNode = findNodeByPath(treeData, path);
       }
       
+      // Si encontramos el nodo en el árbol y tiene hijos, usamos esos datos
       if (folderNode && folderNode.children) {
         // Separar carpetas y archivos
         const childFolders = folderNode.children.filter(node => node.type === 'folder');
@@ -273,9 +289,80 @@ export default function UserFolders() {
           updated: f.updated,
         })));
       } else {
-        // Si no encontramos la carpeta, limpiar
-        setFolders([]);
-        setFiles([]);
+        // MEJORA: Si no encontramos la carpeta en el árbol, intentamos hacer una petición
+        // directa al backend para este path específico
+        console.log('Carpeta no encontrada en el árbol actual, solicitando datos específicos para:', path);
+        
+        try {
+          // Vamos a solicitar un árbol completo y filtrar por el prefijo de path
+          const response = await documentsAPI.getStorageTree();
+          const fullTreeData = response.data || [];
+          
+          // Buscar en el árbol completo por cualquier elemento que comience con este path
+          const childFiles = [];
+          const childFolders = [];
+          
+          // Función para encontrar elementos que empiecen con path
+          const collectChildrenByPrefix = (nodes, targetPrefix) => {
+            const normalizedPrefix = targetPrefix.endsWith('/') ? targetPrefix : targetPrefix + '/';
+            
+            const flattenTree = (nodes, results = []) => {
+              for (const node of nodes) {
+                results.push(node);
+                if (node.children && node.children.length > 0) {
+                  flattenTree(node.children, results);
+                }
+              }
+              return results;
+            };
+            
+            // Obtener todos los nodos en un array plano
+            const allNodes = flattenTree(nodes);
+            
+            // Filtrar por aquellos que son hijos directos del path buscado
+            return allNodes.filter(node => {
+              const nodePath = node.path || '';
+              // Si es un hijo directo, estará dentro del prefijo y no tendrá otros '/' después del prefijo
+              if (nodePath.startsWith(normalizedPrefix)) {
+                const relativePath = nodePath.substring(normalizedPrefix.length);
+                // No debe tener '/' adicionales (o solo al final si es carpeta)
+                return !relativePath.includes('/') || (relativePath.endsWith('/') && relativePath.indexOf('/') === relativePath.length - 1);
+              }
+              return false;
+            });
+          };
+          
+          const directChildren = collectChildrenByPrefix(fullTreeData, path);
+          
+          for (const node of directChildren) {
+            if (node.type === 'folder') {
+              childFolders.push({
+                name: node.name,
+                path: node.path,
+                count: node.children?.length || 0,
+              });
+            } else if (node.type === 'file') {
+              childFiles.push({
+                name: node.name,
+                path: node.path,
+                contentType: node.contentType || '',
+                size: node.size || 0,
+                updated: node.updated,
+              });
+            }
+          }
+          
+          setFolders(childFolders);
+          setFiles(childFiles);
+          
+          console.log(`Encontrados ${childFolders.length} carpetas y ${childFiles.length} archivos para: ${path}`);
+          
+        } catch (innerError) {
+          console.error('Error obteniendo datos específicos para la carpeta:', innerError);
+          // Si falla, dejamos vacío (comportamiento original)
+          setFolders([]);
+          setFiles([]);
+        }
       }
       
       setBreadcrumbs(buildBreadcrumbs(path));
@@ -310,8 +397,56 @@ export default function UserFolders() {
           }))
         }));
       } else {
-        // Si no hay hijos, establecer array vacío
-        setSidebarChildren(prev => ({ ...prev, [path]: [] }));
+        // MEJORA: Si no encontramos el nodo, buscamos elementos que sean hijos directos de este path
+        console.log('Buscando hijos directos para carpeta no encontrada en árbol:', path);
+        
+        const normalizedPath = path.endsWith('/') ? path : path + '/';
+        
+        // Función para encontrar carpetas que son hijos directos del path buscado
+        const findDirectChildFolders = (nodes, parentPath) => {
+          const result = [];
+          
+          const flattenTree = (nodes, results = []) => {
+            for (const node of nodes) {
+              results.push(node);
+              if (node.children && node.children.length > 0) {
+                flattenTree(node.children, results);
+              }
+            }
+            return results;
+          };
+          
+          // Obtener todos los nodos en un array plano
+          const allNodes = flattenTree(nodes);
+          
+          // Filtrar por aquellos que son carpetas y son hijos directos del path buscado
+          return allNodes.filter(node => {
+            const nodePath = node.path || '';
+            if (node.type === 'folder' && nodePath.startsWith(parentPath)) {
+              const relativePath = nodePath.substring(parentPath.length);
+              // No debe tener '/' adicionales (o solo al final)
+              return !relativePath.includes('/') || (relativePath.endsWith('/') && relativePath.indexOf('/') === relativePath.length - 1);
+            }
+            return false;
+          });
+        };
+        
+        const directChildFolders = findDirectChildFolders(treeData, normalizedPath);
+        
+        if (directChildFolders.length > 0) {
+          console.log(`Encontrados ${directChildFolders.length} hijos directos para: ${path}`);
+          setSidebarChildren(prev => ({ 
+            ...prev, 
+            [path]: directChildFolders.map(f => ({
+              name: f.name,
+              path: f.path,
+              count: f.children?.length || 0,
+            }))
+          }));
+        } else {
+          // Si no hay hijos, establecer array vacío
+          setSidebarChildren(prev => ({ ...prev, [path]: [] }));
+        }
       }
     } catch (e) {
       console.error("Error cargando hijos de carpeta:", e);
@@ -333,8 +468,29 @@ export default function UserFolders() {
     setError(null);
     setLoading(true);
     try {
+      // Asegurarse de que todos los nodos padres están abiertos en el árbol
+      const parts = path.split('/').filter(Boolean);
+      let currentPath = '';
+      
+      // Abrir todos los nodos padres en la navegación
+      for (const part of parts) {
+        currentPath = currentPath ? `${currentPath}/${part}` : part;
+        setOpenMap(prev => ({ ...prev, [currentPath]: true }));
+        
+        // Asegurar que los hijos están cargados para cada nivel
+        try { 
+          await ensureChildrenLoaded(currentPath); 
+        } catch (e) { 
+          console.warn(`No se pudieron cargar los hijos para: ${currentPath}`, e); 
+        }
+      }
+      
+      // Cargar el contenido de la carpeta destino después de asegurar
+      // que la estructura del árbol esté cargada
       await loadFolderContent(path);
+      
     } catch (e) {
+      console.error("Error al navegar a la carpeta:", e);
       setError("No se pudo cargar el contenido de la carpeta.");
     } finally {
       setLoading(false);
@@ -414,6 +570,32 @@ export default function UserFolders() {
       setError('No fue posible descargar el archivo.');
     }
   }, []);
+  
+  // Función para eliminar carpetas/archivos
+  const handleDelete = useCallback(async (path, name, isFolder = path.endsWith('/')) => {
+    if (!canDelete) return;
+    
+    try {
+      setLoading(true);
+      await documentsAPI.deleteStorageItem(path);
+      
+      // Refrescar datos después de eliminar
+      await fetchTreeData();
+      
+      // Si estábamos en la carpeta eliminada, ir a su padre
+      if (selectedPath === path || selectedPath.startsWith(path)) {
+        const parentPath = path.split('/').slice(0, -2).join('/');
+        await onOpenPath(parentPath);
+      }
+      
+    } catch (e) {
+      console.error('Error al eliminar', e);
+      setError(`No fue posible eliminar ${isFolder ? 'la carpeta' : 'el archivo'}`);
+    } finally {
+      setLoading(false);
+    }
+  }, [canDelete, fetchTreeData, selectedPath]);
+  
   useEffect(() => {
     (async () => {
       setLoading(true);
@@ -543,6 +725,8 @@ export default function UserFolders() {
                       onOpenPath={onOpenPath}
                       ensureChildrenLoaded={ensureChildrenLoaded}
                       selectedPath={selectedPath}
+                      canDelete={canDelete}
+                      onDelete={handleDelete}
                     />
                   ))}
                 </div>
@@ -570,20 +754,34 @@ export default function UserFolders() {
                 <div className="p-3">
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                     {folders.map((f) => (
-                      <button
+                      <div
                         key={f.path}
-                        onClick={() => onOpenPath?.(f.path)}
-                        className={`flex items-center gap-2 p-2 rounded-md border border-gray-200 hover:bg-gray-50 text-left ${selectedPath === f.path ? "bg-gray-50" : ""}`}
+                        className={`flex items-center gap-2 p-2 rounded-md border border-gray-200 hover:bg-gray-50 ${selectedPath === f.path ? "bg-gray-50" : ""}`}
                         title={f.path}
                       >
-                        <Folder className="w-4 h-4 text-gray-800" />
-                        <div className="flex-1 min-w-0">
-                          <div className="text-sm font-medium truncate">{f.name}</div>
-                          <div className="text-[11px] text-gray-500 truncate">
-                            {typeof f.count === "number" ? `${f.count} ítems` : "Carpeta"}
+                        <button
+                          className="flex-1 flex items-center gap-2 text-left"
+                          onClick={() => onOpenPath?.(f.path)}
+                        >
+                          <Folder className="w-4 h-4 text-gray-800" />
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-medium truncate">{f.name}</div>
+                            <div className="text-[11px] text-gray-500 truncate">
+                              {typeof f.count === "number" ? `${f.count} ítems` : "Carpeta"}
+                            </div>
                           </div>
-                        </div>
-                      </button>
+                        </button>
+                        
+                        {canDelete && (
+                          <button 
+                            onClick={() => handleDelete(f.path, f.name, true)}
+                            className="text-gray-400 hover:text-red-500 p-1"
+                            title="Eliminar carpeta"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
                     ))}
                   </div>
                 </div>
@@ -613,13 +811,24 @@ export default function UserFolders() {
                         <div className="col-span-2 text-xs text-gray-600">{fmtSize(file.size)}</div>
                         <div className="col-span-2 text-xs text-gray-600 flex items-center justify-between">
                           <span>{file.updated ? new Date(file.updated).toLocaleString() : "--"}</span>
-                          <button 
-                            onClick={() => handleDownload(file.path, file.name)}
-                            className="text-blue-600 hover:text-blue-800"
-                            title="Descargar archivo"
-                          >
-                            <Download className="w-4 h-4" />
-                          </button>
+                          <div className="flex items-center space-x-1">
+                            <button 
+                              onClick={() => handleDownload(file.path, file.name)}
+                              className="text-blue-600 hover:text-blue-800"
+                              title="Descargar archivo"
+                            >
+                              <Download className="w-4 h-4" />
+                            </button>
+                            {canDelete && (
+                              <button 
+                                onClick={() => handleDelete(file.path, file.name, false)}
+                                className="text-gray-400 hover:text-red-500"
+                                title="Eliminar archivo"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
                     ))
@@ -643,13 +852,24 @@ export default function UserFolders() {
                             <div>{fmtSize(file.size)}</div>
                             <div className="flex items-center justify-between">
                               <span>{file.updated ? new Date(file.updated).toLocaleDateString() : "--"}</span>
-                              <button 
-                                onClick={() => handleDownload(file.path, file.name)}
-                                className="text-blue-600 hover:text-blue-800"
-                                title="Descargar archivo"
-                              >
-                                <Download className="w-4 h-4" />
-                              </button>
+                              <div className="flex items-center space-x-1">
+                                <button 
+                                  onClick={() => handleDownload(file.path, file.name)}
+                                  className="text-blue-600 hover:text-blue-800"
+                                  title="Descargar archivo"
+                                >
+                                  <Download className="w-4 h-4" />
+                                </button>
+                                {canDelete && (
+                                  <button 
+                                    onClick={() => handleDelete(file.path, file.name, false)}
+                                    className="text-gray-400 hover:text-red-500"
+                                    title="Eliminar archivo"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                )}
+                              </div>
                             </div>
                           </div>
                         </div>
