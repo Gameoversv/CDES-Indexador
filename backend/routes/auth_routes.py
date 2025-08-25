@@ -99,7 +99,7 @@ async def get_me(request: Request, token_data=Depends(verify_firebase_token)):
             # Quitar acentos y pasar a minúsculas
             return unicodedata.normalize("NFD", text).encode("ascii", "ignore").decode("utf-8").lower().strip()
 
-        is_admin_role = _norm(role) == "direccion ejecutiva"
+        is_admin_role = _norm(role) == "direccion ejecutiva" or _norm(role) == "direccionejecutiva"
         return {
             "user_id": uid,
             "email": token_data.get("email"),
@@ -153,6 +153,7 @@ async def get_current_admin_user(request: Request, token_data=Depends(verify_fir
         return unicodedata.normalize("NFD", text).encode("ascii", "ignore").decode("utf-8").lower().strip()
     is_admin = (
         _norm(role_value) == "direccionejecutiva"
+        or _norm(role_value) == "direccion ejecutiva"
         or token_data.get("admin") is True
         or token_data.get("custom_claims", {}).get("admin") is True
     )
@@ -173,7 +174,7 @@ async def get_current_admin_user(request: Request, token_data=Depends(verify_fir
                         break
                 if fs_user:
                     fs_role = fs_user.get("role")
-                    if _norm(fs_role) == "direccion ejecutiva":
+                    if _norm(fs_role) == "direccion ejecutiva" or _norm(fs_role) == "direccionejecutiva":
                         is_admin = True
                         token_data["role"] = fs_role  # enriquecer para la request actual
         except Exception:
