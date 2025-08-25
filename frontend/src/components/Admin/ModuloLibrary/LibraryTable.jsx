@@ -47,7 +47,7 @@ export default function LibraryTable({
             <th className="p-3 text-gray-900 font-semibold">Formato</th>
             <th className="p-3 text-gray-900 font-semibold">Apartado</th>
             <th className="p-3 cursor-pointer text-gray-900 font-semibold" onClick={() => handleSort("updated")}>
-              Fecha
+              Fecha de subida
               <ArrowUpDown className="inline h-3 w-3 ml-1" />
             </th>
             <th className="p-3 text-right text-gray-900 font-semibold">Acciones</th>

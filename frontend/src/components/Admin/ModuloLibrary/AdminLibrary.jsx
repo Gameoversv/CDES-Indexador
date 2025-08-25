@@ -32,7 +32,7 @@ export default function AdminLibrary() {
   const [dateRange, setDateRange] = useState({ from: null, to: null });
   const [selectedDoc, setSelectedDoc] = useState(null);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
-  const [sortBy, setSortBy] = useState({ field: "name", direction: "asc" });
+  const [sortBy, setSortBy] = useState({ field: "updated", direction: "desc" });
   const [statType, setStatType] = useState("pdf");
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
