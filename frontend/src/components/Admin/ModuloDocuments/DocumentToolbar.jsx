@@ -66,10 +66,10 @@ export default function DocumentToolbar({
   return (
     <div className="flex flex-wrap gap-4 items-end mb-6">
       <Input
-        placeholder="Buscar por nombre, contenido o palabras clave..."
+        placeholder="Buscar en nombre, título, resumen o palabras clave..."
         value={search}
         onChange={(e) => setSearch(e.target.value)}
-        className="w-[220px]"
+        className="w-[280px]"
       />
 
       {/* Tipo - Actualizado con los nuevos tipos */}

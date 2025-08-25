@@ -152,6 +152,36 @@ export const documentsAPI = {
   // ✅ Búsqueda (el backend espera `q`, no `query`)
   search: (q) => api.get("/documents/search", { params: { q } }),
 
+  // ✅ Búsqueda en metadatos específicos (filename, title, summary, keywords)
+  searchDocuments: async (query, limit = 20, offset = 0) => {
+    try {
+      if (!query || query.trim() === '') {
+        // Si no hay query, usar list() para obtener todos los documentos
+        return await api.get("/documents/list");
+      }
+      
+      // Usar el nuevo endpoint de búsqueda con filtros de rol
+      const response = await api.get("/documents/search-documents", { 
+        params: { 
+          q: query.trim(),
+          limit,
+          offset 
+        } 
+      });
+      
+      return response;
+    } catch (error) {
+      console.error("Error en búsqueda de documentos:", error);
+      // Fallback: si falla la búsqueda, obtener todos los documentos
+      try {
+        return await api.get("/documents/list");
+      } catch (fallbackError) {
+        console.error("Error en fallback de búsqueda:", fallbackError);
+        throw fallbackError;
+      }
+    }
+  },
+
   // Descargar por ID
   download: (id) =>
     api.get(`/documents/download/${id}`, {

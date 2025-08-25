@@ -23,6 +23,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useAuth } from "@/contexts/AuthContext";
+import { useDocumentSearch } from "@/hooks/useDocumentSearch";
 
 import UploadDocumentDialog from "@/components/Admin/ModuloDocuments/UploadDocumentDialog";
 import PreviewFileDialog from "@/components/Admin/ModuloDocuments/PreviewFileDialog";
@@ -54,10 +55,26 @@ export default function AdminDocuments() {
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(20);
 
+  // Hook de búsqueda
+  const {
+    searchQuery,
+    searchResults,
+    isSearching,
+    searchError,
+    setSearch: setSearchQuery,
+    clearSearch,
+    hasSearchQuery
+  } = useDocumentSearch();
+
   useEffect(() => {
     fetchFiles();
     getUserDepartment();
   }, []);
+
+  // Sincronizar el estado de búsqueda local con el hook de búsqueda
+  useEffect(() => {
+    setSearchQuery(search);
+  }, [search, setSearchQuery]);
 
   const { userRole } = useAuth();
 
@@ -139,6 +156,7 @@ export default function AdminDocuments() {
     setTypeContent("all");
     setDateRange({ from: null, to: null });
     setCurrentPage(1);
+    clearSearch(); // Limpiar también la búsqueda de Meilisearch
   };
 
   const formatSize = (bytes) => {
@@ -170,7 +188,10 @@ export default function AdminDocuments() {
   };
 
   const sortedFiles = useMemo(() => {
-    return [...files].sort((a, b) => {
+    // Usar los resultados de búsqueda si hay una búsqueda activa, sino usar los archivos cargados
+    const sourceFiles = hasSearchQuery ? searchResults : files;
+    
+    return [...sourceFiles].sort((a, b) => {
       let valA = a[sortBy];
       let valB = b[sortBy];
       
@@ -206,12 +227,14 @@ export default function AdminDocuments() {
       if (valA > valB) return sortOrder === "asc" ? 1 : -1;
       return 0;
     });
-  }, [files, sortBy, sortOrder]);
+  }, [files, searchResults, hasSearchQuery, sortBy, sortOrder]);
 
   // Filtrado SIMPLIFICADO - solo buscar en categoria
   const filteredFiles = useMemo(() => {
     return sortedFiles.filter((f) => {
-      const matchesSearch = (f.filename || "")
+      // Si hay búsqueda activa, no aplicar filtro de búsqueda local adicional
+      // ya que los resultados vienen de Meilisearch/Firestore
+      const matchesSearch = hasSearchQuery ? true : (f.filename || "")
         .toLowerCase()
         .includes(search.toLowerCase());
         
@@ -234,7 +257,7 @@ export default function AdminDocuments() {
 
       return matchesSearch && matchesTypeFilter && matchesContentType && inDateRange;
     });
-  }, [sortedFiles, search, typeFilter, typeContent, dateRange]);
+  }, [sortedFiles, search, hasSearchQuery, typeFilter, typeContent, dateRange]);
 
   // Cálculos de paginación
   const totalPages = Math.ceil(filteredFiles.length / itemsPerPage);
@@ -281,6 +304,9 @@ export default function AdminDocuments() {
     totalSize: formatSize(files.reduce((acc, f) => acc + (f.size || 0), 0)),
     filteredCount: filteredFiles.length,
     currentShowing: currentFiles.length,
+    // Indicador de búsqueda activa
+    isSearchActive: hasSearchQuery,
+    searchQuery: searchQuery
   };
 
   const handleDownload = async (path, filename) => {
@@ -335,7 +361,11 @@ export default function AdminDocuments() {
                 Panel de Administración: <span className="text-blue-600">{userDepartment}</span>
               </h3>
               <p className="text-sm text-muted-foreground mt-1">
-                {filteredFiles.length} documento{filteredFiles.length !== 1 ? 's' : ''} disponible{filteredFiles.length !== 1 ? 's' : ''}
+                {stats.isSearchActive ? (
+                  <>Búsqueda: "{stats.searchQuery}" - {filteredFiles.length} resultado{filteredFiles.length !== 1 ? 's' : ''} encontrado{filteredFiles.length !== 1 ? 's' : ''}</>
+                ) : (
+                  <>{filteredFiles.length} documento{filteredFiles.length !== 1 ? 's' : ''} disponible{filteredFiles.length !== 1 ? 's' : ''}</>
+                )}
               </p>
             </div>
             <UploadDocumentDialog
@@ -402,18 +432,28 @@ export default function AdminDocuments() {
           clearAllFilters={clearAllFilters}
         />
 
-        {loading ? (
+        {loading || isSearching ? (
           <div className="flex justify-center py-10">
             <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+            <span className="ml-2 text-sm text-muted-foreground">
+              {isSearching ? "Buscando..." : "Cargando..."}
+            </span>
           </div>
         ) : currentFiles.length === 0 ? (
           <div className="text-center py-10">
             <FileText className="h-12 w-12 text-gray-400 mx-auto mb-3" />
             <p className="text-gray-500">
               {filteredFiles.length === 0 
-                ? "No hay documentos que coincidan con los filtros aplicados."
+                ? (stats.isSearchActive 
+                    ? `No se encontraron documentos que coincidan con "${stats.searchQuery}"`
+                    : "No hay documentos que coincidan con los filtros aplicados.")
                 : "No hay documentos en esta página."}
             </p>
+            {searchError && (
+              <p className="text-red-500 text-sm mt-2">
+                Error en la búsqueda: {searchError}
+              </p>
+            )}
           </div>
         ) : viewMode === "list" ? (
           <DocumentsTable

@@ -58,6 +58,32 @@ def _ctx(request: Optional[Request], extra: Optional[Dict[str, Any]] = None) -> 
         "source": "api",
     }
 
+def _norm(text: Optional[str]) -> str:
+    """Normaliza texto para comparación de roles."""
+    import unicodedata
+    if not isinstance(text, str):
+        return ""
+    t = unicodedata.normalize("NFD", text)
+    t = t.encode("ascii", "ignore").decode("utf-8").lower()
+    for ch in [" ", "_", "-", "/", "."]:
+        t = t.replace(ch, "")
+    return t.strip()
+
+def _role_display_from_firestore(role_value: Optional[str]) -> Optional[str]:
+    """Map Firestore 'role' to human-friendly puesto_trabajo used in docs."""
+    if not role_value:
+        return None
+    mapping = {
+        "DireccionEjecutiva": "Dirección Ejecutiva",
+        "CoordinacionAdministrativa": "Coordinación Administrativa",
+        "CoordinadorAdministrativa": "Coordinación Administrativa",
+        "CoordinacionProyectosyPlanificacion": "Coordinación Proyectos y Planificación",
+        "CoordinacionProyectosPlanificacion": "Coordinación Proyectos y Planificación",
+        "CoordinacionComunicaciones": "Coordinación de Comunicaciones",
+        "AsistenciaGeneral": "Asistencia General",
+    }
+    return mapping.get(role_value, role_value)
+
 # ===============================
 # Helpers internos
 # ===============================
@@ -350,6 +376,167 @@ async def search_library(
         log_error(e, "GET_/search", user_id=user_id, additional_details=_ctx(request, {
             'user_email': user_email,
             'query': q
+        }))
+        return {
+            "hits": [],
+            "query": q,
+            "error": str(e),
+            "meilisearch_available": False,
+            "source": "error"
+        }
+
+
+@router.get("/search-documents")
+async def search_all_documents(
+    request: Request,
+    q: str = Query(..., description="Término de búsqueda"),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    token_data=Depends(verify_firebase_token)
+):
+    """
+    Busca en todos los documentos con filtros de rol (Meilisearch con fallback a Firestore).
+    Busca en los campos: filename, title, summary, keywords.
+    """
+    user_id = token_data.get("user_id", "anonymous") if token_data else "anonymous"
+    user_email = token_data.get("email", "") if token_data else ""
+
+    try:
+        # Extraer rol del usuario de manera similar al endpoint /list
+        user_role = None
+        if token_data and "custom_claims" in token_data:
+            claims = (token_data or {}).get("custom_claims", {}) or {}
+            user_role = (
+                (token_data or {}).get("role")
+                or claims.get("puesto_trabajo")
+                or claims.get("puesto")
+                or claims.get("role")
+            )
+            
+        if not user_role and isinstance(user_email, str):
+            e = user_email.lower()
+            if any(p in e for p in ["director", "ejecutiv"]):
+                user_role = "Dirección Ejecutiva"
+
+        role_norm = _norm(user_role)
+
+        # Build filters for Meilisearch
+        filters: Optional[str] = None
+        is_exec = role_norm == "direccionejecutiva" or (isinstance(user_email, str) and any(p in user_email.lower() for p in ["director", "ejecutiv"]))
+
+        if not is_exec:
+            role_display = _role_display_from_firestore(user_role) or ""
+            rd_esc = role_display.replace('"', '\\"') if isinstance(role_display, str) else ""
+            parts: List[str] = [
+                "public = true",
+                'apartado = "PES 2030"'  # TODOS ven documentos de PES 2030
+            ]
+            if rd_esc:
+                parts.append(f'puesto_trabajo = "{rd_esc}"')
+            filters = " OR ".join(parts)
+        else:
+            filters = None
+
+        # Buscar en Meilisearch con la query
+        from services.meilisearch_service import search_documents
+        results = search_documents(query=q, limit=limit, offset=offset, filters=filters)
+        hits = (results or {}).get("hits", [])
+        source = (results or {}).get("source", ("meilisearch" if is_meilisearch_available() else "local"))
+
+        # Firestore fallback si Meilisearch no está disponible
+        if not is_meilisearch_available() or source == "local":
+            try:
+                fs_hits: List[Dict[str, Any]] = []
+                db = get_firestore_client()
+                
+                # Función para buscar en una colección específica
+                def search_in_collection(collection_name: str) -> List[Dict[str, Any]]:
+                    results_list = []
+                    collection_ref = db.collection(collection_name)
+                    
+                    # Buscar en todos los documentos de la colección
+                    for doc in collection_ref.limit(1000).stream():
+                        doc_data = doc.to_dict() or {}
+                        doc_data["id"] = doc.id
+                        
+                        # Aplicar filtros de búsqueda en los campos especificados
+                        query_lower = q.lower()
+                        search_fields = [
+                            doc_data.get("filename", ""),
+                            doc_data.get("title", ""),
+                            doc_data.get("summary", ""),
+                            doc_data.get("keywords", "")
+                        ]
+                        
+                        # Verificar si algún campo contiene la búsqueda
+                        matches_search = any(
+                            query_lower in str(field).lower() 
+                            for field in search_fields 
+                            if field
+                        )
+                        
+                        if matches_search:
+                            # Aplicar filtros de rol
+                            if is_exec:
+                                results_list.append(doc_data)
+                            else:
+                                is_public = doc_data.get("public", False) or doc_data.get("publico", False)
+                                is_pes_2030 = doc_data.get("apartado") == "PES 2030"
+                                user_dept_match = False
+                                
+                                if role_display:
+                                    doc_dept = doc_data.get("puesto_trabajo", "")
+                                    user_dept_match = doc_dept == role_display
+                                
+                                if is_public or is_pes_2030 or user_dept_match:
+                                    results_list.append(doc_data)
+                    
+                    return results_list
+
+                # Buscar en ambas colecciones
+                fs_hits.extend(search_in_collection("documents"))
+                fs_hits.extend(search_in_collection("library"))
+                
+                # Aplicar paginación
+                total = len(fs_hits)
+                paginated_hits = fs_hits[offset:offset + limit]
+                
+                results = {
+                    "hits": paginated_hits,
+                    "estimatedTotalHits": total,
+                    "query": q,
+                    "limit": limit,
+                    "offset": offset,
+                    "source": "firestore"
+                }
+                
+            except Exception as fs_error:
+                log_error(fs_error, "GET_/search-documents", user_id=user_id, additional_details=_ctx(request, {
+                    'error': str(fs_error),
+                    'query': q,
+                    'user_email': user_email
+                }))
+                results = {"hits": [], "estimatedTotalHits": 0, "query": q, "source": "error"}
+
+        results["meilisearch_available"] = is_meilisearch_available()
+
+        # 📌 Log estandarizado para búsquedas
+        audit_log(user_id, 'DOCUMENT_SEARCH', _ctx(request, {
+            'user_email': user_email,
+            'query': q,
+            'results_count': len(results.get('hits', [])),
+            'source_engine': results.get('source', 'unknown'),
+            'user_role': user_role,
+            'is_executive': is_exec
+        }), severity="INFO")
+
+        return results
+
+    except Exception as e:
+        log_error(e, "GET_/search-documents", user_id=user_id, additional_details=_ctx(request, {
+            'error': str(e),
+            'query': q,
+            'user_email': user_email
         }))
         return {
             "hits": [],
