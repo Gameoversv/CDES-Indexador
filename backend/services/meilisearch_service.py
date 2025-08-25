@@ -888,6 +888,11 @@ def _apply_local_filters(documents: List[Dict], filters: Optional[str]) -> List[
     
     for doc in documents:
         try:
+            # Documentos de PES 2030 siempre son visibles para todos
+            if doc.get("apartado") == "PES 2030":
+                filtered.append(doc)
+                continue
+                
             if "public = true" in filters and doc.get("public") != True:
                 continue
             elif "public = false" in filters and doc.get("public") != False:

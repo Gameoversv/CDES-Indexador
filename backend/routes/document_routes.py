@@ -798,7 +798,10 @@ async def list_all_documents(
             if not is_exec:
                 role_display = _role_display_from_firestore(user_role) or ""
                 rd_esc = role_display.replace('"', '\\"') if isinstance(role_display, str) else ""
-                parts: List[str] = ["public = true"]
+                parts: List[str] = [
+                    "public = true",
+                    'apartado = "PES 2030"'  # TODOS ven documentos de PES 2030
+                ]
                 if rd_esc:
                     parts.append(f'puesto_trabajo = "{rd_esc}"')
                 filters = " OR ".join(parts)
@@ -845,6 +848,9 @@ async def list_all_documents(
                         def _match(doc: Dict[str, Any]) -> bool:
                             # Los documentos de library son siempre visibles (públicos)
                             if doc.get("public") is True:
+                                return True
+                            # TODOS ven documentos de PES 2030
+                            if doc.get("apartado") == "PES 2030":
                                 return True
                             pt = _norm(doc.get("puesto_trabajo") or "")
                             return pt and pt == rn_disp

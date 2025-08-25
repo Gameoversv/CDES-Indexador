@@ -36,31 +36,33 @@ router = APIRouter(
 ROLE_TO_FOLDER_MAPPING: Dict[str, str] = {
     # Administrativos (verán toda la raíz: esta clave no se usa como carpeta)
     # 'DireccionEjecutiva' se trata aparte devolviendo None para acceso completo.
+    "direccionejecutiva": None,  # Acceso a toda la raíz
 
     # Unidades/roles con carpetas propias (usa exactamente el nombre de carpeta en Storage)
     "coordinacionadministrativa": "Coordinación Administrativa",
-    # Aceptar código interno 'CoordinadorAdministrativa'
     "coordinadoradministrativa": "Coordinación Administrativa",
     
-    # REPARACIÓN PARA COORDINACIÓN PROYECTOS Y PLANIFICACIÓN
+    # COORDINACIÓN PROYECTOS Y PLANIFICACIÓN
     # Aceptar cualquier variante y normalizar al nombre REAL en Storage
-    "coordinacionproyectosyplanificacion": "CoordinacionProyectosPlanificacion",
-    "coordinacionproyectosplanificacion": "CoordinacionProyectosPlanificacion",
-    "coordinacion proyectos y planificacion": "CoordinacionProyectosPlanificacion",
-    "coordinacion proyectos planificacion": "CoordinacionProyectosPlanificacion",
-    "coordinacionproyectos": "CoordinacionProyectosPlanificacion",
-    "coordinacionplanificacion": "CoordinacionProyectosPlanificacion",
-    "proyectosplanificacion": "CoordinacionProyectosPlanificacion",
-    "proyectosyplanificacion": "CoordinacionProyectosPlanificacion",
-    "proyectos": "CoordinacionProyectosPlanificacion",
-    "planificacion": "CoordinacionProyectosPlanificacion",
-    "proyectosplanificacion": "CoordinacionProyectosPlanificacion",
+    "coordinacionproyectosyplanificacion": "Coordinación Proyectos y Planificación",
+    "coordinacionproyectosplanificacion": "Coordinación Proyectos y Planificación",
+    "coordinacion proyectos y planificacion": "Coordinación Proyectos y Planificación",
+    "coordinacion proyectos planificacion": "Coordinación Proyectos y Planificación",
+    "coordinacionproyectos": "Coordinación Proyectos y Planificación",
+    "coordinacionplanificacion": "Coordinación Proyectos y Planificación",
+    "proyectosplanificacion": "Coordinación Proyectos y Planificación",
+    "proyectosyplanificacion": "Coordinación Proyectos y Planificación",
+    "proyectos": "Coordinación Proyectos y Planificación",
+    "planificacion": "Coordinación Proyectos y Planificación",
     
-    # Aceptar ambas variantes con/sin 'de'
+    # COORDINACIÓN DE COMUNICACIONES
     "coordinaciondecomunicaciones": "Coordinación de Comunicaciones",
     "coordinacioncomunicaciones": "Coordinación de Comunicaciones",
-    # Asistencia General (nombre REAL en Storage)
-    "asistenciageneral": "AsistenciaGeneral",
+    "comunicaciones": "Coordinación de Comunicaciones",
+    "coordinacioncomunicacion": "Coordinación de Comunicaciones",
+    
+    # ASISTENCIA GENERAL
+    "asistenciageneral": "Asistencia General",
 }
 
 def _norm(text: Optional[str]) -> str:
@@ -88,40 +90,48 @@ def _find_actual_role_folder_prefix(role_folder: Optional[str]) -> Optional[str]
     """
     if not role_folder:
         return None
+        
     target_norm = _norm(role_folder)
     
-    # Caso especial para Coordinación Proyectos y Planificación - lista específica de rutas
+    # Mapeo directo de roles normalizados a carpetas exactas en storage
+    EXACT_FOLDER_MAPPING = {
+        "coordinacionproyectosyplanificacion": "CDES_inst/Coordinación Proyectos y Planificación/",
+        "coordinacionadministrativa": "CDES_inst/Coordinación Administrativa/",
+        "coordinadoradministrativa": "CDES_inst/Coordinación Administrativa/",
+        "coordinaciondecomunicaciones": "CDES_inst/Coordinación de Comunicaciones/",
+        "coordinacioncomunicaciones": "CDES_inst/Coordinación de Comunicaciones/",
+        "asistenciageneral": "CDES_inst/Asistencia General/",
+        "direccionejecutiva": "CDES_inst/Dirección Ejecutiva/",
+    }
+    
+    # Verificar si tenemos un mapeo exacto
+    if target_norm in EXACT_FOLDER_MAPPING:
+        exact_prefix = EXACT_FOLDER_MAPPING[target_norm]
+        return exact_prefix
+    
+    # Casos especiales por patrón de nombre
+    # Caso especial para Coordinación Proyectos y Planificación
     if any(pattern in target_norm for pattern in ["proyecto", "planific", "coordinacionproyecto"]):
-        print(f"🔎 DEBUG-PROYECTOS - _find_actual_role_folder_prefix detected proyectos pattern in: '{role_folder}'")
-        specific_prefixes = [
-            "CDES_inst/CoordinacionProyectosPlanificacion/",
-            "CDES_inst/Coordinación Proyectos y Planificación/",
-            "CDES_inst/Coordinacion Proyectos y Planificacion/",
-            "CDES_inst/Coordinacion Proyectos Planificacion/",
-            "CDES_inst/Proyectos y Planificacion/",
-            "CDES_inst/Proyectos/",
-            "CDES_inst/Planificacion/"
-        ]
-        # Probar directamente estas rutas
-        for prefix in specific_prefixes:
-            try:
-                print(f"🔎 DEBUG-PROYECTOS - Checking specific prefix: {prefix}")
-                files = list_files_in_storage(prefix=prefix)
-                if files and any((f.get("path") or "").startswith(prefix) for f in files):
-                    print(f"� DEBUG-PROYECTOS - Found direct match for {role_folder} at {prefix}")
-                    return prefix
-            except Exception as e:
-                print(f"� DEBUG-PROYECTOS - Error checking specific prefix {prefix}: {e}")
+        return "CDES_inst/Coordinación Proyectos y Planificación/"
         
-        # Si no encontramos coincidencia, devolver la primera variante como predeterminada
-        print(f"🔎 DEBUG-PROYECTOS - No direct match found, returning default prefix")
-    # Usar el nombre REAL existente en Storage por defecto
-    return "CDES_inst/CoordinacionProyectosPlanificacion/"
-
+    # Caso para Coordinación Administrativa
+    if any(pattern in target_norm for pattern in ["admin", "administrativa"]):
+        return "CDES_inst/Coordinación Administrativa/"
+        
+    # Caso para Coordinación de Comunicaciones
+    if any(pattern in target_norm for pattern in ["comunicacion", "comunicaciones"]):
+        return "CDES_inst/Coordinación de Comunicaciones/"
+        
+    # Caso para Asistencia General
+    if any(pattern in target_norm for pattern in ["asistencia", "asisten", "general"]):
+        return "CDES_inst/Asistencia General/"
+    
+    # Si no se encuentra un mapeo directo, buscar la carpeta en storage
     try:
         candidates = list_files_in_storage(prefix="CDES_inst/")
-        # recolectar primeros segmentos debajo de CDES_inst/
-        first_levels: dict[str, str] = {}
+        
+        # Extraer los nombres de las carpetas de primer nivel bajo CDES_inst/
+        first_levels: Dict[str, str] = {}
         for f in candidates:
             p = (f.get("path") or "").strip("/")
             if not p.startswith("CDES_inst/"):
@@ -132,12 +142,22 @@ def _find_actual_role_folder_prefix(role_folder: Optional[str]) -> Optional[str]
             head = rel.split("/")[0]
             if head:
                 first_levels[_norm(head)] = head  # map norm->real
+        
+        # Buscar coincidencia exacta primero
         real = first_levels.get(target_norm)
         if real:
-            return f"CDES_inst/{real}/"
+            prefix = f"CDES_inst/{real}/"
+            return prefix
+            
+        # Si no hay coincidencia exacta, buscar coincidencia parcial
+        for norm_name, real_name in first_levels.items():
+            if target_norm in norm_name or norm_name in target_norm:
+                prefix = f"CDES_inst/{real_name}/"
+                return prefix
+                
         return None
+        
     except Exception as e:
-        print(f"🔍 DEBUG - _find_actual_role_folder_prefix error: {e}")
         return None
 
 def get_storage_folder_for_user(user_role: Optional[str], email: Optional[str]) -> Optional[str]:
@@ -147,60 +167,63 @@ def get_storage_folder_for_user(user_role: Optional[str], email: Optional[str]) 
     """
     nr = _norm(user_role)
     
-    # Debug para Coordinación Proyectos y Planificación
-    if user_role and ("proyectos" in nr or "planificacion" in nr or "planific" in nr):
-        print(f"🔎 DEBUG-PROYECTOS - Detected proyectos/planificacion in role: '{user_role}' (normalized: '{nr}')")
+    # 1. Primero revisar mapeo directo desde el diccionario
+    if nr in ROLE_TO_FOLDER_MAPPING:
+        folder = ROLE_TO_FOLDER_MAPPING[nr]
+        return folder
     
+    # 2. Casos especiales por nombres de rol (en caso de que no estén en el diccionario)
     # Usuarios administrativos (Dirección Ejecutiva) ven toda la estructura
-    if nr in {"direccionejecutiva", "direccion ejecutiva"}:
+    if nr in {"direccionejecutiva", "direccion ejecutiva", "direccion"}:
         return None  # None significa acceso a toda la raíz CDES_inst/
-        
-    # Manejo específico para Coordinación Proyectos y Planificación por nombre de rol
+    
+    # Coordinación Proyectos y Planificación
     if nr and ("proyectos" in nr or "planificacion" in nr or "planific" in nr or 
-              "coordinacionproyectos" in nr or "proyectosyplanificacion" in nr):
-        print(f"🔎 DEBUG-PROYECTOS - Mapped role directly: '{user_role}' → 'CoordinacionProyectosPlanificacion'")
-        return "CoordinacionProyectosPlanificacion"
+               "coordinacionproyectos" in nr or "proyectosyplanificacion" in nr):
+        return "Coordinación Proyectos y Planificación"
+    
+    # Coordinación de Comunicaciones
+    if nr and ("comunicacion" in nr or "comunicaciones" in nr or "coms" in nr):
+        return "Coordinación de Comunicaciones"
+    
+    # Coordinación Administrativa
+    if nr and ("admin" in nr or "administrativa" in nr or "coordinacionadmin" in nr or "coordinadoradmin" in nr):
+        return "Coordinación Administrativa"
+    
+    # Asistencia General
+    if nr and ("asistencia" in nr or "asisten" in nr or "general" in nr):
+        return "Asistencia General"
 
-    # Detectar por email si no hay rol claro
+    # 3. Si no se ha encontrado coincidencia por rol, intentar por email
     if isinstance(email, str) and email:
         e = email.lower()
+        
         # Verificar patrones administrativos en email
-        if any(pattern in e for pattern in ["director", "ejecutiv"]):
+        if any(pattern in e for pattern in ["director", "ejecutiv", "direccion"]):
             return None  # Acceso administrativo completo
-            
-        # Caso específico para correos conocidos de Proyectos
-    if e in ["proyectos@cdes.cl", "coordinacionproyectos@cdes.cl", "planificacion@cdes.cl", 
-        "coordproyectos@cdes.cl", "coordplanificacion@cdes.cl", "coordadmin@gmail.com"]:
-        print(f"🔎 DEBUG-PROYECTOS - Exact email match for Proyectos: {e}")
-        return "CoordinacionProyectosPlanificacion"
-            
-        # Fallback por email pattern hacia carpetas específicas
-        if "asistente" in e or "asist" in e or "asistencia" in e or "general" in e:
-            return "AsistenciaGeneral"
-        # Coord. Administrativa: cubrir coordadmin / coord + admin / administracion / administrativa
-        if (
-            "coordadmin" in e
-            or ("coord" in e and ("admin" in e or "administr" in e))
-            or "administrativa" in e
-            or "administracion" in e
-        ):
+        
+        # Casos específicos para correos conocidos
+        if e in ["proyectos@cdes.cl", "coordinacionproyectos@cdes.cl", "planificacion@cdes.cl", 
+                "coordproyectos@cdes.cl", "coordplanificacion@cdes.cl"]:
+            return "Coordinación Proyectos y Planificación"
+        
+        if e in ["coordadmin@gmail.com", "administrativa@cdes.cl", "admin@cdes.cl"]:
             return "Coordinación Administrativa"
-        # Detección mejorada para Proyectos - notar que ahora usamos OR en lugar de AND
+            
+        # Patrones de email generales
+        if "asistente" in e or "asist" in e or "asistencia" in e or "general" in e:
+            return "Asistencia General"
+            
+        if ("coord" in e and ("admin" in e or "administr" in e)) or "administrativa" in e or "administracion" in e:
+            return "Coordinación Administrativa"
+            
         if "proyectos" in e or "planificacion" in e or "planific" in e:
-            print(f"🔎 DEBUG-PROYECTOS - Email pattern match for Proyectos: {e}")
-            return "CoordinacionProyectosPlanificacion"
+            return "Coordinación Proyectos y Planificación"
+            
         if "comunicacion" in e or "comunicaciones" in e or "coms" in e:
             return "Coordinación de Comunicaciones"
 
-    # Intentar por rol conocido
-    if nr in ROLE_TO_FOLDER_MAPPING:
-        folder = ROLE_TO_FOLDER_MAPPING[nr]
-        if "proyectos" in nr or "planificacion" in nr:
-            print(f"🔎 DEBUG-PROYECTOS - Mapping hit from dict: '{nr}' → '{folder}'")
-        return folder
-
-    # Sin coincidencias o sin rol: NO dar acceso completo.
-    # Retornar cadena vacía para que no vea más que PES_2030.
+    # 4. Sin coincidencias: retornar cadena vacía para que solo vea PES_2030
     return ""
 
 def _build_tree_from_paths(file_list: List[Dict[str, Any]], root_path: str) -> List[Dict[str, Any]]:
@@ -288,23 +311,16 @@ async def get_storage_tree(request: Request, token_data: Dict[str, Any] = Depend
     firestore = get_firestore_client()
 
     try:
-        print(f"🔍 DEBUG - UID: {uid}, Email: {email}")
-        
-    # 1. Obtener el rol del usuario desde Firestore (o token como fallback)
+        # 1. Obtener el rol del usuario desde Firestore (o token como fallback)
         user_doc_ref = firestore.collection("users").document(uid)
         user_doc = user_doc_ref.get()
 
-        print(f"🔍 DEBUG - User doc exists: {user_doc.exists}")
-        
         user_role = None
         if user_doc.exists:
             user_data = user_doc.to_dict()
             # Prioritize 'puesto_trabajo' (folder name used in storage), then legacy 'puesto', then 'role'
             user_role = user_data.get("puesto_trabajo") or user_data.get("puesto") or user_data.get("role")
-            print(f"🔍 DEBUG - User data: {user_data}")
-            print(f"🔍 DEBUG - User role resolved (puesto_trabajo/puesto/role): {user_role}")
         else:
-            print(f"🔍 DEBUG - User not found in Firestore")
             # Intentar localizar por email si el doc por UID no existe
             try:
                 if email:
@@ -314,9 +330,8 @@ async def get_storage_tree(request: Request, token_data: Dict[str, Any] = Depend
                         cdoc = candidates[0]
                         cdata = cdoc.to_dict() or {}
                         user_role = cdata.get("puesto_trabajo") or cdata.get("puesto") or cdata.get("role")
-                        print(f"🔍 DEBUG - Found user by email. Role: {user_role}")
             except Exception as qe:
-                print(f"🔍 DEBUG - Query by email failed: {qe}")
+                pass
             # Intentar claims del token (role/puesto_trabajo en custom_claims)
             if not user_role:
                 try:
@@ -327,34 +342,21 @@ async def get_storage_tree(request: Request, token_data: Dict[str, Any] = Depend
                         or claims.get("puesto")
                         or claims.get("role")
                     )
-                    if user_role:
-                        print(f"🔍 DEBUG - Role from token claims: {user_role}")
                 except Exception as ce:
-                    print(f"🔍 DEBUG - Claims role fallback failed: {ce}")
+                    pass
             # FALLBACK DIRECTO: Si no se encuentra el usuario en Firestore, usar el email para inferir rol
             e = (email or "").strip().lower()
             if not user_role and e:
                 if e == "coordadmin@gmail.com":
                     user_role = "Coordinación Administrativa"
-                    print(f"🔍 DEBUG - Fallback by email equality to role: {user_role}")
                 elif ("director" in e) or ("ejecutiv" in e):
                     user_role = "Dirección Ejecutiva"
-                    print(f"🔍 DEBUG - Fallback by email pattern to role: {user_role}")
                 elif ("asistente" in e) or ("general" in e):
                     user_role = "Asistencia General"
-                    print(f"🔍 DEBUG - Fallback by email pattern to role: {user_role}")
                 elif ("proyectos" in e) or ("planificacion" in e) or ("planific" in e):
                     user_role = "Coordinación Proyectos y Planificación"
-                    print(f"� DEBUG-PROYECTOS - Fallback by email pattern to role: {user_role} for {e}")
                 elif ("comunicacion" in e) or ("comunicaciones" in e):
                     user_role = "Coordinación de Comunicaciones"
-                    print(f"🔍 DEBUG - Fallback by email pattern to role: {user_role}")
-            # Fallback a claims en el token (comentado)
-            #user_role = token_data.get("role") or (token_data.get("custom_claims", {}) or {}).get("role")
-            #if not user_role:
-                #user_role = "AsistenciaGeneral"  # Rol por defecto
-
-        print(f"🔍 DEBUG - Final user role: {user_role}")
 
         # 2. Determinar la carpeta de storage usando el mapeo inteligente
         storage_folder = get_storage_folder_for_user(user_role, email)
@@ -362,9 +364,6 @@ async def get_storage_tree(request: Request, token_data: Dict[str, Any] = Depend
         # CASO ESPECIAL - FORZAR COMO COORDINACIÓN PROYECTOS Y PLANIFICACIÓN
         if not storage_folder and email in ["coordadmin@gmail.com", "proyectos@cdes.cl", "planificacion@cdes.cl"]:
             storage_folder = "CoordinacionProyectosPlanificacion"
-            print(f"� DEBUG-PROYECTOS - Forced special role mapping for {email} to: {storage_folder}")
-        
-        print(f"🔍 DEBUG - Mapped storage folder: {storage_folder}")
         
         # 3. Construir el listado de blobs permitido según el rol
         files_list: List[Dict[str, Any]] = []
@@ -372,7 +371,6 @@ async def get_storage_tree(request: Request, token_data: Dict[str, Any] = Depend
 
         if storage_folder is None:
             # Usuario administrativo (DireccionEjecutiva) - ve toda la estructura desde la raíz
-            print("🔍 DEBUG - DireccionEjecutiva access: viewing entire Firebase Storage root")
             files_list = list_files_in_storage(prefix=root_path)
 
             # Asegurar presencia de carpetas raíz conocidas, incluso si están vacías
@@ -394,48 +392,72 @@ async def get_storage_tree(request: Request, token_data: Dict[str, Any] = Depend
         else:
             # Usuario no admin: SOLO ver su carpeta específica y la carpeta PES_2030
             allowed_prefixes: List[str] = ["PES_2030/"]
+            
             if storage_folder:
-                resolved_prefix = _find_actual_role_folder_prefix(storage_folder)
-                if resolved_prefix:
-                    print(f"🔍 DEBUG - Resolved role folder prefix: {resolved_prefix}")
-                    allowed_prefixes.append(resolved_prefix)
+                # Construir el prefijo de la carpeta en CDES_inst/
+                role_prefix = _find_actual_role_folder_prefix(storage_folder)
+                
+                if role_prefix:
+                    allowed_prefixes.append(role_prefix)
                     
-                    # CASO ESPECIAL: Coordinación Proyectos y Planificación - Agregar TODAS las variantes posibles
+                    # Agregar variantes potenciales para la carpeta
+                    # Esto ayuda con inconsistencias en nombres de carpetas
+                    variants = []
+                    
+                    # Variantes sin acentos
+                    sf_no_accents = _strip_accents_keep_spaces(storage_folder)
+                    if sf_no_accents != storage_folder:
+                        variants.append(f"CDES_inst/{sf_no_accents}/")
+                    
+                    # Variante con el nombre original del rol
+                    variants.append(f"CDES_inst/{storage_folder}/")
+                    
+                    # Casos especiales para roles conocidos
                     if "proyectos" in _norm(storage_folder) or "planificacion" in _norm(storage_folder):
-                        special_prefixes = [
+                        variants.extend([
+                            "CDES_inst/Coordinación Proyectos y Planificación/",
                             "CDES_inst/CoordinacionProyectosPlanificacion/",
                             "CDES_inst/Coordinacion Proyectos y Planificacion/",
-                            "CDES_inst/Coordinación Proyectos y Planificación/",
                             "CDES_inst/Coordinacion Proyectos Planificacion/",
-                            "CDES_inst/Proyectos y Planificacion/",
-                            "CDES_inst/Proyectos/",
-                            "CDES_inst/Planificacion/"
-                        ]
-                        print(f"� DEBUG-PROYECTOS - Adding ALL possible CoordinacionProyectos prefixes")
-                        for special_prefix in special_prefixes:
-                            if special_prefix not in allowed_prefixes:
-                                allowed_prefixes.append(special_prefix)
-                                print(f"🔎 DEBUG-PROYECTOS - Added special prefix: {special_prefix}")
-                else:
-                    # Intentos alternativos: sin acentos, con/sin espacios
-                    sf_no_accents = _strip_accents_keep_spaces(storage_folder)
-                    compact = _norm(storage_folder)
-                    # reconstruir nombres plausibles
-                    variants = [
-                        f"CDES_inst/{storage_folder}/",
-                        f"CDES_inst/{sf_no_accents}/",
-                    ]
-                    # Para variante compacta, no sabemos mayúsculas; listaremos CDES_inst y filtraremos luego en árbol
-                    # Aun así, agregamos la ruta mostrada para que el nodo exista
+                        ])
+                    
+                    if "admin" in _norm(storage_folder) or "administrativa" in _norm(storage_folder):
+                        variants.extend([
+                            "CDES_inst/Coordinación Administrativa/",
+                            "CDES_inst/CoordinacionAdministrativa/",
+                        ])
+                        
+                    if "comunicacion" in _norm(storage_folder):
+                        variants.extend([
+                            "CDES_inst/Coordinación de Comunicaciones/",
+                            "CDES_inst/CoordinaciondeComunicaciones/",
+                        ])
+                        
+                    if "asistencia" in _norm(storage_folder) or "general" in _norm(storage_folder):
+                        variants.extend([
+                            "CDES_inst/Asistencia General/",
+                            "CDES_inst/AsistenciaGeneral/",
+                        ])
+                    
+                    # Agregar todas las variantes únicas
                     for v in variants:
                         if v not in allowed_prefixes:
                             allowed_prefixes.append(v)
+                else:
+                    # Si no se encontró un prefijo, intentar con el nombre directo
+                    direct_prefix = f"CDES_inst/{storage_folder}/"
+                    allowed_prefixes.append(direct_prefix)
 
+            # Obtener archivos para cada prefijo permitido
             for pref in allowed_prefixes:
-                pref_files = list_files_in_storage(prefix=pref)
-                files_list.extend(pref_files)
+                try:
+                    pref_files = list_files_in_storage(prefix=pref)
+                    files_list.extend(pref_files)
+                except Exception as e:
+                    pass
 
-            # Añadir marcador de carpeta CDES_inst/ siempre para jerarquía parcial
+            # Asegurar que siempre existan las carpetas principales
+            # Añadir marcador de carpeta CDES_inst/ siempre
             if not any(f.get("path") == "CDES_inst/" for f in files_list):
                 files_list.append({
                     "path": "CDES_inst/",
@@ -445,8 +467,21 @@ async def get_storage_tree(request: Request, token_data: Dict[str, Any] = Depend
                     "content_type": "application/x-directory",
                     "is_folder": True,
                 })
-            # No agregar marcadores de carpeta de rol si no existe en Storage
-            # Y la carpeta PES_2030/
+                
+            # Añadir la carpeta de rol del usuario bajo CDES_inst/
+            if storage_folder:
+                role_path = f"CDES_inst/{storage_folder}/"
+                if not any(f.get("path") == role_path for f in files_list):
+                    files_list.append({
+                        "path": role_path,
+                        "filename": storage_folder,
+                        "size": 0,
+                        "updated": None,
+                        "content_type": "application/x-directory",
+                        "is_folder": True,
+                    })
+            
+            # Añadir la carpeta PES_2030/
             if not any(f.get("path") == "PES_2030/" for f in files_list):
                 files_list.append({
                     "path": "PES_2030/",
@@ -457,13 +492,8 @@ async def get_storage_tree(request: Request, token_data: Dict[str, Any] = Depend
                     "is_folder": True,
                 })
 
-        print(f"🔍 DEBUG - Root path: '{root_path}'")
-        print(f"🔍 DEBUG - Files found: {len(files_list)}")
-        print(f"🔍 DEBUG - First file: {files_list[0] if files_list else 'None'}")
-
         # 5. Construir la respuesta JSON jerárquica
         file_tree = _build_tree_from_paths(files_list, root_path)
-        print(f"🔍 DEBUG - Tree nodes: {len(file_tree)}")
 
         log_event(
             user_id=uid,
@@ -485,7 +515,6 @@ async def get_storage_tree(request: Request, token_data: Dict[str, Any] = Depend
         # Re-lanzar excepciones HTTP para que FastAPI las maneje
         raise
     except Exception as e:
-        print(f"🔍 DEBUG - Exception: {str(e)}")
         log_error(error=e, context="GET /storage/tree", user_id=uid)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Ocurrió un error al construir el árbol de carpetas.")
     
