@@ -45,11 +45,26 @@ export default function AdminLibrary() {
       let data;
       if (q) {
         const res = await libraryAPI.search(q);
-        data = Array.isArray(res.data?.hits) ? res.data.hits : [];
+        data = Array.isArray(res?.data?.hits) ? res.data.hits : [];
       } else {
         data = await libraryAPI.list();
       }
-      setDocuments(data || []);
+      // Normalizar campos desde Meilisearch para que la UI use claves consistentes
+      const normalized = (Array.isArray(data) ? data : []).map((d) => {
+        const filename = d.filename || d.name || "";
+        const ext = (d.file_extension || (filename.includes(".") ? `.${filename.split(".").pop()}` : "")).toLowerCase();
+        return {
+          ...d,
+          // Normalizados
+          name: filename, // mantener compatibilidad con componentes
+          filename,
+          categoria: d.categoria || d.tipo || "",
+          tipo: d.categoria || d.tipo || "", // compat con UI actual
+          file_extension: ext, // incluir el punto (como viene en Meili)
+          updated: d.upload_timestamp || d.updated || d.processing_timestamp || null,
+        };
+      });
+      setDocuments(normalized);
     } catch (error) {
       console.error("Error al cargar documentos:", error);
       toast.error(q ? "Error al buscar documentos." : "Error al cargar biblioteca.");
@@ -77,26 +92,41 @@ export default function AdminLibrary() {
   const filteredDocs = useMemo(() => {
     return documents
       .filter((doc) => {
+        // formato desde metadato file_extension (".pdf"), comparar sin punto
         const matchesFormat =
           typeFilter === "all" ||
-          (doc.name || "").toLowerCase().endsWith(`.${typeFilter}`);
+          (doc.file_extension || "").replace(".", "").toLowerCase() === typeFilter;
 
+        // tipo desde categoria
         const matchesContent =
           typeContent === "all" ||
-          (doc.tipo || "").toLowerCase() === typeContent;
+          (doc.categoria || doc.tipo || "").toLowerCase() === typeContent;
 
-        const updatedAt = new Date(doc.updated);
+        // fecha desde upload_timestamp (normalizada a 'updated')
+        const updatedAt = doc.updated ? new Date(doc.updated) : null;
         const inDateRange =
-          (!dateRange.from || updatedAt >= new Date(dateRange.from)) &&
-          (!dateRange.to || updatedAt <= new Date(dateRange.to));
+          !updatedAt || (
+            (!dateRange.from || updatedAt >= new Date(dateRange.from)) &&
+            (!dateRange.to || updatedAt <= new Date(dateRange.to))
+          );
 
         return matchesFormat && matchesContent && inDateRange;
       })
       .sort((a, b) => {
-        const valA = a[sortBy.field]?.toString().toLowerCase() || "";
-        const valB = b[sortBy.field]?.toString().toLowerCase() || "";
-        if (sortBy.direction === "asc") return valA.localeCompare(valB);
-        return valB.localeCompare(valA);
+        const aVal = a[sortBy.field];
+        const bVal = b[sortBy.field];
+        // sort genérico con fechas si el campo es 'updated'
+        let valA = aVal;
+        let valB = bVal;
+        if (sortBy.field === "updated") {
+          valA = a.updated ? new Date(a.updated).getTime() : 0;
+          valB = b.updated ? new Date(b.updated).getTime() : 0;
+        } else {
+          valA = (valA ?? "").toString().toLowerCase();
+          valB = (valB ?? "").toString().toLowerCase();
+        }
+        if (sortBy.direction === "asc") return valA > valB ? 1 : valA < valB ? -1 : 0;
+        return valA < valB ? 1 : valA > valB ? -1 : 0;
       });
   }, [documents, typeFilter, typeContent, dateRange, sortBy]);
 
@@ -106,30 +136,15 @@ export default function AdminLibrary() {
     currentPage * itemsPerPage
   );
 
-  const stats = useMemo(() => {
-    const totalBytes = documents.reduce((acc, doc) => acc + (doc.size || 0), 0);
-    
-    return {
-      total: documents.length,
-      totalSize: formatSize(totalBytes),
-      filteredCount: filteredDocs.length,
-      currentShowing: paginatedDocs.length,
-      
-      // Contadores por formato para el selector
-      pdf: documents.filter((d) => (d.file_extension || "").toLowerCase() === ".pdf").length,
-      docx: documents.filter((d) => (d.file_extension || "").toLowerCase() === ".docx").length,
-      xlsx: documents.filter((d) => (d.file_extension || "").toLowerCase() === ".xlsx").length,
-      pptx: documents.filter((d) => (d.file_extension || "").toLowerCase() === ".pptx").length,
-      jpg: documents.filter((d) => (d.file_extension || "").toLowerCase() === ".jpg").length,
-      jpeg: documents.filter((d) => (d.file_extension || "").toLowerCase() === ".jpeg").length,
-      png: documents.filter((d) => (d.file_extension || "").toLowerCase() === ".png").length,
-      gif: documents.filter((d) => (d.file_extension || "").toLowerCase() === ".gif").length,
-      mp4: documents.filter((d) => (d.file_extension || "").toLowerCase() === ".mp4").length,
-      avi: documents.filter((d) => (d.file_extension || "").toLowerCase() === ".avi").length,
-      mov: documents.filter((d) => (d.file_extension || "").toLowerCase() === ".mov").length,
-      txt: documents.filter((d) => (d.file_extension || "").toLowerCase() === ".txt").length,
-    };
-  }, [documents, filteredDocs, paginatedDocs]); // Dependencias correctas
+  const stats = {
+    total: documents.length,
+    totalSizeMB:
+      documents.reduce((acc, doc) => acc + (doc.size || 0), 0) / (1024 * 1024),
+    pdf: documents.filter((d) => (d.file_extension || "").toLowerCase() === ".pdf").length,
+    docx: documents.filter((d) => (d.file_extension || "").toLowerCase() === ".docx").length,
+    xlsx: documents.filter((d) => (d.file_extension || "").toLowerCase() === ".xlsx").length,
+    pptx: documents.filter((d) => (d.file_extension || "").toLowerCase() === ".pptx").length,
+  };
 
   return (
     <AdminLayout>
@@ -180,7 +195,7 @@ export default function AdminLibrary() {
             onView={setSelectedDoc}
             onDelete={setShowDeleteDialog}
             onDownload={(file) =>
-              documentsAPI.downloadByPath(file.storage_path).then((res) => {
+              documentsAPI.downloadByPath(file.storage_path || file.path).then((res) => {
                 const url = window.URL.createObjectURL(res.data);
                 const a = document.createElement("a");
                 a.href = url;
@@ -199,7 +214,7 @@ export default function AdminLibrary() {
               onView={setSelectedDoc}
               onDelete={setShowDeleteDialog}
               onDownload={(file) =>
-                documentsAPI.downloadByPath(file.storage_path).then((res) => {
+                documentsAPI.downloadByPath(file.storage_path || file.path).then((res) => {
                   const url = window.URL.createObjectURL(res.data);
                   const a = document.createElement("a");
                   a.href = url;

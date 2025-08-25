@@ -18,36 +18,7 @@ import {
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { format } from "date-fns";
-
-// 📅 Selector de fecha
-function DatePicker({ label, date, onChange }) {
-  return (
-    <div className="flex flex-col justify-end gap-1">
-      <label className="text-sm font-medium text-gray-700">{label}</label>
-      <Popover>
-        <PopoverTrigger asChild>
-          <Button
-            variant="outline"
-            className="w-[150px] justify-start text-left font-normal border border-gray-300"
-          >
-            <CalendarIcon className="mr-2 h-4 w-4" />
-            {date ? format(new Date(date), "dd/MM/yyyy") : "Seleccionar"}
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent className="w-auto p-0" align="start">
-          <Calendar
-            mode="single"
-            selected={date ? new Date(date) : undefined}
-            onSelect={(selected) => {
-              if (selected) onChange(selected.toISOString().split("T")[0]);
-            }}
-            initialFocus
-          />
-        </PopoverContent>
-      </Popover>
-    </div>
-  );
-}
+import DatePicker from "@/components/ui/DatePicker";
 
 export default function DocumentToolbar({
   search,

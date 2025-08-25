@@ -25,54 +25,20 @@ import {
 } from "lucide-react";
 import { useState, useCallback, useEffect } from "react";
 import { toast } from "sonner";
-import { documentsAPI } from "@/services/api";
+import { documentsAPI } from "@/services/documentsAPI";
 import { Progress } from "@/components/ui/progress";
 import { useAuth } from "@/contexts/AuthContext";
+import { puestosTrabajo } from "@/constants/jobPositions";
+import { pesEstrategias } from "@/constants/pesEstrategias";
 
-const documentTypesByRole = {
-  admin: [
-    "presentaciones", "carta", "informe", "convenios", "contrato", 
-    "minutas/ayuda_memoria", "actas", "mapas", "logos", "graficos", 
-    "nota_prensa/comunicaciones", "plan", "ficha_tecnica", "estudio", 
-    "video", "foto", "discursos", "memorias institucionales", 
-    "convocatorias", "Invitacion", "cuestionario/ instrumento de recolección de datos", 
-    "TDER", "cronograma", "diagnostico", "listado", "declaracion ciudadana"
-  ],
-  CoordinadorPlanificacion: [
-    "presentaciones", "carta", "informe", "convenios", "contrato", 
-    "minutas/ayuda_memoria", "actas", "mapas", "logos", "graficos", 
-    "nota_prensa/comunicaciones", "plan", "ficha_tecnica", "estudio", 
-    "video", "foto", "discursos", "memorias institucionales", 
-    "convocatorias", "Invitacion", "cuestionario/ instrumento de recolección de datos", 
-    "TDER", "cronograma", "diagnostico", "listado", "declaracion ciudadana"
-  ],
-  UnidadProyectos: [
-    "presentaciones", "informe", "minutas/ayuda_memoria", "actas", "mapas", 
-    "logos", "graficos", "plan", "ficha_tecnica", "estudio", "video", "foto", 
-    "memorias institucionales", "Invitacion", "cuestionario/ instrumento de recolección de datos", 
-    "TDER", "cronograma", "diagnostico", "listado", "declaracion ciudadana"
-  ],
-  UnidadPlanificacion: [
-    "presentaciones", "informe", "minutas/ayuda_memoria", "actas", "mapas", 
-    "logos", "graficos", "plan", "ficha_tecnica", "estudio", "video", "foto", 
-    "memorias institucionales", "Invitacion", "cuestionario/ instrumento de recolección de datos", 
-    "TDER", "cronograma", "diagnostico", "listado", "declaracion ciudadana"
-  ],
-  asistenciaGeneral: [
-    "agendas", "carta", "minutas/ayuda_memoria", "logos", "convocatorias"
-  ],
-  UnidadAdministrativa: [
-    "convenio", "contrato", "plan"
-  ],
-  UnidadComunicacion: [
-    "nota_prensa/comunicaciones", "video", "foto", "convocatorias", 
-    "Invitacion", "cronograma"
-  ]
-};
-
-const allDocumentTypes = [
-  ...new Set(Object.values(documentTypesByRole).flat()),
-].sort();
+// Configuraciones centralizadas
+const documentTypes = [
+  "actas", "mapas", "logos", "graficos", "plan", "video", "foto", "listado",
+  "carta", "informe", "convenios", "contrato", "discursos", "convocatorias",
+  "Invitacion", "cuestionario", "TDER", "cronograma", "diagnostico",
+  "presentaciones", "minutas/ayuda_memoria", "nota_prensa/comunicaciones",
+  "ficha_tecnica", "estudio", "memorias institucionales", "declaracion ciudadana"
+].sort((a, b) => a.localeCompare(b));
 
 const formatDocumentType = (type) => {
   if (!type) return "";
@@ -88,6 +54,8 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
   const [file, setFile] = useState(null);
   const [apartado, setApartado] = useState("");
   const [estrategia, setEstrategia] = useState("");
+  const [puestoTrabajo, setPuestoTrabajo] = useState("");
+  const [proyecto, setProyecto] = useState("");
   const [tipoDocumento, setTipoDocumento] = useState("");
   const [publico, setPublico] = useState(false);
   const [coverImage, setCoverImage] = useState(null);
@@ -95,19 +63,43 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
   const [progress, setProgress] = useState({});
   const [isDragging, setIsDragging] = useState(false);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
-
-  const availableDocumentTypes =
-    apartado === "PES 2030"
-      ? allDocumentTypes
-      : userRole
-      ? documentTypesByRole[userRole] || []
-      : [];
+  const [strategyProjects, setStrategyProjects] = useState([]);
 
   useEffect(() => {
     if (userRole) {
-      setTipoDocumento(""); // Resetear al cambiar de rol
+      setTipoDocumento("");
     }
   }, [userRole]);
+
+  useEffect(() => {
+    if (apartado === "PES 2030" && estrategia) {
+      documentsAPI.getProjectsByStrategy(estrategia)
+        .then(response => {
+          console.log("Response from API:", response);
+          // Extraer los nombres únicos de carpetas/proyectos
+          const projects = new Set();
+          const files = response.data?.files || [];
+          files.forEach(file => {
+            const pathParts = file.path.split('/');
+            // Estructura: PES_2030/{estrategia}/{proyecto}/...
+            if (pathParts.length >= 3 && pathParts[0] === 'PES_2030' && pathParts[1] === estrategia) {
+              const projectName = pathParts[2];
+              if (projectName && !projectName.match(/^\d{4}$/)) { // No es un año
+                projects.add(projectName);
+              }
+            }
+          });
+          setStrategyProjects(Array.from(projects).sort());
+        })
+        .catch(error => {
+          console.error("Error fetching projects by strategy:", error);
+          setStrategyProjects([]);
+        });
+    } else {
+      setStrategyProjects([]);
+      setProyecto("");
+    }
+  }, [apartado, estrategia]);
 
   const handleFileSelect = (selectedFile) => {
     setFile(selectedFile);
@@ -153,6 +145,10 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
       toast.warning("Debes seleccionar una estrategia para PES 2030.");
       return;
     }
+    if (apartado === "CDES inst." && !puestoTrabajo) {
+      toast.warning("Debes seleccionar un puesto de trabajo para CDES inst.");
+      return;
+    }
     if (publico && !coverImage) {
       toast.warning(
         "Debes seleccionar una imagen de portada para un documento público."
@@ -172,9 +168,14 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
       formData.append("apartado", apartado);
       if (apartado === "PES 2030") {
         formData.append("estrategia", estrategia);
+        if (proyecto) {
+          formData.append("proyecto", proyecto);
+        }
+      } else if (apartado === "CDES inst.") {
+        formData.append("puesto_trabajo", puestoTrabajo);
       }
       formData.append("categoria", tipoDocumento);
-      formData.append("puesto", userRole); // Enviar el rol del usuario
+      formData.append("puesto", userRole);
       formData.append("publico", publico);
       if (publico && coverImage) {
         formData.append("cover_image", coverImage);
@@ -194,6 +195,8 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
       setFile(null);
       setApartado("");
       setEstrategia("");
+      setPuestoTrabajo("");
+      setProyecto("");
       setTipoDocumento("");
       setPublico(false);
       setCoverImage(null);
@@ -226,7 +229,6 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
         </DialogHeader>
 
         <form className="space-y-4 mt-4" onSubmit={handleUploadRequest}>
-          {/* Apartado y Estrategia */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <label className="block text-sm font-medium">Iniciativa</label>
@@ -234,8 +236,10 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
                 value={apartado}
                 onValueChange={(value) => {
                   setApartado(value);
-                  setEstrategia(""); // Reset strategy when initiative changes
-                  setTipoDocumento(""); // Reset document type as well
+                  setEstrategia("");
+                  setPuestoTrabajo("");
+                  setProyecto("");
+                  setTipoDocumento("");
                 }}
               >
                 <SelectTrigger className="border border-gray-300">
@@ -247,27 +251,59 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
                 </SelectContent>
               </Select>
             </div>
+            
+            {apartado === "CDES inst." && (
+              <div className="space-y-2">
+                <label className="block text-sm font-medium">Puesto de Trabajo</label>
+                <Select value={puestoTrabajo} onValueChange={setPuestoTrabajo}>
+                  <SelectTrigger className="border border-gray-300">
+                    <SelectValue placeholder="Selecciona un puesto" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {puestosTrabajo.map(puesto => (
+                      <SelectItem key={puesto} value={puesto}>{puesto}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
             {apartado === "PES 2030" && (
               <div className="space-y-2">
                 <label className="block text-sm font-medium">Estrategia</label>
-                <Select value={estrategia} onValueChange={setEstrategia}>
+                <Select value={estrategia} onValueChange={(value) => {
+                  setEstrategia(value);
+                  setProyecto("");
+                }}>
                   <SelectTrigger className="border border-gray-300">
                     <SelectValue placeholder="Selecciona una estrategia" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Estrategia I">Estrategia I</SelectItem>
-                    <SelectItem value="Estrategia II">Estrategia II</SelectItem>
-                    <SelectItem value="Estrategia III">
-                      Estrategia III
-                    </SelectItem>
-                    <SelectItem value="Estrategia IV">Estrategia IV</SelectItem>
+                    {pesEstrategias.map(est => (
+                      <SelectItem key={est} value={est}>{est}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {apartado === "PES 2030" && estrategia && strategyProjects.length > 0 && (
+              <div className="space-y-2">
+                <label className="block text-sm font-medium">Proyecto</label>
+                <Select value={proyecto} onValueChange={setProyecto}>
+                  <SelectTrigger className="border border-gray-300">
+                    <SelectValue placeholder="Selecciona un proyecto" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {strategyProjects.map(proj => (
+                      <SelectItem key={proj} value={proj}>{proj}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
             )}
           </div>
 
-          {/* Drag & Drop */}
           <div
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
@@ -291,7 +327,6 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
             />
           </div>
 
-          {/* Lista de archivos */}
           {file && (
             <div className="space-y-2">
               <div
@@ -318,7 +353,6 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
             </div>
           )}
 
-          {/* Tipo de documento */}
           <div className="space-y-2">
             <label className="block text-sm font-medium">
               Tipo de documento
@@ -326,13 +360,13 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
             <Select
               value={tipoDocumento}
               onValueChange={setTipoDocumento}
-              disabled={!userRole || !apartado}
+              disabled={!apartado}
             >
               <SelectTrigger className="border border-gray-300">
                 <SelectValue placeholder="Selecciona el tipo de documento" />
               </SelectTrigger>
               <SelectContent>
-                {availableDocumentTypes.map((type) => (
+                {documentTypes.map((type) => (
                   <SelectItem key={type} value={type}>
                     {formatDocumentType(type)}
                   </SelectItem>
@@ -341,7 +375,6 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
             </Select>
           </div>
 
-          {/* Público */}
           <div className="flex items-center gap-2">
             <input
               type="checkbox"
@@ -355,7 +388,6 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
             </label>
           </div>
 
-          {/* Agregar imagen de portada */}
           {publico && (
             <div className="space-y-2">
               <label className="block text-sm font-medium">
@@ -392,7 +424,6 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
             </div>
           )}
 
-          {/* Botones */}
           <div className="flex justify-end gap-3 pt-2">
             <Button
               type="button"
@@ -408,7 +439,6 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
           </div>
         </form>
 
-        {/* Confirmation Dialog */}
         <Dialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
           <DialogContent>
             <DialogHeader>

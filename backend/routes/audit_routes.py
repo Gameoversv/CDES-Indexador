@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, status, Query, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 import io, csv
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 from utils.audit_logger import (
     log_event,
@@ -89,7 +90,9 @@ def _enrich_logs_with_users(logs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
         # Firestore where-in limita a 10 elementos
         for chunk in _chunked(uids, FIRESTORE_IN_LIMIT):
-            q = db.collection("users").where("uid", "in", chunk)
+            # Actualización para usar filter keyword con FieldFilter
+            from firebase_admin import firestore
+            q = db.collection("users").where(filter=firestore.FieldFilter("uid", "in", chunk))
             for doc in q.stream():
                 d = doc.to_dict() or {}
                 uid = d.get("uid")

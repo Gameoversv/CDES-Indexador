@@ -11,6 +11,7 @@ import {
   Calendar,
   HardDrive
 } from "lucide-react";
+import { groupVersionedDocuments } from "@/lib/documentUtils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -50,6 +51,7 @@ export default function UserDocuments() {
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [userDepartment, setUserDepartment] = useState("");
+  const [isDirectorEjecutivo, setIsDirectorEjecutivo] = useState(false);
   
   // Estados de paginación
   const [currentPage, setCurrentPage] = useState(1);
@@ -73,6 +75,10 @@ export default function UserDocuments() {
       if (response.data && response.data.role) {
         const departmentName = getDepartmentDisplayName(response.data.role);
         setUserDepartment(departmentName);
+        // Verificar si es Dirección Ejecutiva
+        const isDirector = response.data.role === "Dirección Ejecutiva" || 
+                         response.data.role === "DireccionEjecutiva";
+        setIsDirectorEjecutivo(isDirector);
         return;
       }
     } catch (error) {
@@ -86,6 +92,10 @@ export default function UserDocuments() {
         const parsedUser = JSON.parse(userData);
         const departmentName = getDepartmentDisplayName(parsedUser.role);
         setUserDepartment(departmentName);
+        // Verificar si es Dirección Ejecutiva
+        const isDirector = parsedUser.role === "Dirección Ejecutiva" || 
+                         parsedUser.role === "DireccionEjecutiva";
+        setIsDirectorEjecutivo(isDirector);
       }
     } catch (error) {
       console.error("Error obteniendo departamento:", error);
@@ -94,21 +104,18 @@ export default function UserDocuments() {
 
   const getDepartmentDisplayName = (role) => {
     const roleNames = {
-      admin: "Administración",
-      "Dirección ejecutiva": "Dirección Ejecutiva",
+      //admin: "Administración",
+      "Dirección Ejecutiva": "Dirección Ejecutiva",
+      "Coordinador Administrativa": "Coordinador Administrativa",
+      "Coordinación Proyectos y Planificación": "Coordinación Proyectos y Planificación", 
+      "Coordinación de Comunicaciones": "Coordinación de Comunicaciones",
       "Asistencia General": "Asistencia General",
-      "Coordinador de Planificación": "Coordinador de Planificación",
-      "Unidad Administrativa": "Unidad Administrativa", 
-      "Unidad de Comunicación y Difusión": "Unidad de Comunicación y Difusión",
-      "Unidad de Planificación": "Unidad de Planificación",
-      "Unidad de Gestión de Proyectos": "Unidad de Gestión de Proyectos",
       // También mantener compatibilidad con los nombres antiguos
-      asistenciaGeneral: "Asistencia General",
-      CoordinadorPlanificacion: "Coordinador de Planificación",
-      UnidadAdministrativa: "Unidad Administrativa",
-      UnidadComunicacion: "Unidad de Comunicación y Difusión",
-      UnidadPlanificacion: "Unidad de Planificación",
-      UnidadProyectos: "Unidad de Gestión de Proyectos",
+      DireccionEjecutiva: "Dirección Ejecutiva",
+      CoordinadorAdministrativa: "Coordinador Administrativa",
+      CoordinacionProyectosPlanificacion: "Coordinación Proyectos y Planificación",
+      CoordinacionComunicaciones: "Coordinación de Comunicaciones",
+      AsistenciaGeneral: "Asistencia General"
     };
     return roleNames[role] || role || "Departamento";
   };
@@ -117,37 +124,25 @@ export default function UserDocuments() {
     console.log("🔄 [UserDocuments] Iniciando carga de archivos...");
     setLoading(true);
     try {
+      // Prefer new documents endpoint (Meilisearch with Firestore fallback)
       const res = await documentsAPI.list();
       const data = res?.data || {};
       const items = data.files || data.documents || data.hits || [];
-      
-      console.log("📋 [UserDocuments] Items encontrados:", items.length);
-      if (items.length > 0) {
-        console.log("🔍 [UserDocuments] Primer item:", items[0]);
-        console.log("🏷️ [UserDocuments] Campo categoria del primer item:", items[0].categoria);
-      }
-      
-      // Normalización SIMPLIFICADA - solo usar categoria
+      // Normalize minimal fields expected by the table
       const normalized = items.map((d) => {
         const rawPath = d.storage_path || d.path || "";
         const nameFromPath = rawPath ? rawPath.split("/").pop() : "";
-        
-        console.log(`📝 [UserDocuments] Procesando: ${nameFromPath}, categoria: "${d.categoria}"`);
-        
         return {
+          // Prefer filename from storage path to keep version suffix (_vN)
           filename: nameFromPath || d.filename || d.original_filename || d.title || "",
           size: d.size ?? d.file_size_bytes ?? 0,
           updated: d.updated || d.updated_at || d.created_at || d.date || d.upload_timestamp,
           path: rawPath,
-          categoria: d.categoria || "", // SOLO usar este campo
+          tipo: d.tipo || d.tipo_documento || "",
+          categoria: d.categoria || d.apartado || "",
           public: d.public ?? d.publico ?? false,
         };
       });
-      
-      console.log("🎯 [UserDocuments] Total normalizados:", normalized.length);
-      console.log("📊 [UserDocuments] Categorías únicas:", 
-        [...new Set(normalized.map(item => item.categoria).filter(Boolean))]);
-      
       setFiles(normalized);
     } catch (error) {
       console.error("❌ [UserDocuments] Error:", error);
@@ -196,7 +191,8 @@ export default function UserDocuments() {
   };
 
   const sortedFiles = useMemo(() => {
-    return [...files].sort((a, b) => {
+    // First sort the files
+    const sorted = [...files].sort((a, b) => {
       let valA = a[sortBy],
         valB = b[sortBy];
       if (sortBy === "updated") {
@@ -213,6 +209,9 @@ export default function UserDocuments() {
       if (valA > valB) return sortOrder === "asc" ? 1 : -1;
       return 0;
     });
+    
+    // Then group versioned files
+    return groupVersionedDocuments(sorted);
   }, [files, sortBy, sortOrder]);
 
   // Filtrado SIMPLIFICADO - solo buscar en categoria
@@ -324,9 +323,34 @@ export default function UserDocuments() {
   };
 
   const handleDelete = async () => {
-    if (!confirmDelete.file) return;
-    toast.error("No tienes permisos para eliminar archivos");
-    setConfirmDelete({ open: false, file: null });
+    if (!confirmDelete.file || !isDirectorEjecutivo) {
+      if (!isDirectorEjecutivo) {
+        toast.error("Solo Dirección Ejecutiva puede eliminar archivos");
+      }
+      setConfirmDelete({ open: false, file: null });
+      return;
+    }
+    
+    try {
+      setLoading(true);
+      const path = confirmDelete.file.path;
+      
+      // 1. Eliminar el archivo del bucket de Firebase Storage
+      await documentsAPI.deleteByPath(path);
+      
+      // 2 y 3. La API deleteByPath se encarga de eliminar también de Meilisearch y Firestore
+      toast.success("Documento eliminado correctamente");
+      
+      // Actualizar la lista de archivos
+      await fetchFiles();
+      
+      setConfirmDelete({ open: false, file: null });
+    } catch (error) {
+      console.error("Error al eliminar el documento:", error);
+      toast.error("Error al eliminar el documento");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleItemsPerPageChange = (value) => {
@@ -437,6 +461,7 @@ export default function UserDocuments() {
             handleDownload={handleDownload}
             formatSize={formatSize}
             formatDate={formatDate}
+            isDirectorEjecutivo={isDirectorEjecutivo}
           />
         ) : (
           <DocumentsGrid
@@ -446,6 +471,7 @@ export default function UserDocuments() {
             handleDownload={handleDownload}
             setPreviewFile={setPreviewFile}
             setConfirmDelete={setConfirmDelete}
+            isDirectorEjecutivo={isDirectorEjecutivo}
           />
         )}
 

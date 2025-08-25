@@ -1,13 +1,13 @@
-// frontend/src/components/Users/UserFolders.jsx
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Button } from "@/components/ui/button";
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import AdminLayout from '../Layout/AdminLayout';
+import { Button } from '@/components/ui/button';
+import { documentsAPI } from '@/services/api';
+import TreeNode from '../../Users/UserFolders/TreeNode';
 import {
   Folder, FolderOpen, FileText, ChevronRight, ChevronDown, Home,
   Search, Loader2, Plus, Upload, List, Grid3X3, Filter, ChevronDown as CD, RefreshCw,
   Download, Trash2, AlertTriangle, ArrowLeft
-} from "lucide-react";
-import TreeNode from "./TreeNode";
-import { useAuth } from "@/contexts/AuthContext";
+} from 'lucide-react';
 
 // ===================== Utilidades básicas =====================
 const extOf = (name = "") => (name.toLowerCase().match(/\.([a-z0-9]+)$/)?.[1] ?? "");
@@ -23,10 +23,6 @@ const SORTS = [
   { id: "za", label: "Z–A" },
   { id: "size", label: "Tamaño" },
 ];
-
-// ===================== Config API (Endpoints de nuestro backend) =====================
-// Usamos las mismas APIs que AdminFolders
-import { documentsAPI } from '@/services/api';
 
 // ===================== Badges de archivo =====================
 function FileBadge({ name }) {
@@ -92,24 +88,11 @@ function DeleteConfirmationModal({ open, onClose, onConfirm, itemName, isFolder 
 }
 
 // ===================== Componente principal =====================
-export default function UserFolders() {
-  // Obtener datos de autenticación
-  const { isAdmin, userRole } = useAuth();
+const AdminFolders = () => {
+  // Como es admin, puede crear/eliminar carpetas
+  const canCreateOrUpload = true;
+  const canDelete = true;
   
-  // Determinar si el usuario puede crear carpetas/subir documentos
-  const canCreateOrUpload = useMemo(() => {
-    if (isAdmin) return true;
-    if (userRole === "Dirección ejecutiva") return true;
-    return false;
-  }, [isAdmin, userRole]);
-  
-  // Determinar si el usuario puede eliminar carpetas/archivos
-  const canDelete = useMemo(() => {
-    if (isAdmin) return true;
-    if (userRole === "Dirección ejecutiva") return true;
-    return false;
-  }, [isAdmin, userRole]);
-
   // Estado de árbol (sidebar)
   const [openMap, setOpenMap] = useState({ "": true }); // qué rutas están abiertas
   const [sidebarRoot, setSidebarRoot] = useState([]); // carpetas de raíz visibles para el usuario
@@ -260,7 +243,6 @@ export default function UserFolders() {
     // podríamos tener un problema con carpetas muy anidadas
     if (!result && treeData && treeData.length > 0 && normalizedPath.includes('/')) {
       console.log('No se encontró el nodo para la ruta profunda:', normalizedPath);
-      // Para carpetas profundas, podríamos necesitar hacer una solicitud específica
     }
     
     return result;
@@ -647,7 +629,9 @@ export default function UserFolders() {
     } finally {
       setUploading(false);
     }
-  };  // Función para descargar archivos
+  };
+
+  // Función para descargar archivos
   const handleDownload = useCallback(async (path, name) => {
     try {
       const res = await documentsAPI.downloadByPath(path);
@@ -718,351 +702,355 @@ export default function UserFolders() {
 
   // ===================== Render =====================
   return (
-    <div className="p-4 md:p-6 max-w-7xl mx-auto w-full text-black">
-      {/* Barra superior */}
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-4">
-        {/* Breadcrumb */}
-        <div className="flex items-center flex-wrap gap-2">
-          {breadcrumbs.map((c, i) => (
-            <div key={`${c.path}-${i}`} className="flex items-center gap-2">
-              {i > 0 && <ChevronRight className="w-4 h-4 text-gray-400" />}
-              <button
-                className={`text-sm ${i === breadcrumbs.length - 1 ? "font-semibold" : "text-gray-600 hover:underline"}`}
-                onClick={() => onBreadcrumbClick(c.path)}
+    <AdminLayout>
+      <div className="p-4 md:p-6 max-w-7xl mx-auto w-full text-black">
+        {/* Barra superior */}
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-4">
+          {/* Breadcrumb */}
+          <div className="flex items-center flex-wrap gap-2">
+            {breadcrumbs.map((c, i) => (
+              <div key={`${c.path}-${i}`} className="flex items-center gap-2">
+                {i > 0 && <ChevronRight className="w-4 h-4 text-gray-400" />}
+                <button
+                  className={`text-sm ${i === breadcrumbs.length - 1 ? "font-semibold" : "text-gray-600 hover:underline"}`}
+                  onClick={() => onBreadcrumbClick(c.path)}
+                >
+                  {c.name}
+                </button>
+              </div>
+            ))}
+          </div>
+
+          {/* Controles */}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative">
+              <Search className="w-4 h-4 text-gray-500 absolute left-3 top-2.5" />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Buscar en esta carpeta…"
+                className="pl-9 pr-3 py-2 h-9 rounded-md border border-gray-300 text-sm w-64 focus:outline-none focus:ring-2 focus:ring-gray-300"
+              />
+            </div>
+
+            <div className="relative">
+              <Filter className="w-4 h-4 text-gray-500 absolute left-3 top-2.5 pointer-events-none" />
+              <select
+                className="appearance-none pl-9 pr-8 py-2 h-9 rounded-md border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-gray-300"
+                value={sort}
+                onChange={(e) => setSort(e.target.value)}
               >
-                {c.name}
+                {SORTS.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+              </select>
+              <CD className="w-4 h-4 text-gray-500 absolute right-2 top-2.5 pointer-events-none" />
+            </div>
+
+            <div className="flex rounded-md border border-gray-300 overflow-hidden">
+              <button
+                className={`px-3 h-9 text-sm flex items-center gap-1 ${view === "list" ? "bg-gray-100 font-medium" : ""}`}
+                onClick={() => setView("list")}
+                title="Lista"
+              >
+                <List className="w-4 h-4" /> Lista
+              </button>
+              <button
+                className={`px-3 h-9 text-sm flex items-center gap-1 ${view === "grid" ? "bg-gray-100 font-medium" : ""}`}
+                onClick={() => setView("grid")}
+                title="Cuadrícula"
+              >
+                <Grid3X3 className="w-4 h-4" /> Cuadrícula
               </button>
             </div>
-          ))}
-        </div>
 
-        {/* Controles */}
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative">
-            <Search className="w-4 h-4 text-gray-500 absolute left-3 top-2.5" />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Buscar en esta carpeta…"
-              className="pl-9 pr-3 py-2 h-9 rounded-md border border-gray-300 text-sm w-64 focus:outline-none focus:ring-2 focus:ring-gray-300"
-            />
-          </div>
+            {canCreateOrUpload && (
+              <>
+                <Button onClick={() => setShowCreateFolder(true)} className="h-9 gap-2">
+                  <Plus className="w-4 h-4" /> Crear Carpeta
+                </Button>
 
-          <div className="relative">
-            <Filter className="w-4 h-4 text-gray-500 absolute left-3 top-2.5 pointer-events-none" />
-            <select
-              className="appearance-none pl-9 pr-8 py-2 h-9 rounded-md border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-gray-300"
-              value={sort}
-              onChange={(e) => setSort(e.target.value)}
-            >
-              {SORTS.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
-            </select>
-            <CD className="w-4 h-4 text-gray-500 absolute right-2 top-2.5 pointer-events-none" />
-          </div>
-
-          <div className="flex rounded-md border border-gray-300 overflow-hidden">
-            <button
-              className={`px-3 h-9 text-sm flex items-center gap-1 ${view === "list" ? "bg-gray-100 font-medium" : ""}`}
-              onClick={() => setView("list")}
-              title="Lista"
-            >
-              <List className="w-4 h-4" /> Lista
-            </button>
-            <button
-              className={`px-3 h-9 text-sm flex items-center gap-1 ${view === "grid" ? "bg-gray-100 font-medium" : ""}`}
-              onClick={() => setView("grid")}
-              title="Cuadrícula"
-            >
-              <Grid3X3 className="w-4 h-4" /> Cuadrícula
-            </button>
-          </div>
-
-          {canCreateOrUpload && (
-            <>
-              <Button onClick={() => setShowCreateFolder(true)} className="h-9 gap-2">
-                <Plus className="w-4 h-4" /> Crear Carpeta
-              </Button>
-
-              <Button onClick={() => setShowUpload(true)} className="h-9 gap-2 bg-red-600 hover:bg-red-600/90">
-                <Upload className="w-4 h-4" /> Agregar Documento
-              </Button>
-            </>
-          )}
-
-          <Button onClick={refreshAll} variant="outline" className="h-9 gap-2">
-            <RefreshCw className="w-4 h-4" /> Actualizar
-          </Button>
-        </div>
-      </div>
-
-      {/* Layout: árbol de carpetas + contenido */}
-      <div className="grid grid-cols-12 gap-4 mt-0">
-        {/* Sidebar (árbol) */}
-        <aside className="col-span-12 md:col-span-3 bg-white rounded-lg border border-gray-200">
-          <div className="p-3 border-b border-gray-100 flex justify-between items-center">
-            <span className="text-xs font-semibold text-gray-600">CARPETAS</span>
-            {selectedPath && selectedPath !== "" && (
-              <button
-                onClick={goToPreviousFolder}
-                className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800"
-                title="Volver a la carpeta anterior"
-              >
-                <ArrowLeft className="w-3.5 h-3.5" />
-                <span>Atrás</span>
-              </button>
+                <Button onClick={() => setShowUpload(true)} className="h-9 gap-2 bg-red-600 hover:bg-red-600/90">
+                  <Upload className="w-4 h-4" /> Agregar Documento
+                </Button>
+              </>
             )}
-          </div>
-          <div className="h-[540px] overflow-auto">
-            {/* Raíz */}
-            <div className="mb-1">
-              <div
-                className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-100 cursor-pointer"
-                onClick={() => onToggleSidebar?.("")}
-              >
-                {openMap[""] ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                <Home className="w-4 h-4" />
-                <span
-                  className={`text-sm font-semibold ${selectedPath === "" ? "underline" : ""}`}
-                  onClick={(e) => { e.stopPropagation(); onOpenPath(""); }}
-                >
-                  Raíz
-                </span>
-              </div>
 
-              {openMap[""] && (
-                <div className="pl-0">
-                  {sidebarRoot.map(n => (
-                    <TreeNode
-                      key={n.path}
-                      node={n}
-                      depth={1}
-                      openMap={openMap}
-                      childrenMap={sidebarChildren}
-                      onToggle={onToggleSidebar}
-                      onOpenPath={onOpenPath}
-                      ensureChildrenLoaded={ensureChildrenLoaded}
-                      selectedPath={selectedPath}
-                      canDelete={canDelete}
-                      onDelete={handleDelete}
-                    />
-                  ))}
-                </div>
+            <Button onClick={refreshAll} variant="outline" className="h-9 gap-2">
+              <RefreshCw className="w-4 h-4" /> Actualizar
+            </Button>
+          </div>
+        </div>
+
+        {/* Layout: árbol de carpetas + contenido */}
+        <div className="grid grid-cols-12 gap-4 mt-0">
+          {/* Sidebar (árbol) */}
+          <aside className="col-span-12 md:col-span-3 bg-white rounded-lg border border-gray-200">
+            <div className="p-3 border-b border-gray-100 flex justify-between items-center">
+              <span className="text-xs font-semibold text-gray-600">CARPETAS</span>
+              {selectedPath && selectedPath !== "" && (
+                <button
+                  onClick={goToPreviousFolder}
+                  className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800"
+                  title="Volver a la carpeta anterior"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  <span>Atrás</span>
+                </button>
               )}
             </div>
-          </div>
-        </aside>
+            <div className="h-[540px] overflow-auto">
+              {/* Raíz */}
+              <div className="mb-1">
+                <div
+                  className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-100 cursor-pointer"
+                  onClick={() => onToggleSidebar?.("")}
+                >
+                  {openMap[""] ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                  <Home className="w-4 h-4" />
+                  <span
+                    className={`text-sm font-semibold ${selectedPath === "" ? "underline" : ""}`}
+                    onClick={(e) => { e.stopPropagation(); onOpenPath(""); }}
+                  >
+                    Raíz
+                  </span>
+                </div>
 
-        {/* Contenido principal */}
-        <section className="col-span-12 md:col-span-9 bg-white rounded-lg border border-gray-200">
-          <div className="p-3 border-b border-gray-100 text-sm">
-            Carpeta actual: <span className="font-semibold">{currentPathText}</span>
-          </div>
-
-          {loading ? (
-            <div className="p-8 flex items-center justify-center text-gray-600 gap-3">
-              <Loader2 className="w-5 h-5 animate-spin" /> Cargando…
-            </div>
-          ) : error ? (
-            <div className="p-8 text-center text-red-600">{error}</div>
-          ) : (
-            <>
-              {/* Carpetas en la ruta actual */}
-              {folders?.length > 0 && (
-                <div className="p-3">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                    {folders.map((f) => (
-                      <div
-                        key={f.path}
-                        className={`flex items-center gap-2 p-2 rounded-md border border-gray-200 hover:bg-gray-50 ${selectedPath === f.path ? "bg-gray-50" : ""}`}
-                        title={f.path}
-                      >
-                        <button
-                          className="flex-1 flex items-center gap-2 text-left"
-                          onClick={() => onOpenPath?.(f.path)}
-                        >
-                          <Folder className="w-4 h-4 text-gray-800" />
-                          <div className="flex-1 min-w-0">
-                            <div className="text-sm font-medium truncate">{f.name}</div>
-                            <div className="text-[11px] text-gray-500 truncate">
-                              {typeof f.count === "number" ? `${f.count} ítems` : "Carpeta"}
-                            </div>
-                          </div>
-                        </button>
-                        
-                        {canDelete && (
-                          <button 
-                            onClick={() => confirmDelete(f.path, f.name, true)}
-                            className="text-gray-400 hover:text-red-500 p-1"
-                            title="Eliminar carpeta"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        )}
-                      </div>
+                {openMap[""] && (
+                  <div className="pl-0">
+                    {sidebarRoot.map(n => (
+                      <TreeNode
+                        key={n.path}
+                        node={n}
+                        depth={1}
+                        openMap={openMap}
+                        childrenMap={sidebarChildren}
+                        onToggle={onToggleSidebar}
+                        onOpenPath={onOpenPath}
+                        ensureChildrenLoaded={ensureChildrenLoaded}
+                        selectedPath={selectedPath}
+                        canDelete={canDelete}
+                        onDelete={handleDelete}
+                      />
                     ))}
                   </div>
-                </div>
-              )}
+                )}
+              </div>
+            </div>
+          </aside>
 
-              {/* Archivos */}
-              {view === "list" ? (
-                <div className="p-3">
-                  <div className="grid grid-cols-12 px-3 py-2 text-xs text-gray-500 border-b border-gray-100">
-                    <div className="col-span-6">Nombre</div>
-                    <div className="col-span-2">Tipo</div>
-                    <div className="col-span-2">Tamaño</div>
-                    <div className="col-span-2">Actualizado</div>
-                  </div>
+          {/* Contenido principal */}
+          <section className="col-span-12 md:col-span-9 bg-white rounded-lg border border-gray-200">
+            <div className="p-3 border-b border-gray-100 text-sm">
+              Carpeta actual: <span className="font-semibold">{currentPathText}</span>
+            </div>
 
-                  {(sortedFilteredFiles?.length ?? 0) === 0 ? (
-                    <div className="p-8 text-center text-gray-500">Vacío</div>
-                  ) : (
-                    sortedFilteredFiles.map((file) => (
-                      <div key={file.id || file.name} className="grid grid-cols-12 items-center px-3 py-2 border-b border-gray-50">
-                        <div className="col-span-6 flex items-center gap-2 min-w-0">
-                          <FileText className="w-4 h-4 text-gray-700" />
-                          <span className="truncate" title={file.name}>{file.name}</span>
-                          <FileBadge name={file.name} />
-                        </div>
-                        <div className="col-span-2 text-xs text-gray-600">{file.contentType || "--"}</div>
-                        <div className="col-span-2 text-xs text-gray-600">{fmtSize(file.size)}</div>
-                        <div className="col-span-2 text-xs text-gray-600 flex items-center justify-between">
-                          <span>{file.updated ? new Date(file.updated).toLocaleString() : "--"}</span>
-                          <div className="flex items-center space-x-1">
-                            <button 
-                              onClick={() => handleDownload(file.path, file.name)}
-                              className="text-blue-600 hover:text-blue-800"
-                              title="Descargar archivo"
-                            >
-                              <Download className="w-4 h-4" />
-                            </button>
-                            {canDelete && (
-                              <button 
-                                onClick={() => confirmDelete(file.path, file.name, false)}
-                                className="text-gray-400 hover:text-red-500"
-                                title="Eliminar archivo"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              ) : (
-                <div className="p-3">
-                  {(sortedFilteredFiles?.length ?? 0) === 0 ? (
-                    <div className="p-8 text-center text-gray-500">Vacío</div>
-                  ) : (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                      {sortedFilteredFiles.map((file) => (
-                        <div key={file.id || file.name} className="border border-gray-200 rounded-md p-3">
-                          <div className="flex items-center gap-2 mb-2">
-                            <FileText className="w-4 h-4 text-gray-700" />
-                            <span className="text-sm font-medium truncate" title={file.name}>{file.name}</span>
-                            <FileBadge name={file.name} />
-                          </div>
-                          <div className="text-[11px] text-gray-500">
-                            <div>{file.contentType || "--"}</div>
-                            <div>{fmtSize(file.size)}</div>
-                            <div className="flex items-center justify-between">
-                              <span>{file.updated ? new Date(file.updated).toLocaleDateString() : "--"}</span>
-                              <div className="flex items-center space-x-1">
-                                <button 
-                                  onClick={() => handleDownload(file.path, file.name)}
-                                  className="text-blue-600 hover:text-blue-800"
-                                  title="Descargar archivo"
-                                >
-                                  <Download className="w-4 h-4" />
-                                </button>
-                                {canDelete && (
-                                  <button 
-                                    onClick={() => confirmDelete(file.path, file.name, false)}
-                                    className="text-gray-400 hover:text-red-500"
-                                    title="Eliminar archivo"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </button>
-                                )}
+            {loading ? (
+              <div className="p-8 flex items-center justify-center text-gray-600 gap-3">
+                <Loader2 className="w-5 h-5 animate-spin" /> Cargando…
+              </div>
+            ) : error ? (
+              <div className="p-8 text-center text-red-600">{error}</div>
+            ) : (
+              <>
+                {/* Carpetas en la ruta actual */}
+                {folders?.length > 0 && (
+                  <div className="p-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                      {folders.map((f) => (
+                        <div
+                          key={f.path}
+                          className={`flex items-center gap-2 p-2 rounded-md border border-gray-200 hover:bg-gray-50 ${selectedPath === f.path ? "bg-gray-50" : ""}`}
+                          title={f.path}
+                        >
+                          <button
+                            className="flex-1 flex items-center gap-2 text-left"
+                            onClick={() => onOpenPath?.(f.path)}
+                          >
+                            <Folder className="w-4 h-4 text-gray-800" />
+                            <div className="flex-1 min-w-0">
+                              <div className="text-sm font-medium truncate">{f.name}</div>
+                              <div className="text-[11px] text-gray-500 truncate">
+                                {typeof f.count === "number" ? `${f.count} ítems` : "Carpeta"}
                               </div>
                             </div>
-                          </div>
+                          </button>
+                          
+                          {canDelete && (
+                            <button 
+                              onClick={() => confirmDelete(f.path, f.name, true)}
+                              className="text-gray-400 hover:text-red-500 p-1"
+                              title="Eliminar carpeta"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
                         </div>
                       ))}
                     </div>
-                  )}
-                </div>
-              )}
+                  </div>
+                )}
+
+                {/* Archivos */}
+                {view === "list" ? (
+                  <div className="p-3">
+                    <div className="grid grid-cols-12 px-3 py-2 text-xs text-gray-500 border-b border-gray-100">
+                      <div className="col-span-6">Nombre</div>
+                      <div className="col-span-2">Tipo</div>
+                      <div className="col-span-2">Tamaño</div>
+                      <div className="col-span-2">Actualizado</div>
+                    </div>
+
+                    {(sortedFilteredFiles?.length ?? 0) === 0 ? (
+                      <div className="p-8 text-center text-gray-500">Vacío</div>
+                    ) : (
+                      sortedFilteredFiles.map((file) => (
+                        <div key={file.id || file.name} className="grid grid-cols-12 items-center px-3 py-2 border-b border-gray-50">
+                          <div className="col-span-6 flex items-center gap-2 min-w-0">
+                            <FileText className="w-4 h-4 text-gray-700" />
+                            <span className="truncate" title={file.name}>{file.name}</span>
+                            <FileBadge name={file.name} />
+                          </div>
+                          <div className="col-span-2 text-xs text-gray-600">{file.contentType || "--"}</div>
+                          <div className="col-span-2 text-xs text-gray-600">{fmtSize(file.size)}</div>
+                          <div className="col-span-2 text-xs text-gray-600 flex items-center justify-between">
+                            <span>{file.updated ? new Date(file.updated).toLocaleString() : "--"}</span>
+                            <div className="flex items-center space-x-1">
+                              <button 
+                                onClick={() => handleDownload(file.path, file.name)}
+                                className="text-blue-600 hover:text-blue-800"
+                                title="Descargar archivo"
+                              >
+                                <Download className="w-4 h-4" />
+                              </button>
+                              {canDelete && (
+                                <button 
+                                  onClick={() => confirmDelete(file.path, file.name, false)}
+                                  className="text-gray-400 hover:text-red-500"
+                                  title="Eliminar archivo"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                ) : (
+                  <div className="p-3">
+                    {(sortedFilteredFiles?.length ?? 0) === 0 ? (
+                      <div className="p-8 text-center text-gray-500">Vacío</div>
+                    ) : (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                        {sortedFilteredFiles.map((file) => (
+                          <div key={file.id || file.name} className="border border-gray-200 rounded-md p-3">
+                            <div className="flex items-center gap-2 mb-2">
+                              <FileText className="w-4 h-4 text-gray-700" />
+                              <span className="text-sm font-medium truncate" title={file.name}>{file.name}</span>
+                              <FileBadge name={file.name} />
+                            </div>
+                            <div className="text-[11px] text-gray-500">
+                              <div>{file.contentType || "--"}</div>
+                              <div>{fmtSize(file.size)}</div>
+                              <div className="flex items-center justify-between">
+                                <span>{file.updated ? new Date(file.updated).toLocaleDateString() : "--"}</span>
+                                <div className="flex items-center space-x-1">
+                                  <button 
+                                    onClick={() => handleDownload(file.path, file.name)}
+                                    className="text-blue-600 hover:text-blue-800"
+                                    title="Descargar archivo"
+                                  >
+                                    <Download className="w-4 h-4" />
+                                  </button>
+                                  {canDelete && (
+                                    <button 
+                                      onClick={() => confirmDelete(file.path, file.name, false)}
+                                      className="text-gray-400 hover:text-red-500"
+                                      title="Eliminar archivo"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+          </section>
+        </div>
+
+        {/* Modal: Crear Carpeta */}
+        <Modal
+          open={showCreateFolder}
+          onClose={() => !creating && setShowCreateFolder(false)}
+          title="Nueva Carpeta"
+          footer={
+            <>
+              <Button variant="outline" onClick={() => setShowCreateFolder(false)} disabled={creating}>Cancelar</Button>
+              <Button onClick={handleCreateFolder} disabled={!newFolderName.trim() || creating}>
+                {creating ? "Creando..." : "Crear"}
+              </Button>
             </>
-          )}
-        </section>
-      </div>
-
-      {/* Modal: Crear Carpeta */}
-      <Modal
-        open={showCreateFolder}
-        onClose={() => !creating && setShowCreateFolder(false)}
-        title="Nueva Carpeta"
-        footer={
-          <>
-            <Button variant="outline" onClick={() => setShowCreateFolder(false)} disabled={creating}>Cancelar</Button>
-            <Button onClick={handleCreateFolder} disabled={!newFolderName.trim() || creating}>
-              {creating ? "Creando..." : "Crear"}
-            </Button>
-          </>
-        }
-      >
-        <div className="space-y-2">
-          <label className="text-sm text-gray-600">La carpeta se creará dentro de: <b>{selectedPath || "Raíz"}</b></label>
-          <input
-            className="w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-300"
-            placeholder="Nombre de la carpeta"
-            value={newFolderName}
-            onChange={(e) => setNewFolderName(e.target.value)}
-            maxLength={120}
-          />
-          <p className="text-xs text-gray-500">Evita caracteres no permitidos: / \ ? * : &lt; &gt; |</p>
-        </div>
-      </Modal>
-
-      {/* Modal: Agregar Documento */}
-      <Modal
-        open={showUpload}
-        onClose={() => !uploading && setShowUpload(false)}
-        title="Subir Documento"
-        footer={
-          <>
-            <Button variant="outline" onClick={() => setShowUpload(false)} disabled={uploading}>Cancelar</Button>
-            <Button onClick={handleUpload} disabled={!uploadFileObj || uploading}>
-              {uploading ? "Subiendo..." : "Subir"}
-            </Button>
-          </>
-        }
-      >
-        <div className="space-y-3">
-          <p className="text-sm text-gray-600">Destino: <b>{selectedPath || "Raíz"}</b></p>
-          <div className="flex items-center gap-2">
-            <Upload className="h-5 w-5 text-gray-500" />
+          }
+        >
+          <div className="space-y-2">
+            <label className="text-sm text-gray-600">La carpeta se creará dentro de: <b>{selectedPath || "Raíz"}</b></label>
             <input
-              type="file"
-              onChange={(e) => setUploadFileObj(e.target.files?.[0] || null)}
-              className="text-sm"
+              className="w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-300"
+              placeholder="Nombre de la carpeta"
+              value={newFolderName}
+              onChange={(e) => setNewFolderName(e.target.value)}
+              maxLength={120}
             />
+            <p className="text-xs text-gray-500">Evita caracteres no permitidos: / \ ? * : &lt; &gt; |</p>
           </div>
-          <p className="text-xs text-gray-500">Formatos comunes: PDF, DOCX, XLSX, PPTX (según valide tu backend).</p>
-        </div>
-      </Modal>
-      
-      {/* Modal de confirmación de eliminación */}
-      <DeleteConfirmationModal
-        open={showDeleteConfirm}
-        onClose={() => setShowDeleteConfirm(false)}
-        onConfirm={handleDelete}
-        itemName={itemToDelete.name}
-        isFolder={itemToDelete.isFolder}
-      />
-    </div>
+        </Modal>
+
+        {/* Modal: Agregar Documento */}
+        <Modal
+          open={showUpload}
+          onClose={() => !uploading && setShowUpload(false)}
+          title="Subir Documento"
+          footer={
+            <>
+              <Button variant="outline" onClick={() => setShowUpload(false)} disabled={uploading}>Cancelar</Button>
+              <Button onClick={handleUpload} disabled={!uploadFileObj || uploading}>
+                {uploading ? "Subiendo..." : "Subir"}
+              </Button>
+            </>
+          }
+        >
+          <div className="space-y-3">
+            <p className="text-sm text-gray-600">Destino: <b>{selectedPath || "Raíz"}</b></p>
+            <div className="flex items-center gap-2">
+              <Upload className="h-5 w-5 text-gray-500" />
+              <input
+                type="file"
+                onChange={(e) => setUploadFileObj(e.target.files?.[0] || null)}
+                className="text-sm"
+              />
+            </div>
+            <p className="text-xs text-gray-500">Formatos comunes: PDF, DOCX, XLSX, PPTX (según valide tu backend).</p>
+          </div>
+        </Modal>
+        
+        {/* Modal de confirmación de eliminación */}
+        <DeleteConfirmationModal
+          open={showDeleteConfirm}
+          onClose={() => setShowDeleteConfirm(false)}
+          onConfirm={handleDelete}
+          itemName={itemToDelete.name}
+          isFolder={itemToDelete.isFolder}
+        />
+      </div>
+    </AdminLayout>
   );
-}
+};
+
+export default AdminFolders;

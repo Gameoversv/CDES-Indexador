@@ -1,4 +1,6 @@
-import { api, UPLOAD_TIMEOUT } from "./api";
+import api from "./api";
+
+const UPLOAD_TIMEOUT = 300000; // 5 minutos
 
 export const documentsAPI = {
   upload: (formData, onProgress = null) => {
@@ -19,6 +21,8 @@ export const documentsAPI = {
     });
   },
   search: (query) => api.get(`/documents/search?query=${encodeURIComponent(query)}`),
+  getDocumentsByEstrategia: (estrategia) => api.get(`/documents/by_strategy?strategy=${encodeURIComponent(estrategia)}`),
+  getProjectsByStrategy: (estrategia) => api.get(`/documents/storage?prefix=PES_2030/${encodeURIComponent(estrategia)}/`),
   list: () => api.get("/documents/list"),
   listStorage: () => api.get("/documents/storage"),
   download: (id) =>

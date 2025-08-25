@@ -50,9 +50,11 @@ export function AuthProvider({ children }) {
       setIdToken(token);
       setUserRole(customClaims?.role || null); // Store Firebase role
       
-      // Ajuste: admin si claim admin true o rol == direccion ejecutiva
+      // Ajuste: admin si claim admin true o rol == "DireccionEjecutiva"
       const claimAdmin = Boolean(customClaims?.admin);
-      let derivedAdmin = claimAdmin;
+      const isDireccionEjecutiva = customClaims?.role === "DireccionEjecutiva";
+      let derivedAdmin = claimAdmin || isDireccionEjecutiva;
+      
       setAuthToken(token);
 
       const expirationTime = tokenResult.expirationTime;
@@ -66,8 +68,10 @@ export function AuthProvider({ children }) {
           localStorage.setItem("user", JSON.stringify(me.data));
           localStorage.setItem("userProfile", JSON.stringify(me.data));
           setUserProfile(me.data);
-          const normRole = (me.data?.role || "").normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase().trim();
-          if (normRole === 'direccion ejecutiva') {
+          
+          // También verificar por el rol del backend
+          const backendRole = me.data?.role || "";
+          if (backendRole === "DireccionEjecutiva" || backendRole === "Direccion Ejecutiva") {
             derivedAdmin = true;
           }
         }
@@ -306,7 +310,12 @@ export function AuthProvider({ children }) {
       clearAuthError,
       isAuthenticated: !!currentUser,
       hasValidToken: !!idToken,
-      userRole: userRole || (isAdmin ? "admin" : (userProfile?.role || "user")), // Hybrid approach
+      userRole: userRole || (
+        // Si tiene rol DireccionEjecutiva, es admin
+        (userProfile?.role === "DireccionEjecutiva" || userRole === "DireccionEjecutiva") ? "DireccionEjecutiva" :
+        isAdmin ? "admin" : 
+        (userProfile?.role || "user")
+      ),
     }),
     [
       currentUser,
@@ -317,7 +326,7 @@ export function AuthProvider({ children }) {
       authError,
       tokenExpiring,
       getFreshToken,
-      userRole, // Add back to dependencies
+      userRole,
     ]
   );
 
