@@ -23,7 +23,7 @@ export default function LibraryStatsCards({ stats, statType, setStatType }) {
       <Card>
         <CardContent className="p-6">
           <p className="text-2xl font-bold">
-            {(stats.totalSizeMB || 0).toFixed(1)} MB
+            {stats.totalSize}
           </p>
           <p className="text-sm text-muted-foreground">Espacio total usado</p>
         </CardContent>

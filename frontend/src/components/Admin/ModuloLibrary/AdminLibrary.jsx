@@ -138,8 +138,7 @@ export default function AdminLibrary() {
 
   const stats = {
     total: documents.length,
-    totalSizeMB:
-      documents.reduce((acc, doc) => acc + (doc.size || 0), 0) / (1024 * 1024),
+    totalSize: formatSize(documents.reduce((acc, doc) => acc + (doc.file_size_bytes || doc.size || 0), 0)),
     pdf: documents.filter((d) => (d.file_extension || "").toLowerCase() === ".pdf").length,
     docx: documents.filter((d) => (d.file_extension || "").toLowerCase() === ".docx").length,
     xlsx: documents.filter((d) => (d.file_extension || "").toLowerCase() === ".xlsx").length,
