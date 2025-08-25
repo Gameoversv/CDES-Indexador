@@ -1130,6 +1130,189 @@ async def delete_document_by_path(
         raise HTTPException(status_code=500, detail=f"Error eliminando archivo: {str(e)}")
 
 
+@router.put("/toggle-public")
+async def toggle_document_public_status(
+    request: Request,
+    path: str = Query(..., description="Storage path del documento a modificar"),
+    token_data=Depends(verify_firebase_token)
+):
+    """
+    Cambia el estado de 'public' de true a false en un documento, tanto en Firestore como en Meilisearch.
+    No elimina el documento ni lo mueve de colección, solo actualiza el metadato 'public'.
+    """
+    user_id = token_data.get("user_id", "anonymous") if token_data else "anonymous"
+    user_email = token_data.get("email", "") if token_data else ""
+
+    try:
+        from services.firebase_service import get_documents_by_storage_path, get_firestore_client
+        from services.meilisearch_service import update_documents, client, check_meilisearch_health
+
+        # Paso 1: Buscar documentos en Firestore relacionados con esta ruta de almacenamiento
+        firestore_docs = get_documents_by_storage_path(path)
+        
+        if not firestore_docs:
+            raise HTTPException(status_code=404, detail="Documento no encontrado")
+        
+        # Crear un diccionario para almacenar resultados de la actualización
+        update_results = {
+            "firestore_updated": [],
+            "meilisearch_updated": []
+        }
+        
+        # Paso 2: Actualizar en Firestore
+        db = get_firestore_client()
+        for doc in firestore_docs:
+            doc_id = doc.get("id") or doc.get("file_id")
+            if not doc_id:
+                continue
+                
+            try:
+                # Obtener el valor actual de public y cambiarlo al opuesto (toggle)
+                current_public = doc.get("public", True)
+                new_public = not bool(current_public)
+                
+                # Determinar en qué colección está el documento actualmente
+                collection_name = "library"  # Asumimos que está en library por defecto
+                
+                # Verificar si el documento existe en la colección library
+                doc_ref_library = db.collection("library").document(doc_id)
+                if not doc_ref_library.get().exists:
+                    # Si no existe en library, verificar si está en documents
+                    doc_ref_documents = db.collection("documents").document(doc_id)
+                    if doc_ref_documents.get().exists:
+                        collection_name = "documents"
+                    else:
+                        # El documento no existe en ninguna colección conocida
+                        log_error(Exception(f"Documento no encontrado en ninguna colección: {doc_id}"), 
+                                "DOCUMENT_TOGGLE_PUBLIC", user_id=user_id, 
+                                additional_details={"path": path, "doc_id": doc_id})
+                        continue
+                
+                # Actualizar en la colección correcta
+                doc_ref = db.collection(collection_name).document(doc_id)
+                doc_ref.update({"public": new_public})
+                
+                # Actualizar el documento local para Meilisearch
+                doc["public"] = new_public
+                update_results["firestore_updated"].append(doc_id)
+                
+                # Guardar metadata localmente si existe
+                try:
+                    json_filename = f"{doc_id}.json"
+                    json_path = LOCAL_METADATA_DIR / json_filename
+                    if json_path.exists():
+                        with open(json_path, "r", encoding="utf-8") as file:
+                            metadata = json.load(file)
+                            metadata["public"] = new_public
+                        with open(json_path, "w", encoding="utf-8") as file:
+                            json.dump(metadata, file, ensure_ascii=False, indent=2)
+                except Exception as e:
+                    log_error(e, "LOCAL_METADATA_UPDATE", user_id=user_id, 
+                              additional_details={"path": path, "doc_id": doc_id})
+                
+            except Exception as firestore_error:
+                log_error(firestore_error, "FIRESTORE_UPDATE", user_id=user_id, 
+                         additional_details={"path": path, "doc_id": doc_id if 'doc_id' in locals() else None})
+                continue
+        
+        # Paso 3: Actualizar en Meilisearch
+        if check_meilisearch_health() and client:
+            try:
+                # Preparar documentos para actualizar en Meilisearch (payload mínimo)
+                docs_to_update = []
+                for doc in firestore_docs:
+                    doc_id = doc.get("id") or doc.get("file_id")
+                    if doc_id:
+                        # Use the per-document public value which was updated above
+                        docs_to_update.append({
+                            "file_id": doc_id,
+                            "public": doc.get("public", False)
+                        })
+
+                if docs_to_update:
+                    # Actualizar en ambos índices: 'documents' y 'library'
+                    indexes_to_update = ["documents", LIBRARY_INDEX_NAME]
+                    from services.meilisearch_service import sanitize_document_id, get_task_details
+
+                    for index_name in indexes_to_update:
+                        try:
+                            # Use the service wrapper which handles primary key sanitization and task response
+                            success = update_documents(docs_to_update, index_name=index_name)
+                            if success:
+                                update_results["meilisearch_updated"].extend([d.get("file_id") or d.get("id") for d in docs_to_update])
+                                continue
+
+                            # Si el wrapper falló, intentar actualización directa en MeiliCloud
+                            try:
+                                index = client.index(index_name)
+                                # Prepare payload with sanitized 'id'
+                                direct_payload = []
+                                for d in docs_to_update:
+                                    fid = d.get("file_id") or d.get("id")
+                                    if not fid:
+                                        continue
+                                    direct_payload.append({
+                                        "id": sanitize_document_id(fid),
+                                        "public": d.get("public")
+                                    })
+                                if direct_payload:
+                                    task = index.update_documents(direct_payload, primary_key="id")
+                                    task_uid, task_status = get_task_details(task)
+                                    if task_uid and task_status:
+                                        # If task_status object has `status`, consider enqueued/processing/succeeded as success
+                                        if hasattr(task_status, 'status') and task_status.status in ["enqueued", "processing", "succeeded"]:
+                                            update_results["meilisearch_updated"].extend([p.get("id") for p in direct_payload])
+                                        elif isinstance(task_status, dict) and task_status.get("status") in ["enqueued", "processing", "succeeded"]:
+                                            update_results["meilisearch_updated"].extend([p.get("id") for p in direct_payload])
+                                    else:
+                                        # As a last resort, assume update submitted
+                                        update_results["meilisearch_updated"].extend([p.get("id") for p in direct_payload])
+                            except Exception as direct_err:
+                                log_error(direct_err, f"MEILISEARCH_DIRECT_UPDATE_{index_name}", user_id=user_id,
+                                         additional_details={"path": path})
+                        except Exception as idx_error:
+                            log_error(idx_error, f"MEILISEARCH_UPDATE_{index_name}", user_id=user_id,
+                                     additional_details={"path": path})
+            except Exception as meilisearch_error:
+                log_error(meilisearch_error, "MEILISEARCH_UPDATE", user_id=user_id,
+                         additional_details={"path": path})
+        
+        # Registrar en el log los resultados
+        # Determine an example new_public_state for logging (first updated doc) or None
+        new_state_for_log = None
+        if docs_to_update and len(docs_to_update) > 0:
+            new_state_for_log = docs_to_update[0].get("public")
+
+        audit_log(user_id, 'DOCUMENT_TOGGLE_PUBLIC', _ctx(request, {
+            'user_email': user_email,
+            'path': path,
+            'filename': Path(path).name,
+            'new_public_state': new_state_for_log,
+            'update_results': update_results
+        }), severity="INFO")
+        
+        # Si no se actualizó en ningún sistema, considerar un error
+        if not update_results["firestore_updated"] and not update_results["meilisearch_updated"]:
+            raise HTTPException(status_code=500, detail="No se pudo actualizar el documento en ningún sistema")
+        
+        return {
+            "message": "Estado público del documento actualizado correctamente", 
+            "path": path,
+            "public": False,
+            "update_results": update_results
+        }
+        
+    except HTTPException:
+        # Re-lanzar excepciones HTTP
+        raise
+    except Exception as e:
+        log_error(e, "PUT_/toggle-public", user_id=user_id, additional_details=_ctx(request, {
+            'user_email': user_email,
+            'path': path
+        }))
+        raise HTTPException(status_code=500, detail=f"Error actualizando estado público del documento: {str(e)}")
+
+
 @router.get("/list")
 async def list_all_documents(
     request: Request,

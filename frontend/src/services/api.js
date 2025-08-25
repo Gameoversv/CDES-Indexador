@@ -419,6 +419,9 @@ export const libraryAPI = {
 
   // Eliminar por ruta
   deleteByPath: (path) => documentsAPI.deleteByPath(path),
+  
+  // Cambiar estado de público a privado
+  togglePublic: (path) => api.put("/documents/toggle-public", null, { params: { path } }),
 
   // Eliminar documento por ID
   deleteDocument: (id) => api.delete(`/documents/${id}`),

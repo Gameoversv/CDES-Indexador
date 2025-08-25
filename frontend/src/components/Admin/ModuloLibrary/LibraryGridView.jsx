@@ -2,7 +2,7 @@ import React from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Eye, Trash2, Download, FileText, FileSpreadsheet, FileBarChart, File } from "lucide-react";
+import { Eye, EyeOff, Download, FileText, FileSpreadsheet, FileBarChart, File } from "lucide-react";
 
 export default function LibraryGridView({
   documents = [],
@@ -73,7 +73,7 @@ export default function LibraryGridView({
                     <Eye className="h-4 w-4 text-gray-900" />
                   </Button>
                   <Button variant="ghost" size="sm" className="rounded-full p-1.5 bg-gray-100 hover:bg-gray-200 border border-gray-300" onClick={() => onDelete(file)}>
-                    <Trash2 className="h-4 w-4 text-red-500" />
+                    <EyeOff className="h-4 w-4 text-blue-500" title={file.public ? "Cambiar a privado" : "Cambiar a público"} />
                   </Button>
                   <Button variant="outline" size="sm" onClick={() => onDownload(file)} className="rounded-full p-1.5 border border-gray-300 bg-red-600 text-white hover:bg-red-700">
                     <Download className="h-4 w-4" />

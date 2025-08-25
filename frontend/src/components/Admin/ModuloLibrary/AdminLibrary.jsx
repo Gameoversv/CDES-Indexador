@@ -180,7 +180,7 @@ export default function AdminLibrary() {
         />
 
         {/* Vista principal */}
-        {loading ? (
+  {loading ? (
           <div className="flex justify-center py-10">
             <Loader2 className="w-6 h-6 animate-spin" />
           </div>
@@ -192,7 +192,10 @@ export default function AdminLibrary() {
           <LibraryGridView
             documents={paginatedDocs}
             onView={setSelectedDoc}
-            onDelete={setShowDeleteDialog}
+            onDelete={(file) => {
+              setSelectedDoc(file);
+              setShowDeleteDialog(true);
+            }}
             onDownload={(file) =>
               documentsAPI.downloadByPath(file.storage_path || file.path).then((res) => {
                 const url = window.URL.createObjectURL(res.data);
@@ -211,7 +214,10 @@ export default function AdminLibrary() {
             <LibraryTable
               files={paginatedDocs}
               onView={setSelectedDoc}
-              onDelete={setShowDeleteDialog}
+              onDelete={(file) => {
+                setSelectedDoc(file);
+                setShowDeleteDialog(true);
+              }}
               onDownload={(file) =>
                 documentsAPI.downloadByPath(file.storage_path || file.path).then((res) => {
                   const url = window.URL.createObjectURL(res.data);
@@ -248,15 +254,25 @@ export default function AdminLibrary() {
           />
         )}
 
-        {/* Confirmación de eliminación */}
+        {/* Confirmación de cambio de visibilidad */}
         {showDeleteDialog && selectedDoc && (
           <ConfirmDeleteDialog
             open={showDeleteDialog}
             setOpen={setShowDeleteDialog}
-            fileName={selectedDoc.name}
+            doc={selectedDoc}
             onConfirm={async () => {
-              await libraryAPI.deleteByPath(selectedDoc.path);
-              fetchData();
+              try {
+                await libraryAPI.togglePublic(selectedDoc.path || selectedDoc.storage_path);
+                if (selectedDoc.public) {
+                  toast.success("Documento cambiado a privado correctamente");
+                } else {
+                  toast.success("Documento cambiado a público correctamente");
+                }
+                fetchData();
+              } catch (error) {
+                console.error("Error al cambiar visibilidad:", error);
+                toast.error("Error al cambiar la visibilidad del documento");
+              }
             }}
           />
         )}

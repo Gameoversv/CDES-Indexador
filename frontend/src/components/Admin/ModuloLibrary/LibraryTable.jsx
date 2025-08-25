@@ -2,7 +2,7 @@ import React from "react";
 import {
   Eye,
   Download,
-  Trash2,
+  EyeOff,
   ArrowUpDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -92,7 +92,7 @@ export default function LibraryTable({
                     <Download className="h-4 w-4 text-gray-900" />
                   </Button>
                   <Button size="icon" variant="ghost" className="rounded-full p-2 bg-gray-100 hover:bg-gray-200 border border-gray-300" onClick={() => onDelete(file)}>
-                    <Trash2 className="h-4 w-4 text-red-500" />
+                    <EyeOff className="h-4 w-4 text-blue-500" title={file.public ? "Cambiar a privado" : "Cambiar a público"} />
                   </Button>
                 </td>
               </tr>
