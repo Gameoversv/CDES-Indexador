@@ -135,7 +135,7 @@ export default function DocumentsTable({
               onClick={() => handleSort("updated")}
             >
               <div className="flex items-center gap-1 text-gray-900 font-semibold">
-                Última modificación
+                Fecha de subida
                 <ArrowUpDown className="h-3 w-3" />
               </div>
             </TableHead>

@@ -271,7 +271,7 @@ export default function PreviewFileDialog({
           </DialogTitle>
           {updatedAt && (
             <DialogDescription>
-              Última modificación: {updatedAt}
+              Fecha de subida: {updatedAt}
             </DialogDescription>
           )}
         </DialogHeader>

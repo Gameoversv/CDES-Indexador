@@ -5,7 +5,6 @@ import {
   FileText,
   Users,
   Globe,
-  Newspaper,
   FolderTree,
   Home,
   History, 
@@ -18,7 +17,6 @@ const navItems = [
   { label: "Usuarios", icon: Users, to: "/admin-users" },
   { label: "Biblioteca Pública", icon: Globe, to: "/admin/library" },
   { label: "Auditoría", icon: History, to: "/admin/audit" },
-  { label: "Noticias", icon: Newspaper, to: "/admin/news" },
   { label: "Árbol de Carpetas", icon: FolderTree, to: "/admin/folders" },
   { label: "Volver al Dashboard", icon: Reply, to: "/dashboard" } // ✅ nuevo ítem
 ];
