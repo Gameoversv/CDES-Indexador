@@ -72,13 +72,12 @@ export default function UserDashboard() {
   // Mapeo de roles a nombres de departamento
   const getRoleName = (role) => {
     const roleNames = {
-      admin: "Administrador",
-      asistenciaGeneral: "Asistencia General",
-      CoordinadorPlanificacion: "Coordinador de Planificación",
-      UnidadAdministrativa: "Unidad Administrativa",
-      UnidadComunicacion: "Unidad de Comunicación",
-      UnidadPlanificacion: "Unidad de Planificación",
-      UnidadProyectos: "Unidad de Gestión de Proyectos",
+      //admin: "Administrador",
+      DireccionEjecutiva: "Dirección Ejecutiva",
+      CoordinadorAdministrativa: "Coordinador Administrativa",
+      CoordinacionProyectosPlanificacion: "Coordinación Proyectos y Planificación",
+      CoordinacionComunicaciones: "Coordinación de Comunicaciones",
+      AsistenciaGeneral: "Asistencia General"
     };
     return roleNames[role] || role || "Sin departamento asignado";
   };

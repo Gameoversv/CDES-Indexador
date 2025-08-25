@@ -26,8 +26,11 @@ export default function LibraryTable({
     onSort(key, order);
   };
 
-  const getFormat = (filename = "") => {
-    const parts = filename.split(".");
+  const getFormat = (file) => {
+    const ext = (file.file_extension || "").replace(".", "").toLowerCase();
+    if (ext) return ext;
+    const name = file.name || file.filename || "";
+    const parts = name.split(".");
     return parts.length > 1 ? parts.pop().toLowerCase() : "desconocido";
   };
 
@@ -57,17 +60,17 @@ export default function LibraryTable({
                 key={file.path || i}
                 className="hover:bg-gray-50 border-b border-gray-300"
               >
-                <td className="p-3 font-medium text-gray-900">{file.filename}</td>
+                <td className="p-3 font-medium text-gray-900">{file.filename || file.name}</td>
 
                 <td className="p-3">
                   <Badge variant="outline" className="border border-gray-300">
-                    {file.tipo || "Sin tipo"}
+                    {file.categoria || file.tipo || "Sin tipo"}
                   </Badge>
                 </td>
 
                 <td className="p-3">
                   <Badge variant="secondary" className="border border-gray-300">
-                    {getFormat(file.name).toUpperCase()}
+                    {getFormat(file).toUpperCase()}
                   </Badge>
                 </td>
 

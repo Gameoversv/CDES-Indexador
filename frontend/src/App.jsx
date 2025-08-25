@@ -18,6 +18,7 @@ import AdminUsers from "./components/Admin/ModuloUsuarios/AdminUsers";
 import AdminDocuments from "./components/Admin/ModuloDocuments/AdminDocuments";
 import AdminAudits from "./components/Admin/ModuloAudits/AdminAudit";
 import AdminLibrary from "./components/Admin/ModuloLibrary/AdminLibrary"; // corregido
+import AdminFolders from "./components/Admin/ModuloFolders/AdminFolders";
 import News from "./components/Admin/ModuloNews/News";
 
 import "./App.css";
@@ -82,6 +83,14 @@ export default function App() {
             element={
               <PrivateRoute requireAdmin>
                 <AdminLibrary />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/admin/folders"
+            element={
+              <PrivateRoute requireAdmin>
+                <AdminFolders />
               </PrivateRoute>
             }
           />

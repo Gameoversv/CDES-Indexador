@@ -61,13 +61,11 @@ export default function UserFormDialog({
               value={formData.role}
               onChange={(e) => setFormData({ ...formData, role: e.target.value })}
             >
-              <option value="admin">Dirección Ejecutiva</option>
-              <option value="asistenciaGeneral">Asistencia General</option>
-              <option value="CoordinadorPlanificacion">Coordinador de Planificación</option>
-              <option value="UnidadAdministrativa">Unidad Administrativa</option>
-              <option value="UnidadComunicacion">Unidad de Comunicación</option>
-              <option value="UnidadPlanificacion">Unidad de Planificación</option>
-              <option value="UnidadProyectos">Unidad de Gestión de Proyectos</option>
+              <option value="DireccionEjecutiva">Dirección Ejecutiva</option>
+              <option value="CoordinadorAdministrativa">Coordinador Administrativa</option>
+              <option value="CoordinacionProyectosPlanificacion">Coordinación Proyectos y Planificación</option>
+              <option value="CoordinacionComunicaciones">Coordinación de Comunicaciones</option>
+              <option value="AsistenciaGeneral">Asistencia General</option>
             </select>
           </div>
           <div>

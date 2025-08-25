@@ -11,8 +11,8 @@ export default function LibraryGridView({
   onDelete = () => {},
 }) {
   // Función para ícono según extensión
-  const getFileIcon = (filename) => {
-    const ext = filename?.split(".").pop()?.toLowerCase();
+  const getFileIcon = (filename, file) => {
+    const ext = (file?.file_extension || "").replace(".", "").toLowerCase() || filename?.split(".").pop()?.toLowerCase();
     switch (ext) {
       case "pdf": return <FileText className="text-red-600" size={32} />;
       case "doc":
@@ -26,8 +26,8 @@ export default function LibraryGridView({
   };
 
   // Color de badge según extensión
-  const getFileTypeColor = (filename) => {
-    const ext = filename?.split(".").pop()?.toLowerCase();
+  const getFileTypeColor = (filename, file) => {
+    const ext = (file?.file_extension || "").replace(".", "").toLowerCase() || filename?.split(".").pop()?.toLowerCase();
     switch (ext) {
       case "pdf": return "bg-red-100 text-red-700 border border-gray-300";
       case "doc":
@@ -49,7 +49,7 @@ export default function LibraryGridView({
         >
           <div className="p-1 bg-gray-100">
             <div className="flex justify-center py-4">
-              {getFileIcon(file.name || file.filename)}
+              {getFileIcon(file.name || file.filename, file)}
             </div>
           </div>
           <CardContent className="p-4">
@@ -64,8 +64,8 @@ export default function LibraryGridView({
               </div>
 
               <div className="flex justify-between items-center mt-2">
-                <Badge variant="secondary" className={getFileTypeColor(file.name || file.filename)}>
-                  {(file.name || file.filename).split(".").pop()?.toUpperCase() || "FILE"}
+                <Badge variant="secondary" className={getFileTypeColor(file.name || file.filename, file)}>
+                  {(file.file_extension || (file.name || file.filename).split(".").pop() || "FILE").toString().replace(".", "").toUpperCase()}
                 </Badge>
 
                 <div className="flex gap-1">

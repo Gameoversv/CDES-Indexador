@@ -34,12 +34,11 @@ class UserCreate(BaseModel):
     password: str
     role: Literal[
         "admin",
-        "asistenciaGeneral",
-        "CoordinadorPlanificacion",
-        "UnidadAdministrativa",
-        "UnidadComunicacion",
-        "UnidadPlanificacion",
-        "UnidadProyectos"
+        "DireccionEjecutiva",
+        "CoordinadorAdministrativa",
+        "CoordinacionProyectosPlanificacion",
+        "CoordinacionComunicaciones",
+        "AsistenciaGeneral",
     ]
     status: Literal["active", "inactive"]
 
@@ -47,12 +46,11 @@ class UserUpdate(BaseModel):
     display_name: str
     role: Literal[
         "admin",
-        "asistenciaGeneral",
-        "CoordinadorPlanificacion",
-        "UnidadAdministrativa",
-        "UnidadComunicacion",
-        "UnidadPlanificacion",
-        "UnidadProyectos"
+        "DireccionEjecutiva",
+        "CoordinadorAdministrativa",
+        "CoordinacionProyectosPlanificacion",
+        "CoordinacionComunicaciones",
+        "AsistenciaGeneral",
     ]
     status: Literal["active", "inactive"]
 
