@@ -70,68 +70,119 @@ export default function UserDocuments() {
 
   const getUserDepartment = async () => {
     try {
-      // Intentar obtener datos del usuario desde la API
+      // Get user data from the API (which retrieves from Firestore)
       const response = await authAPI.getCurrentUser();
-      if (response.data && response.data.role) {
-        const departmentName = getDepartmentDisplayName(response.data.role);
-        setUserDepartment(departmentName);
-        // Verificar si es Dirección Ejecutiva
-        const isDirector = response.data.role === "Dirección Ejecutiva" || 
-                         response.data.role === "DireccionEjecutiva";
-        setIsDirectorEjecutivo(isDirector);
-        return;
+      if (response.data) {
+        const userRole = response.data.role || response.data.puesto_trabajo || response.data.puesto;
+        if (userRole) {
+          const departmentName = getDepartmentDisplayName(userRole);
+          setUserDepartment(departmentName);
+          
+          // Check if user is executive (note: backend already handles this logic)
+          const normalizedRole = normalizeRoleName(userRole);
+          const isDirector = normalizedRole === "direccionejecutiva";
+          setIsDirectorEjecutivo(isDirector);
+          
+          console.log(`User role: ${userRole}, department: ${departmentName}, isDirector: ${isDirector}`);
+          return;
+        }
       }
     } catch (error) {
-      console.warn("Error obteniendo datos del usuario desde API:", error);
+      console.warn("Error getting user data from API:", error);
     }
     
-    // Fallback: usar localStorage
+    // Fallback to localStorage
     try {
       const userData = localStorage.getItem("user");
       if (userData) {
         const parsedUser = JSON.parse(userData);
-        const departmentName = getDepartmentDisplayName(parsedUser.role);
-        setUserDepartment(departmentName);
-        // Verificar si es Dirección Ejecutiva
-        const isDirector = parsedUser.role === "Dirección Ejecutiva" || 
-                         parsedUser.role === "DireccionEjecutiva";
-        setIsDirectorEjecutivo(isDirector);
+        const userRole = parsedUser.role || parsedUser.puesto_trabajo || parsedUser.puesto;
+        
+        if (userRole) {
+          const departmentName = getDepartmentDisplayName(userRole);
+          setUserDepartment(departmentName);
+          
+          const normalizedRole = normalizeRoleName(userRole);
+          const isDirector = normalizedRole === "direccionejecutiva";
+          setIsDirectorEjecutivo(isDirector);
+          
+          console.log(`User role from localStorage: ${userRole}, department: ${departmentName}, isDirector: ${isDirector}`);
+        }
       }
     } catch (error) {
-      console.error("Error obteniendo departamento:", error);
+      console.error("Error getting user department:", error);
     }
+  };
+  
+  // Helper function to normalize role names for comparison
+  const normalizeRoleName = (role) => {
+    if (!role) return "";
+    return role.toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "") // Remove diacritics
+      .replace(/[_\s-]/g, ""); // Remove spaces, underscores, hyphens
   };
 
   const getDepartmentDisplayName = (role) => {
+    if (!role) return "Departamento";
+    
+    // Comprehensive mapping of all possible role name variations
     const roleNames = {
-      //admin: "Administración",
+      // Standard display names
       "Dirección Ejecutiva": "Dirección Ejecutiva",
-      "Coordinador Administrativa": "Coordinador Administrativa",
-      "Coordinación Proyectos y Planificación": "Coordinación Proyectos y Planificación", 
+      "Coordinación Administrativa": "Coordinación Administrativa",
+      "Coordinador Administrativa": "Coordinación Administrativa",
+      "Coordinación Proyectos y Planificación": "Coordinación Proyectos y Planificación",
       "Coordinación de Comunicaciones": "Coordinación de Comunicaciones",
       "Asistencia General": "Asistencia General",
-      // También mantener compatibilidad con los nombres antiguos
-      DireccionEjecutiva: "Dirección Ejecutiva",
-      CoordinadorAdministrativa: "Coordinador Administrativa",
-      CoordinacionProyectosPlanificacion: "Coordinación Proyectos y Planificación",
-      CoordinacionComunicaciones: "Coordinación de Comunicaciones",
-      AsistenciaGeneral: "Asistencia General"
+      
+      // Variations without spaces/accents (as in Firestore)
+      "DireccionEjecutiva": "Dirección Ejecutiva",
+      "CoordinacionAdministrativa": "Coordinación Administrativa",
+      "CoordinadorAdministrativa": "Coordinación Administrativa",
+      "CoordinacionProyectosyPlanificacion": "Coordinación Proyectos y Planificación",
+      "CoordinacionProyectosPlanificacion": "Coordinación Proyectos y Planificación",
+      "CoordinacionComunicaciones": "Coordinación de Comunicaciones",
+      "AsistenciaGeneral": "Asistencia General",
     };
-    return roleNames[role] || role || "Departamento";
+    
+    // First try direct lookup
+    if (roleNames[role]) {
+      return roleNames[role];
+    }
+    
+    // If not found, try normalized lookup (case insensitive, no accents, no spaces)
+    const normalizedRole = normalizeRoleName(role);
+    
+    for (const [key, value] of Object.entries(roleNames)) {
+      if (normalizeRoleName(key) === normalizedRole) {
+        return value;
+      }
+    }
+    
+    // If nothing matches, return the original role
+    return role;
   };
 
   const fetchFiles = async () => {
     console.log("🔄 [UserDocuments] Iniciando carga de archivos...");
     setLoading(true);
     try {
-      // Prefer new documents endpoint (Meilisearch with Firestore fallback)
+      // El backend ya aplica los filtros basados en el rol del usuario
+      // No necesitamos filtrar aquí - solo normalizar los datos para la tabla
       const res = await documentsAPI.list();
       const data = res?.data || {};
       const items = data.files || data.documents || data.hits || [];
+      
+      console.log(`Backend returned ${items.length} documents (already filtered by user role)`);
+      console.log("Source:", data.source || "unknown");
+      
       // Normalize minimal fields expected by the table
       const normalized = items.map((d) => {
         const rawPath = d.storage_path || d.path || "";
         const nameFromPath = rawPath ? rawPath.split("/").pop() : "";
+        
+        // Extract all required metadata
         return {
           // Prefer filename from storage path to keep version suffix (_vN)
           filename: nameFromPath || d.filename || d.original_filename || d.title || "",
@@ -141,11 +192,21 @@ export default function UserDocuments() {
           tipo: d.tipo || d.tipo_documento || "",
           categoria: d.categoria || d.apartado || "",
           public: d.public ?? d.publico ?? false,
+          // Metadata for display (no filtering needed)
+          puesto_trabajo: d.puesto_trabajo || "",
+          user_role: d.user_role || ""
         };
       });
+      
+      // El backend ya filtró según el rol - solo usar los documentos directamente
       setFiles(normalized);
+      
+      console.log(`Showing ${normalized.length} documents to user in department: ${userDepartment}`);
+      
     } catch (error) {
-      console.error("❌ [UserDocuments] Error:", error);
+
+      console.error("Error fetching documents:", error);
+
       setFiles([]);
       toast.error("Error al obtener los archivos.");
     } finally {
@@ -371,6 +432,16 @@ export default function UserDocuments() {
               <p className="text-sm text-muted-foreground mt-1">
                 {filteredFiles.length} documento{filteredFiles.length !== 1 ? 's' : ''} disponible{filteredFiles.length !== 1 ? 's' : ''}
               </p>
+              {!isDirectorEjecutivo && (
+                <p className="text-xs text-amber-600 mt-1">
+                  ✓ Mostrando solo documentos de tu departamento y documentos públicos (filtrado automático del servidor).
+                </p>
+              )}
+              {isDirectorEjecutivo && (
+                <p className="text-xs text-green-600 mt-1">
+                  ✓ Como Director Ejecutivo, puedes ver todos los documentos de todos los departamentos.
+                </p>
+              )}
             </div>
             <UploadModal
               open={uploadModalOpen}

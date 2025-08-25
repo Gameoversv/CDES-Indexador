@@ -23,7 +23,7 @@ from services.firebase_service import (
     get_firestore_client
 )
 from google.cloud.firestore_v1.base_query import FieldFilter
-from services.meilisearch_service import add_documents, search_documents, is_available as is_meilisearch_available
+from services.meilisearch_service import add_documents, search_documents, is_available as is_meilisearch_available, LIBRARY_INDEX_NAME
 from models.document_model import DocumentMetadata, DocumentListResponse
 from utils.audit_logger import log_event as audit_log, log_error
 from services.security import verify_firebase_token
@@ -146,14 +146,17 @@ async def upload_document(
 
         # Versionado
         file_stem = Path(file.filename).stem
-        existing_document = get_document_by_stem(file_stem)
+        
+        # Determinar la colección basada en si el documento es público
+        collection_name = "library" if is_public else "documents"
+        existing_document = get_document_by_stem(file_stem, collection_name)
 
         version = 1
         parent_id = None
         file_id = file_stem
 
         if existing_document:
-            highest_version = get_highest_version(file_stem)
+            highest_version = get_highest_version(file_stem, collection_name)
             version = highest_version + 1
             parent_id = file_stem
             file_id = f"{file_stem}_v{version}"
@@ -259,15 +262,17 @@ async def upload_document(
         # Guardar localmente
         _save_metadata_locally(complete_metadata, file.filename)
 
-        # Indexar en Meilisearch
-        indexing_success = add_documents([complete_metadata])
+        # Indexar en Meilisearch usando el índice correcto
+        index_name = LIBRARY_INDEX_NAME if is_public else "documents"
+        indexing_success = add_documents([complete_metadata], index_name)
 
         # Si es nueva versión, actualizar documento principal
         if version > 1 and parent_id:
-            parent_doc = get_document_by_stem(parent_id)
+            parent_doc = get_document_by_stem(parent_id, collection_name)
             if parent_doc and indexing_success:
                 from services.meilisearch_service import update_documents
-                update_documents([parent_doc])
+                # Usar el mismo índice para actualizar el documento padre
+                update_documents([parent_doc], index_name)
 
         # 📌 Log: subida correcta (estandarizado)
         audit_log(user_id, 'DOCUMENT_UPLOAD', _ctx(request, {
@@ -326,7 +331,9 @@ async def search_library(
     user_email = token_data.get("email", "") if token_data else ""
 
     try:
-        results = search_documents(query=q, limit=limit, offset=offset, filters="public = true")
+        # Buscar en el índice de biblioteca para documentos públicos
+        from services.meilisearch_service import search_documents
+        results = search_documents(query=q, limit=limit, offset=offset, index_name=LIBRARY_INDEX_NAME)
         results["meilisearch_available"] = is_meilisearch_available()
 
         # 📌 Log estandarizado para búsquedas
@@ -368,8 +375,8 @@ async def get_public_documents(
     user_email = token_data.get("email", "") if token_data else ""
 
     try:
-        filters = "public = true"
-        results = search_documents(query=q.strip() if q else "", limit=limit, offset=offset, filters=filters)
+        # Buscar en el índice de biblioteca para documentos públicos
+        results = search_documents(query=q.strip() if q else "", limit=limit, offset=offset, index_name=LIBRARY_INDEX_NAME)
 
         # Loguea siempre para auditoría (aunque 0 resultados)
         audit_log(user_id, 'CUSTOM_PUBLIC_LIST', _ctx(request, {
@@ -646,11 +653,11 @@ async def delete_document_by_path(
             delete_file_from_storage(path)
             delete_results["storage_deleted"] = True
         except FileNotFoundError:
-            print(f"Archivo no encontrado en Storage: {path}")
             # Continuamos con los otros pasos aunque el archivo no exista en Storage
+            pass
         except Exception as storage_error:
-            print(f"Error eliminando archivo de Storage: {storage_error}")
             # Continuamos con los otros pasos aunque haya un error en Storage
+            pass
         
         # Paso 3: Eliminar documentos de Firestore
         for doc_id in all_doc_ids:
@@ -658,8 +665,8 @@ async def delete_document_by_path(
                 if delete_document_from_firestore(doc_id):
                     delete_results["firestore_deleted"].append(doc_id)
             except Exception as firestore_error:
-                print(f"Error eliminando documento {doc_id} de Firestore: {firestore_error}")
                 # Continuamos con otros documentos
+                pass
         
         # Paso 4: Eliminar documentos de Meilisearch
         for doc_id in all_doc_ids:
@@ -667,8 +674,8 @@ async def delete_document_by_path(
                 if delete_document(doc_id):
                     delete_results["meilisearch_deleted"].append(doc_id)
             except Exception as meilisearch_error:
-                print(f"Error eliminando documento {doc_id} de Meilisearch: {meilisearch_error}")
                 # Continuamos con otros documentos
+                pass
 
         # Registrar en el log los resultados de la eliminación
         audit_log(user_id, 'CUSTOM_DOCUMENT_DELETE', _ctx(request, {
@@ -709,7 +716,7 @@ async def list_all_documents(
     user_email = token_data.get("email", "") if token_data else ""
 
     try:
-        # Normalize role helper
+        # Normalize helpers
         def _norm(text: Optional[str]) -> str:
             import unicodedata
             if not isinstance(text, str):
@@ -720,6 +727,27 @@ async def list_all_documents(
                 t = t.replace(ch, "")
             return t.strip()
 
+        def _role_display_from_firestore(role_value: Optional[str]) -> Optional[str]:
+            """Map Firestore 'role' to human-friendly puesto_trabajo used in docs."""
+            if not role_value:
+                return None
+            mapping = {
+                "DireccionEjecutiva": "Dirección Ejecutiva",
+                "CoordinacionAdministrativa": "Coordinación Administrativa",
+                "CoordinadorAdministrativa": "Coordinación Administrativa",
+                "CoordinacionProyectosyPlanificacion": "Coordinación Proyectos y Planificación",
+                "CoordinacionProyectosPlanificacion": "Coordinación Proyectos y Planificación",
+                "CoordinacionComunicaciones": "Coordinación de Comunicaciones",
+                "AsistenciaGeneral": "Asistencia General",
+            }
+            if role_value in mapping:
+                return mapping[role_value]
+            rn = _norm(role_value)
+            for k, v in mapping.items():
+                if _norm(k) == rn:
+                    return v
+            return role_value
+        
         # Resolve user role from Firestore
         user_role: Optional[str] = None
         try:
@@ -728,8 +756,19 @@ async def list_all_documents(
                 doc = db.collection("users").document(user_id).get()
                 if doc.exists:
                     d = doc.to_dict() or {}
-                    user_role = d.get("puesto_trabajo") or d.get("puesto") or d.get("role")
-        except Exception:
+                    # Prefer canonical 'role' stored in Firestore as per requirements
+                    user_role = d.get("role") or d.get("puesto_trabajo") or d.get("puesto")
+                else:
+                    # Fallback: search by email
+                    user_email = (token_data or {}).get("email")
+                    if user_email:
+                        users_query = db.collection("users").where("email", "==", user_email).limit(1).stream()
+                        
+                        for user_doc in users_query:
+                            user_data = user_doc.to_dict() or {}
+                            user_role = user_data.get("role") or user_data.get("puesto_trabajo") or user_data.get("puesto")
+                            break
+        except Exception as e:
             pass
 
         # Fallbacks
@@ -741,6 +780,7 @@ async def list_all_documents(
                 or claims.get("puesto")
                 or claims.get("role")
             )
+            
         if not user_role and isinstance(user_email, str):
             e = user_email.lower()
             if any(p in e for p in ["director", "ejecutiv"]):
@@ -750,17 +790,20 @@ async def list_all_documents(
 
         # Build filters for Meilisearch
         filters: Optional[str] = None
-        filter_clauses: List[str] = []
-        if public_only:
-            filter_clauses.append("public = true")
-
-        # Dirección Ejecutiva sees all; others for now see only public if not requesting public_only
         is_exec = role_norm == "direccionejecutiva" or (isinstance(user_email, str) and any(p in user_email.lower() for p in ["director", "ejecutiv"]))
-        if not is_exec and not public_only:
-            filter_clauses.append("public = true")
 
-        if filter_clauses:
-            filters = " AND ".join(filter_clauses)
+        if public_only:
+            filters = "public = true"
+        else:
+            if not is_exec:
+                role_display = _role_display_from_firestore(user_role) or ""
+                rd_esc = role_display.replace('"', '\\"') if isinstance(role_display, str) else ""
+                parts: List[str] = ["public = true"]
+                if rd_esc:
+                    parts.append(f'puesto_trabajo = "{rd_esc}"')
+                filters = " OR ".join(parts)
+            else:
+                filters = None
 
         # Query Meilisearch (empty query -> list)
         ms = search_documents(query="", limit=1000, offset=0, filters=filters)
@@ -768,21 +811,49 @@ async def list_all_documents(
         source = (ms or {}).get("source", ("meilisearch" if is_meilisearch_available() else "local"))
 
         # Firestore fallback if Meilisearch unavailable
-        if not hits and not is_meilisearch_available():
+        if not is_meilisearch_available():
             try:
                 fs_hits: List[Dict[str, Any]] = []
                 db = get_firestore_client()
-                qref = db.collection("documents")
-                if public_only or (not is_exec):
-                    # Using the filter keyword argument with FieldFilter
-                    qref = qref.where(filter=FieldFilter("public", "==", True))
-                for d in qref.limit(1000).stream():
+                
+                # Buscar en ambas colecciones
+                # Documentos públicos de la biblioteca
+                library_qref = db.collection("library")
+                for d in library_qref.limit(1000).stream():
                     data = d.to_dict() or {}
                     data["id"] = d.id
                     fs_hits.append(data)
-                hits = fs_hits
+                
+                # Documentos privados (solo si no es public_only)
+                if not public_only:
+                    docs_qref = db.collection("documents")
+                    for d in docs_qref.limit(1000).stream():
+                        data = d.to_dict() or {}
+                        data["id"] = d.id
+                        fs_hits.append(data)
+
+                # Apply same logic client-side
+                if public_only:
+                    # Los documentos de library ya son públicos, 
+                    # pero también verificar el flag public por compatibilidad
+                    hits = [x for x in fs_hits if x.get("public") is True]
+                else:
+                    if not is_exec:
+                        role_display = _role_display_from_firestore(user_role) or ""
+                        rn_disp = _norm(role_display)
+
+                        def _match(doc: Dict[str, Any]) -> bool:
+                            # Los documentos de library son siempre visibles (públicos)
+                            if doc.get("public") is True:
+                                return True
+                            pt = _norm(doc.get("puesto_trabajo") or "")
+                            return pt and pt == rn_disp
+
+                        hits = [x for x in fs_hits if _match(x)]
+                    else:
+                        hits = fs_hits
                 source = "firestore"
-            except Exception:
+            except Exception as e:
                 hits = []
                 source = "error"
 
@@ -1037,8 +1108,6 @@ async def get_document_info(
                     'path': effective_path,
                     'file_id': file_id
                 }))
-                print(f"Error en búsqueda Meilisearch: {str(e)}")
-                print("Usando búsqueda local (fallback)")
         
         # SEGUNDA FUENTE: Firestore
         if not document_data:
@@ -1053,7 +1122,7 @@ async def get_document_info(
                     document_data = firestore_doc
                     source = "firestore"
             except Exception as e:
-                print(f"Error obteniendo documento de Firestore: {str(e)}")
+                pass
         
         # TERCERA FUENTE: Buscar usando el endpoint search con el nombre (sin extensión)
         if not document_data:
@@ -1075,7 +1144,7 @@ async def get_document_info(
                             source = f"search_fallback_{search_results.get('source', 'unknown')}"
                             break
             except Exception as e:
-                print(f"Error en búsqueda por search fallback: {str(e)}")
+                pass
         
         if not document_data:
             raise HTTPException(status_code=404, detail="Documento no encontrado")

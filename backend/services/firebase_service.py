@@ -121,10 +121,10 @@ def generate_versioned_filename(original_filename: str) -> str:
         extension = os.path.splitext(original_filename)[1]
         return f"{base_name}_v{version}{extension}"
 
-def update_parent_document_versions(parent_id: str, version_id: str) -> None:
+def update_parent_document_versions(parent_id: str, version_id: str, collection_name: str = "documents") -> None:
     try:
         db = get_firestore_client()
-        parent_ref = db.collection("documents").document(parent_id)
+        parent_ref = db.collection(collection_name).document(parent_id)
         parent_doc = parent_ref.get()
         
         if not parent_doc.exists:
@@ -153,7 +153,12 @@ def save_document_metadata(
 ) -> None:
     try:
         db = get_firestore_client()
-        doc_ref = db.collection("documents").document(file_id)
+        
+        # Determinar la colección basada en si el documento es público
+        is_public = metadata.get("public", False)
+        collection_name = "library" if is_public else "documents"
+        
+        doc_ref = db.collection(collection_name).document(file_id)
         
         doc_data = {
             **metadata,
@@ -176,7 +181,8 @@ def save_document_metadata(
         
         # Si es una nueva versión, actualizar el documento padre
         if parent_id:
-            update_parent_document_versions(parent_id, file_id)
+            # Usar la misma colección para actualizar el documento padre
+            update_parent_document_versions(parent_id, file_id, collection_name)
                 
     except Exception as e:
         print(f"Error guardando metadatos: {e}")
@@ -213,10 +219,10 @@ def get_document_by_filename(filename: str) -> Optional[Dict[str, Any]]:
         print(f"Error obteniendo documento por filename: {e}")
         return None
 
-def get_document_by_stem(file_stem: str) -> Optional[Dict[str, Any]]:
+def get_document_by_stem(file_stem: str, collection_name: str = "documents") -> Optional[Dict[str, Any]]:
     try:
         db = get_firestore_client()
-        doc_ref = db.collection("documents").document(file_stem)
+        doc_ref = db.collection(collection_name).document(file_stem)
         doc = doc_ref.get()
         
         if not doc.exists:
@@ -229,10 +235,10 @@ def get_document_by_stem(file_stem: str) -> Optional[Dict[str, Any]]:
         print(f"Error obteniendo documento por stem: {e}")
         return None
 
-def get_highest_version(file_stem: str) -> int:
+def get_highest_version(file_stem: str, collection_name: str = "documents") -> int:
     try:
         db = get_firestore_client()
-        doc_ref = db.collection("documents").document(file_stem)
+        doc_ref = db.collection(collection_name).document(file_stem)
         doc = doc_ref.get()
         
         if not doc.exists:
@@ -249,7 +255,7 @@ def get_highest_version(file_stem: str) -> int:
         
         for version_id in versions:
             try:
-                version_ref = db.collection("documents").document(version_id)
+                version_ref = db.collection(collection_name).document(version_id)
                 version_doc = version_ref.get()
                 
                 if version_doc.exists:
@@ -401,6 +407,7 @@ def get_documents_by_storage_path(storage_path: str) -> List[Dict[str, Any]]:
 def delete_document_from_firestore(doc_id: str) -> bool:
     """
     Elimina un documento de Firestore por su ID.
+    Busca primero en qué colección está el documento.
     
     Args:
         doc_id: ID del documento en Firestore
@@ -410,8 +417,23 @@ def delete_document_from_firestore(doc_id: str) -> bool:
     """
     try:
         db = get_firestore_client()
-        db.collection("documents").document(doc_id).delete()
-        return True
+        
+        # Intentar encontrar el documento en library primero
+        library_doc = db.collection("library").document(doc_id).get()
+        if library_doc.exists:
+            db.collection("library").document(doc_id).delete()
+            return True
+        
+        # Si no está en library, buscar en documents
+        docs_doc = db.collection("documents").document(doc_id).get()
+        if docs_doc.exists:
+            db.collection("documents").document(doc_id).delete()
+            return True
+        
+        # Documento no encontrado
+        print(f"Documento {doc_id} no encontrado en ninguna colección")
+        return False
+        
     except Exception as e:
         print(f"Error eliminando documento de Firestore: {e}")
         return False
@@ -441,24 +463,6 @@ def get_documents_by_storage_path(storage_path: str) -> List[Dict[str, Any]]:
     except Exception as e:
         print(f"Error buscando documentos por storage_path: {e}")
         return []
-
-def delete_document_from_firestore(doc_id: str) -> bool:
-    """
-    Elimina un documento de Firestore por su ID.
-    
-    Args:
-        doc_id: ID del documento en Firestore
-        
-    Returns:
-        True si la eliminación fue exitosa, False en caso contrario
-    """
-    try:
-        db = get_firestore_client()
-        db.collection("documents").document(doc_id).delete()
-        return True
-    except Exception as e:
-        print(f"Error eliminando documento de Firestore: {e}")
-        return False
 
 def delete_folder_from_storage(folder_path: str) -> Dict[str, Any]:
     """
