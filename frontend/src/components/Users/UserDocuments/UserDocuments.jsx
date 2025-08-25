@@ -252,13 +252,31 @@ export default function UserDocuments() {
   };
 
   const sortedFiles = useMemo(() => {
-    // First sort the files
-    const sorted = [...files].sort((a, b) => {
-      let valA = a[sortBy],
-        valB = b[sortBy];
+    return [...files].sort((a, b) => {
+      let valA = a[sortBy];
+      let valB = b[sortBy];
+      
       if (sortBy === "updated") {
-        valA = new Date(valA || 0);
-        valB = new Date(valB || 0);
+        // Manejo mejorado de fechas - Invalid Date al final
+        const dateA = new Date(valA || 0);
+        const dateB = new Date(valB || 0);
+        
+        // Verificar si las fechas son válidas
+        const isValidA = !isNaN(dateA.getTime());
+        const isValidB = !isNaN(dateB.getTime());
+        
+        // Si ambas son inválidas, mantener orden original
+        if (!isValidA && !isValidB) return 0;
+        
+        // Si solo A es inválida, B va primero
+        if (!isValidA) return sortOrder === "desc" ? 1 : -1;
+        
+        // Si solo B es inválida, A va primero  
+        if (!isValidB) return sortOrder === "desc" ? -1 : 1;
+        
+        // Ambas son válidas, comparar normalmente
+        valA = dateA;
+        valB = dateB;
       } else if (sortBy === "size") {
         valA = a.size || 0;
         valB = b.size || 0;
@@ -270,9 +288,6 @@ export default function UserDocuments() {
       if (valA > valB) return sortOrder === "asc" ? 1 : -1;
       return 0;
     });
-    
-    // Then group versioned files
-    return groupVersionedDocuments(sorted);
   }, [files, sortBy, sortOrder]);
 
   // Filtrado SIMPLIFICADO - solo buscar en categoria

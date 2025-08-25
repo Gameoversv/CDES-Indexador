@@ -51,7 +51,7 @@ export default function DocumentToolbar({
     { value: "discursos", label: "Discursos" },
     { value: "convocatorias", label: "Convocatorias" },
     { value: "invitacion", label: "Invitación" },
-    { value: "cuestionario", label: "Cuestionario" },
+    { value: "cuestionario/ instrumento de recolección de datos", label: "Cuestionario" },
     { value: "tder", label: "TDER" },
     { value: "cronograma", label: "Cronograma" },
     { value: "diagnostico", label: "Diagnóstico" },

@@ -37,8 +37,8 @@ export default function AdminDocuments() {
   const [typeFilter, setTypeFilter] = useState("all");
   const [typeContent, setTypeContent] = useState("all");
   const [dateRange, setDateRange] = useState({ from: null, to: null });
-  const [sortBy, setSortBy] = useState("updated");
-  const [sortOrder, setSortOrder] = useState("desc");
+  const [sortBy, setSortBy] = useState("updated"); // ✅ Cambiar de "filename" a "updated"
+  const [sortOrder, setSortOrder] = useState("desc"); // ✅ Cambiar de "asc" a "desc"
   const [previewFile, setPreviewFile] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState({
     open: false,
@@ -170,11 +170,31 @@ export default function AdminDocuments() {
   };
 
   const sortedFiles = useMemo(() => {
-    const sorted = [...files].sort((a, b) => {
-      let valA = a[sortBy], valB = b[sortBy];
+    return [...files].sort((a, b) => {
+      let valA = a[sortBy];
+      let valB = b[sortBy];
+      
       if (sortBy === "updated") {
-        valA = new Date(valA || 0);
-        valB = new Date(valB || 0);
+        // Manejo mejorado de fechas - Invalid Date al final
+        const dateA = new Date(valA || 0);
+        const dateB = new Date(valB || 0);
+        
+        // Verificar si las fechas son válidas
+        const isValidA = !isNaN(dateA.getTime());
+        const isValidB = !isNaN(dateB.getTime());
+        
+        // Si ambas son inválidas, mantener orden original
+        if (!isValidA && !isValidB) return 0;
+        
+        // Si solo A es inválida, B va primero
+        if (!isValidA) return sortOrder === "desc" ? 1 : -1;
+        
+        // Si solo B es inválida, A va primero  
+        if (!isValidB) return sortOrder === "desc" ? -1 : 1;
+        
+        // Ambas son válidas, comparar normalmente
+        valA = dateA;
+        valB = dateB;
       } else if (sortBy === "size") {
         valA = a.size || 0;
         valB = b.size || 0;
@@ -186,7 +206,6 @@ export default function AdminDocuments() {
       if (valA > valB) return sortOrder === "asc" ? 1 : -1;
       return 0;
     });
-    return groupVersionedDocuments(sorted);
   }, [files, sortBy, sortOrder]);
 
   // Filtrado SIMPLIFICADO - solo buscar en categoria
