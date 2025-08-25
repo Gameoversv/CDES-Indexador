@@ -37,18 +37,86 @@ export default function AdminDocuments() {
     fetchFiles();
   }, []);
 
+  // Resetea página cuando cambien los filtros
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [typeContent, search, typeFilter, dateRange]);
+
+  const { userRole } = useAuth();
+
+  const getUserDepartment = async () => {
+    try {
+      // Verificamos si el usuario es Director Ejecutivo
+      if (userRole === "DireccionEjecutiva") {
+        setIsDirectorEjecutivo(true);
+      }
+
+      // For admin, we'll always use "Administración" but we'll try to get the actual admin name
+      const response = await authAPI.getCurrentUser();
+      if (response.data) {
+        if (response.data.admin) {
+          setUserDepartment("Administración");
+        }
+        // Verificar si el rol en los datos del usuario es Director Ejecutivo
+        if (response.data.role === "DireccionEjecutiva" || response.data.role === "Dirección Ejecutiva") {
+          setIsDirectorEjecutivo(true);
+        }
+        return;
+      }
+    } catch (error) {
+      console.warn("Error obteniendo datos del usuario desde API:", error);
+    }
+    
+    // Fallback: usar localStorage
+    try {
+      const userData = localStorage.getItem("user");
+      if (userData) {
+        const parsedUser = JSON.parse(userData);
+        if (parsedUser.admin) {
+          setUserDepartment("Administración");
+        }
+        // Verificar si el rol en localStorage es Director Ejecutivo
+        if (parsedUser.role === "DireccionEjecutiva" || parsedUser.role === "Dirección Ejecutiva") {
+          setIsDirectorEjecutivo(true);
+        }
+      }
+    } catch (error) {
+      console.error("Error obteniendo departamento:", error);
+    }
+  };
+
   const fetchFiles = async () => {
     setLoading(true);
     try {
-      const res = await documentsAPI.listStorage();
-      if (Array.isArray(res.data?.files)) {
-        setFiles(res.data.files);
-      } else {
-        setFiles([]);
-        toast.error("Formato de datos inválido.");
+      const res = await documentsAPI.list();
+      const data = res?.data || {};
+      const items = data.files || data.documents || data.hits || [];
+      
+      if (items.length > 0) {
+        console.log("[AdminDocuments] Primer item:", items[0]);
+        console.log("[AdminDocuments] Campo categoria del primer item:", items[0].categoria);
       }
+      
+      // Normalización SIMPLIFICADA - solo usar categoria
+      const normalized = items.map((d) => {
+        const rawPath = d.storage_path || d.path || "";
+        const nameFromPath = rawPath ? rawPath.split("/").pop() : "";
+        
+        
+        return {
+          filename: nameFromPath || d.filename || d.original_filename || d.title || "",
+          size: d.size ?? d.file_size_bytes ?? 0,
+          updated: d.updated || d.updated_at || d.created_at || d.date || d.upload_timestamp,
+          path: rawPath,
+          categoria: d.categoria || "",
+          public: d.public ?? d.publico ?? false,
+        };
+      });
+      
+      
+      setFiles(normalized);
     } catch (error) {
-      console.error(error);
+      console.error("❌ [AdminDocuments] Error:", error);
       setFiles([]);
       toast.error("Error al obtener los archivos.");
     } finally {
@@ -112,36 +180,89 @@ export default function AdminDocuments() {
     });
   }, [files, sortBy, sortOrder]);
 
+  // Filtrado SIMPLIFICADO - solo buscar en categoria
   const filteredFiles = useMemo(() => {
-    setCurrentPage(1);
+    
     return sortedFiles.filter((f) => {
       const matchesSearch = (f.filename || "")
         .toLowerCase()
         .includes(search.toLowerCase());
+        
       const matchesTypeFilter =
         typeFilter === "all" ||
         (f.filename || "").toLowerCase().endsWith(`.${typeFilter}`);
-      const matchesContentType =
-        typeContent === "all" || (f.tipo || "").toLowerCase() === typeContent;
+        
+      // SOLO buscar en categoria
+      const matchesContentType = typeContent === "all" || f.categoria === typeContent;
+      
       const updatedAt = new Date(f.updated);
       const inDateRange =
         (!dateRange.from || updatedAt >= new Date(dateRange.from)) &&
         (!dateRange.to || updatedAt <= new Date(dateRange.to));
 
-      return (
-        matchesSearch && matchesTypeFilter && matchesContentType && inDateRange
-      );
+      // Debug solo cuando hay filtro activo
+      if (typeContent !== "all") {
+        console.log(`🔍 [AdminDocuments] ${f.filename}: categoria="${f.categoria}", buscando="${typeContent}", match=${matchesContentType}`);
+      }
+
+      return matchesSearch && matchesTypeFilter && matchesContentType && inDateRange;
     });
   }, [sortedFiles, search, typeFilter, typeContent, dateRange]);
 
-  const paginatedFiles = useMemo(() => {
-    const startIndex = (currentPage - 1) * itemsPerPage;
-    return filteredFiles.slice(startIndex, startIndex + itemsPerPage);
-  }, [filteredFiles, currentPage, itemsPerPage]);
+  // Tipos disponibles SIMPLIFICADO - solo de categoria
+  const availableTypes = useMemo(() => {
+    const types = new Set();
+    
+    files.forEach(file => {
+      if (file.categoria && file.categoria !== "") {
+        types.add(file.categoria);
+      }
+    });
+    
+    const sortedTypes = Array.from(types).sort();
+    
+    return sortedTypes;
+  }, [files]);
 
-  const totalPages = useMemo(() => {
-    return Math.ceil(filteredFiles.length / itemsPerPage);
-  }, [filteredFiles, itemsPerPage]);
+  // Cálculos de paginación
+  const totalPages = Math.ceil(filteredFiles.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const currentFiles = filteredFiles.slice(startIndex, endIndex);
+
+  // Funciones de navegación de paginación
+  const goToFirstPage = () => setCurrentPage(1);
+  const goToLastPage = () => setCurrentPage(totalPages);
+  const goToPrevPage = () => setCurrentPage(Math.max(1, currentPage - 1));
+  const goToNextPage = () => setCurrentPage(Math.min(totalPages, currentPage + 1));
+
+  // Generar array de números de página para mostrar
+  const getPageNumbers = () => {
+    const delta = 2;
+    const range = [];
+    const rangeWithDots = [];
+    let l;
+
+    for (let i = 1; i <= totalPages; i++) {
+      if (i === 1 || i === totalPages || (i >= currentPage - delta && i <= currentPage + delta)) {
+        range.push(i);
+      }
+    }
+
+    range.forEach((i) => {
+      if (l) {
+        if (i - l === 2) {
+          rangeWithDots.push(l + 1);
+        } else if (i - l !== 1) {
+          rangeWithDots.push('...');
+        }
+      }
+      rangeWithDots.push(i);
+      l = i;
+    });
+
+    return rangeWithDots;
+  };
 
   const stats = {
     total: files.length,
@@ -197,20 +318,21 @@ export default function AdminDocuments() {
         setStatType={setStatType}
       />
 
-      <DocumentToolbar
-        search={search}
-        setSearch={setSearch}
-        typeFilter={typeFilter}
-        setTypeFilter={setTypeFilter}
-        typeContent={typeContent}
-        setTypeContent={setTypeContent}
-        dateRange={dateRange}
-        setDateRange={setDateRange}
-        viewMode={viewMode}
-        setViewMode={setViewMode}
-        onRefresh={fetchFiles}
-        clearAllFilters={clearAllFilters}
-      />
+        <DocumentToolbar
+          search={search}
+          setSearch={setSearch}
+          typeFilter={typeFilter}
+          setTypeFilter={setTypeFilter}
+          typeContent={typeContent}
+          setTypeContent={setTypeContent}
+          dateRange={dateRange}
+          setDateRange={setDateRange}
+          viewMode={viewMode}
+          setViewMode={setViewMode}
+          onRefresh={fetchFiles}
+          clearAllFilters={clearAllFilters}
+          availableTypes={availableTypes} // Pasar tipos dinámicos
+        />
 
       {loading ? (
         <div className="flex justify-center py-10">

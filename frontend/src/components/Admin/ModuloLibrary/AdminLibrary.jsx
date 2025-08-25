@@ -12,6 +12,17 @@ import ConfirmDeleteDialog from "./ConfirmDeleteDialog";
 
 import Pagination from "@/components/ui/Pagination";
 
+// Función helper para formatear bytes (añadir al inicio del archivo)
+const formatSize = (bytes) => {
+  if (bytes === 0) return '0 Bytes';
+  
+  const k = 1024;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+};
+
 export default function AdminLibrary() {
   const [documents, setDocuments] = useState([]);
   const [viewMode, setViewMode] = useState("list");
@@ -95,15 +106,30 @@ export default function AdminLibrary() {
     currentPage * itemsPerPage
   );
 
-  const stats = {
-    total: documents.length,
-    totalSizeMB:
-      documents.reduce((acc, doc) => acc + (doc.size || 0), 0) / (1024 * 1024),
-    pdf: documents.filter((d) => d.name?.endsWith(".pdf")).length,
-    docx: documents.filter((d) => d.name?.endsWith(".docx")).length,
-    xlsx: documents.filter((d) => d.name?.endsWith(".xlsx")).length,
-    pptx: documents.filter((d) => d.name?.endsWith(".pptx")).length,
-  };
+  const stats = useMemo(() => {
+    const totalBytes = documents.reduce((acc, doc) => acc + (doc.size || 0), 0);
+    
+    return {
+      total: documents.length,
+      totalSize: formatSize(totalBytes),
+      filteredCount: filteredDocs.length,
+      currentShowing: paginatedDocs.length,
+      
+      // Contadores por formato para el selector
+      pdf: documents.filter((d) => (d.file_extension || "").toLowerCase() === ".pdf").length,
+      docx: documents.filter((d) => (d.file_extension || "").toLowerCase() === ".docx").length,
+      xlsx: documents.filter((d) => (d.file_extension || "").toLowerCase() === ".xlsx").length,
+      pptx: documents.filter((d) => (d.file_extension || "").toLowerCase() === ".pptx").length,
+      jpg: documents.filter((d) => (d.file_extension || "").toLowerCase() === ".jpg").length,
+      jpeg: documents.filter((d) => (d.file_extension || "").toLowerCase() === ".jpeg").length,
+      png: documents.filter((d) => (d.file_extension || "").toLowerCase() === ".png").length,
+      gif: documents.filter((d) => (d.file_extension || "").toLowerCase() === ".gif").length,
+      mp4: documents.filter((d) => (d.file_extension || "").toLowerCase() === ".mp4").length,
+      avi: documents.filter((d) => (d.file_extension || "").toLowerCase() === ".avi").length,
+      mov: documents.filter((d) => (d.file_extension || "").toLowerCase() === ".mov").length,
+      txt: documents.filter((d) => (d.file_extension || "").toLowerCase() === ".txt").length,
+    };
+  }, [documents, filteredDocs, paginatedDocs]); // Dependencias correctas
 
   return (
     <AdminLayout>
