@@ -3,10 +3,11 @@ import AdminLayout from '../Layout/AdminLayout';
 import { Button } from '@/components/ui/button';
 import { documentsAPI } from '@/services/api';
 import TreeNode from '../../Users/UserFolders/TreeNode';
+import { useTreeSearch } from '@/hooks/useTreeSearch';
 import {
   Folder, FolderOpen, FileText, ChevronRight, ChevronDown, Home,
   Search, Loader2, Plus, Upload, List, Grid3X3, Filter, ChevronDown as CD, RefreshCw,
-  Download, Trash2, AlertTriangle, ArrowLeft
+  Download, Trash2, AlertTriangle, ArrowLeft, X
 } from 'lucide-react';
 
 // ===================== Utilidades básicas =====================
@@ -93,6 +94,19 @@ const AdminFolders = () => {
   const canCreateOrUpload = true;
   const canDelete = true;
   
+  // Hook de búsqueda en árbol
+  const {
+    searchQuery: treeSearchQuery,
+    searchResults: treeSearchResults,
+    isSearching: isTreeSearching,
+    searchError: treeSearchError,
+    hasSearched: hasTreeSearched,
+    handleSearchChange: handleTreeSearchChange,
+    clearSearch: clearTreeSearch,
+    hasResults: hasTreeSearchResults,
+    isEmpty: isTreeSearchEmpty,
+  } = useTreeSearch();
+  
   // Estado de árbol (sidebar)
   const [openMap, setOpenMap] = useState({ "": true }); // qué rutas están abiertas
   const [sidebarRoot, setSidebarRoot] = useState([]); // carpetas de raíz visibles para el usuario
@@ -132,7 +146,10 @@ const AdminFolders = () => {
   );
 
   const sortedFilteredFiles = useMemo(() => {
-    const arr = [...files];
+    // Si hay resultados de búsqueda en el árbol, usarlos en lugar de los archivos locales
+    const sourceFiles = hasTreeSearchResults ? treeSearchResults : files;
+    const arr = [...sourceFiles];
+    
     switch (sort) {
       case "oldest": arr.sort((a, b) => safeDate(a.updated) - safeDate(b.updated)); break;
       case "az": arr.sort((a, b) => a.name.localeCompare(b.name)); break;
@@ -140,10 +157,11 @@ const AdminFolders = () => {
       case "size": arr.sort((a, b) => (a.size || 0) - (b.size || 0)); break;
       default: arr.sort((a, b) => safeDate(b.updated) - safeDate(a.updated));
     }
+    
     if (!query) return arr;
     const qq = query.toLowerCase();
     return arr.filter(f => f.name.toLowerCase().includes(qq));
-  }, [files, sort, query]);
+  }, [files, treeSearchResults, hasTreeSearchResults, sort, query]);
 
   const buildBreadcrumbs = useCallback((path) => {
     if (!path) return [{ name: "Raíz", path: "" }];
@@ -721,19 +739,43 @@ const AdminFolders = () => {
             ))}
           </div>
 
-          {/* Controles */}
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="relative">
-              <Search className="w-4 h-4 text-gray-500 absolute left-3 top-2.5" />
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Buscar en esta carpeta…"
-                className="pl-9 pr-3 py-2 h-9 rounded-md border border-gray-300 text-sm w-64 focus:outline-none focus:ring-2 focus:ring-gray-300"
-              />
-            </div>
+        {/* Controles */}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Búsqueda global en el árbol */}
+          <div className="relative">
+            <Search className="w-4 h-4 text-gray-500 absolute left-3 top-2.5" />
+            <input
+              value={treeSearchQuery}
+              onChange={(e) => handleTreeSearchChange(e.target.value)}
+              placeholder="Buscar documentos en todo el árbol..."
+              className="pl-9 pr-10 py-2 h-9 rounded-md border border-gray-300 text-sm w-80 focus:outline-none focus:ring-2 focus:ring-blue-300"
+            />
+            {treeSearchQuery && (
+              <button
+                onClick={clearTreeSearch}
+                className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600"
+                title="Limpiar búsqueda"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+            {isTreeSearching && (
+              <div className="absolute right-10 top-2.5">
+                <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+              </div>
+            )}
+          </div>
 
-            <div className="relative">
+          {/* Búsqueda local en carpeta actual */}
+          <div className="relative">
+            <Search className="w-4 h-4 text-gray-500 absolute left-3 top-2.5" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Buscar en esta carpeta…"
+              className="pl-9 pr-3 py-2 h-9 rounded-md border border-gray-300 text-sm w-64 focus:outline-none focus:ring-2 focus:ring-gray-300"
+            />
+          </div>            <div className="relative">
               <Filter className="w-4 h-4 text-gray-500 absolute left-3 top-2.5 pointer-events-none" />
               <select
                 className="appearance-none pl-9 pr-8 py-2 h-9 rounded-md border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-gray-300"
@@ -840,7 +882,16 @@ const AdminFolders = () => {
           {/* Contenido principal */}
           <section className="col-span-12 md:col-span-9 bg-white rounded-lg border border-gray-200">
             <div className="p-3 border-b border-gray-100 text-sm">
-              Carpeta actual: <span className="font-semibold">{currentPathText}</span>
+              {hasTreeSearchResults ? (
+                <span>
+                  Resultados de búsqueda: <span className="font-semibold">"{treeSearchQuery}"</span>
+                  <span className="text-gray-500 ml-2">({treeSearchResults.length} documentos encontrados)</span>
+                </span>
+              ) : (
+                <span>
+                  Carpeta actual: <span className="font-semibold">{currentPathText}</span>
+                </span>
+              )}
             </div>
 
             {loading ? (
@@ -849,10 +900,19 @@ const AdminFolders = () => {
               </div>
             ) : error ? (
               <div className="p-8 text-center text-red-600">{error}</div>
+            ) : treeSearchError ? (
+              <div className="p-8 text-center text-red-600">{treeSearchError}</div>
             ) : (
               <>
-                {/* Carpetas en la ruta actual */}
-                {folders?.length > 0 && (
+                {/* Mostrar mensaje si no hay resultados de búsqueda */}
+                {hasTreeSearched && isTreeSearchEmpty && (
+                  <div className="p-8 text-center text-gray-500">
+                    No se encontraron documentos para "{treeSearchQuery}"
+                  </div>
+                )}
+
+                {/* Carpetas en la ruta actual (solo mostrar si no hay búsqueda activa) */}
+                {!hasTreeSearchResults && folders?.length > 0 && (
                   <div className="p-3">
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                       {folders.map((f) => (
@@ -896,23 +956,40 @@ const AdminFolders = () => {
                       <div className="col-span-6">Nombre</div>
                       <div className="col-span-2">Tipo</div>
                       <div className="col-span-2">Tamaño</div>
-                      <div className="col-span-2">Actualizado</div>
+                      <div className="col-span-2">
+                        {hasTreeSearchResults ? "Ubicación" : "Actualizado"}
+                      </div>
                     </div>
 
                     {(sortedFilteredFiles?.length ?? 0) === 0 ? (
-                      <div className="p-8 text-center text-gray-500">Vacío</div>
+                      !hasTreeSearched || !isTreeSearchEmpty ? (
+                        <div className="p-8 text-center text-gray-500">Vacío</div>
+                      ) : null
                     ) : (
                       sortedFilteredFiles.map((file) => (
                         <div key={file.id || file.name} className="grid grid-cols-12 items-center px-3 py-2 border-b border-gray-50">
                           <div className="col-span-6 flex items-center gap-2 min-w-0">
                             <FileText className="w-4 h-4 text-gray-700" />
-                            <span className="truncate" title={file.name}>{file.name}</span>
+                            <div className="flex-1 min-w-0">
+                              <span className="truncate block" title={file.name}>{file.name}</span>
+                              {file.title && file.title !== file.name && (
+                                <span className="text-xs text-gray-500 truncate block" title={file.title}>
+                                  {file.title}
+                                </span>
+                              )}
+                            </div>
                             <FileBadge name={file.name} />
                           </div>
                           <div className="col-span-2 text-xs text-gray-600">{file.contentType || "--"}</div>
                           <div className="col-span-2 text-xs text-gray-600">{fmtSize(file.size)}</div>
                           <div className="col-span-2 text-xs text-gray-600 flex items-center justify-between">
-                            <span>{file.updated ? new Date(file.updated).toLocaleString() : "--"}</span>
+                            {hasTreeSearchResults ? (
+                              <span className="truncate" title={file.path}>
+                                {file.path || file.highlightedPath || "--"}
+                              </span>
+                            ) : (
+                              <span>{file.updated ? new Date(file.updated).toLocaleString() : "--"}</span>
+                            )}
                             <div className="flex items-center space-x-1">
                               <button 
                                 onClick={() => handleDownload(file.path, file.name)}
@@ -939,21 +1016,36 @@ const AdminFolders = () => {
                 ) : (
                   <div className="p-3">
                     {(sortedFilteredFiles?.length ?? 0) === 0 ? (
-                      <div className="p-8 text-center text-gray-500">Vacío</div>
+                      !hasTreeSearched || !isTreeSearchEmpty ? (
+                        <div className="p-8 text-center text-gray-500">Vacío</div>
+                      ) : null
                     ) : (
                       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                         {sortedFilteredFiles.map((file) => (
                           <div key={file.id || file.name} className="border border-gray-200 rounded-md p-3">
                             <div className="flex items-center gap-2 mb-2">
                               <FileText className="w-4 h-4 text-gray-700" />
-                              <span className="text-sm font-medium truncate" title={file.name}>{file.name}</span>
+                              <div className="flex-1 min-w-0">
+                                <span className="text-sm font-medium truncate block" title={file.name}>{file.name}</span>
+                                {file.title && file.title !== file.name && (
+                                  <span className="text-xs text-gray-500 truncate block" title={file.title}>
+                                    {file.title}
+                                  </span>
+                                )}
+                              </div>
                               <FileBadge name={file.name} />
                             </div>
                             <div className="text-[11px] text-gray-500">
                               <div>{file.contentType || "--"}</div>
                               <div>{fmtSize(file.size)}</div>
-                              <div className="flex items-center justify-between">
-                                <span>{file.updated ? new Date(file.updated).toLocaleDateString() : "--"}</span>
+                              {hasTreeSearchResults ? (
+                                <div className="truncate" title={file.path}>
+                                  📁 {file.path || file.highlightedPath || "--"}
+                                </div>
+                              ) : (
+                                <div>{file.updated ? new Date(file.updated).toLocaleDateString() : "--"}</div>
+                              )}
+                              <div className="flex items-center justify-between mt-1">
                                 <div className="flex items-center space-x-1">
                                   <button 
                                     onClick={() => handleDownload(file.path, file.name)}

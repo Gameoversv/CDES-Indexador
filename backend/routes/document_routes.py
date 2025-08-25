@@ -574,6 +574,216 @@ async def search_all_documents(
         }
 
 
+@router.get("/search-by-path")
+async def search_documents_by_path(
+    request: Request,
+    q: str = Query(..., description="Término de búsqueda en storage_path"),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    token_data=Depends(verify_firebase_token)
+):
+    """
+    Busca documentos basado en el storage_path usando Meilisearch.
+    Útil para buscar documentos dentro de una estructura de carpetas específica.
+    """
+    user_id = token_data.get("user_id", "anonymous") if token_data else "anonymous"
+    user_email = token_data.get("email", "") if token_data else ""
+
+    try:
+        # Extraer rol del usuario
+        user_role = None
+        if token_data:
+            # Primero, intentar obtener desde custom_claims
+            if "custom_claims" in token_data:
+                claims = (token_data or {}).get("custom_claims", {}) or {}
+                user_role = (
+                    (token_data or {}).get("role")
+                    or claims.get("puesto_trabajo")
+                    or claims.get("puesto")
+                    or claims.get("role")
+                )
+            
+            # Si no se encuentra en custom_claims, buscar en Firestore
+            if not user_role:
+                try:
+                    db = get_firestore_client()
+                    uid = token_data.get("user_id")
+                    if uid:
+                        user_doc = db.collection("users").document(uid).get()
+                        if user_doc.exists:
+                            user_data = user_doc.to_dict() or {}
+                            user_role = user_data.get("role")
+                        else:
+                            # Buscar por email como fallback
+                            email = token_data.get("email")
+                            if email:
+                                users_query = db.collection("users").where("email", "==", email).limit(1).get()
+                                for doc in users_query:
+                                    user_data = doc.to_dict() or {}
+                                    user_role = user_data.get("role")
+                                    break
+                except Exception as e:
+                    print(f"Error getting user role from Firestore: {e}")
+            
+        if not user_role and isinstance(user_email, str):
+            e = user_email.lower()
+            if any(p in e for p in ["director", "ejecutiv"]):
+                user_role = "DireccionEjecutiva"
+
+        role_norm = _norm(user_role)
+        is_exec = role_norm == "direccionejecutiva" or (isinstance(user_email, str) and any(p in user_email.lower() for p in ["director", "ejecutiv"]))
+
+        # Aplicar filtros según el rol
+        filters: Optional[str] = None
+        if is_exec:
+            # Dirección Ejecutiva ve todo
+            filters = None
+        else:
+            # Otros roles ven: documentos públicos, PES 2030, y documentos de su departamento
+            role_display = _role_display_from_firestore(user_role) or ""
+            rd_esc = role_display.replace('"', '\\"') if isinstance(role_display, str) else ""
+            parts: List[str] = [
+                "public = true",
+                'apartado = "PES 2030"'  # TODOS ven documentos de PES 2030
+            ]
+            if rd_esc:
+                parts.append(f'puesto_trabajo = "{rd_esc}"')
+            filters = " OR ".join(parts)
+
+        # Configurar opciones de búsqueda específicas para storage_path
+        from services.meilisearch_service import client, check_meilisearch_health
+        
+        if check_meilisearch_health() and client:
+            try:
+                search_options = {
+                    "limit": limit,
+                    "offset": offset,
+                    "attributesToSearchOn": ["storage_path", "filename", "title"],  # Buscar específicamente en storage_path
+                }
+                
+                if filters:
+                    search_options["filter"] = filters
+                
+                index = client.index("documents")
+                results = index.search(q, search_options)
+                results["source"] = "meilisearch"
+                
+            except Exception as meilisearch_error:
+                print(f"Error en búsqueda Meilisearch por path: {meilisearch_error}")
+                # Fallback a Firestore
+                results = await _search_by_path_firestore_fallback(q, limit, offset, is_exec, role_display)
+        else:
+            # Fallback a Firestore
+            results = await _search_by_path_firestore_fallback(q, limit, offset, is_exec, role_display)
+
+        results["meilisearch_available"] = check_meilisearch_health()
+
+        # Log de auditoría
+        audit_log(user_id, 'DOCUMENT_SEARCH_BY_PATH', _ctx(request, {
+            'user_email': user_email,
+            'query': q,
+            'results_count': len(results.get('hits', [])),
+            'source_engine': results.get('source', 'unknown'),
+            'user_role': user_role,
+            'is_executive': is_exec
+        }), severity="INFO")
+
+        return results
+
+    except Exception as e:
+        log_error(e, "GET_/search-by-path", user_id=user_id, additional_details=_ctx(request, {
+            'error': str(e),
+            'query': q,
+            'user_email': user_email
+        }))
+        return {
+            "hits": [],
+            "query": q,
+            "error": str(e),
+            "meilisearch_available": False,
+            "source": "error"
+        }
+
+
+async def _search_by_path_firestore_fallback(
+    query: str, 
+    limit: int, 
+    offset: int, 
+    is_exec: bool, 
+    role_display: str
+) -> Dict[str, Any]:
+    """
+    Fallback de búsqueda por storage_path usando Firestore
+    """
+    try:
+        from services.firebase_service import get_firestore_client
+        
+        fs_hits: List[Dict[str, Any]] = []
+        db = get_firestore_client()
+        
+        # Función para buscar en una colección específica
+        def search_in_collection(collection_name: str) -> List[Dict[str, Any]]:
+            results_list = []
+            collection_ref = db.collection(collection_name)
+            
+            # Buscar en todos los documentos de la colección
+            for doc in collection_ref.limit(1000).stream():
+                doc_data = doc.to_dict() or {}
+                doc_data["id"] = doc.id
+                
+                # Buscar en storage_path
+                query_lower = query.lower()
+                storage_path = doc_data.get("storage_path", "").lower()
+                filename = doc_data.get("filename", "").lower()
+                title = doc_data.get("title", "").lower()
+                
+                # Verificar si algún campo contiene la búsqueda
+                matches_search = (
+                    query_lower in storage_path or
+                    query_lower in filename or
+                    query_lower in title
+                )
+                
+                if matches_search:
+                    # Aplicar filtros de rol
+                    if is_exec:
+                        results_list.append(doc_data)
+                    else:
+                        is_public = doc_data.get("public", False) or doc_data.get("publico", False)
+                        is_pes_2030 = doc_data.get("apartado") == "PES 2030"
+                        user_dept_match = False
+                        
+                        if role_display:
+                            doc_dept = doc_data.get("puesto_trabajo", "")
+                            user_dept_match = doc_dept == role_display
+                        
+                        if is_public or is_pes_2030 or user_dept_match:
+                            results_list.append(doc_data)
+            
+            return results_list
+
+        # Buscar en ambas colecciones
+        fs_hits.extend(search_in_collection("documents"))
+        fs_hits.extend(search_in_collection("library"))
+        
+        # Aplicar paginación
+        total = len(fs_hits)
+        paginated_hits = fs_hits[offset:offset + limit]
+        
+        return {
+            "hits": paginated_hits,
+            "estimatedTotalHits": total,
+            "query": query,
+            "limit": limit,
+            "offset": offset,
+            "source": "firestore"
+        }
+        
+    except Exception as fs_error:
+        print(f"Error en fallback de búsqueda por path: {fs_error}")
+        return {"hits": [], "estimatedTotalHits": 0, "query": query, "source": "error"}
+
+
 @router.get("/public")
 async def get_public_documents(
     request: Request,

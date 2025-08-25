@@ -182,6 +182,28 @@ export const documentsAPI = {
     }
   },
 
+  // ✅ Búsqueda por storage_path (para módulos de árbol de carpetas)
+  searchByPath: async (query, limit = 20, offset = 0) => {
+    try {
+      if (!query || query.trim() === '') {
+        return { data: { hits: [], estimatedTotalHits: 0 } };
+      }
+      
+      const response = await api.get("/documents/search-by-path", { 
+        params: { 
+          q: query.trim(),
+          limit,
+          offset 
+        } 
+      });
+      
+      return response;
+    } catch (error) {
+      console.error("Error en búsqueda por ruta:", error);
+      throw error;
+    }
+  },
+
   // Descargar por ID
   download: (id) =>
     api.get(`/documents/download/${id}`, {
