@@ -62,7 +62,11 @@ export default function UserDocuments() {
     getUserDepartment();
   }, []);
 
-  
+  // Resetea página cuando cambian los filtros
+  useEffect(() => {
+    setCurrentPage(1);
+    console.log("📄 [UserDocuments] Reseteando a página 1 por cambio en filtros");
+  }, [typeContent, search, typeFilter, dateRange]);
 
   const getUserDepartment = async () => {
     try {
@@ -161,6 +165,7 @@ export default function UserDocuments() {
   };
 
   const fetchFiles = async () => {
+    console.log("🔄 [UserDocuments] Iniciando carga de archivos...");
     setLoading(true);
     try {
       // El backend ya aplica los filtros basados en el rol del usuario
@@ -199,7 +204,9 @@ export default function UserDocuments() {
       console.log(`Showing ${normalized.length} documents to user in department: ${userDepartment}`);
       
     } catch (error) {
+
       console.error("Error fetching documents:", error);
+
       setFiles([]);
       toast.error("Error al obtener los archivos.");
     } finally {
@@ -268,26 +275,51 @@ export default function UserDocuments() {
     return groupVersionedDocuments(sorted);
   }, [files, sortBy, sortOrder]);
 
+  // Filtrado SIMPLIFICADO - solo buscar en categoria
   const filteredFiles = useMemo(() => {
+    console.log("🔍 [UserDocuments] Filtrando con typeContent:", typeContent);
+    
     return sortedFiles.filter((f) => {
       const matchesSearch = (f.filename || "")
         .toLowerCase()
         .includes(search.toLowerCase());
+        
       const matchesTypeFilter =
         typeFilter === "all" ||
         (f.filename || "").toLowerCase().endsWith(`.${typeFilter}`);
-      const matchesContentType =
-        typeContent === "all" || (f.tipo || "").toLowerCase() === typeContent;
+        
+      // SOLO buscar en categoria
+      const matchesContentType = typeContent === "all" || f.categoria === typeContent;
+      
       const updatedAt = new Date(f.updated);
       const inDateRange =
         (!dateRange.from || updatedAt >= new Date(dateRange.from)) &&
         (!dateRange.to || updatedAt <= new Date(dateRange.to));
 
-      return (
-        matchesSearch && matchesTypeFilter && matchesContentType && inDateRange
-      );
+      // Debug solo cuando hay filtro activo
+      if (typeContent !== "all") {
+        console.log(`🔍 [UserDocuments] ${f.filename}: categoria="${f.categoria}", buscando="${typeContent}", match=${matchesContentType}`);
+      }
+
+      return matchesSearch && matchesTypeFilter && matchesContentType && inDateRange;
     });
   }, [sortedFiles, search, typeFilter, typeContent, dateRange]);
+
+  // Tipos disponibles SIMPLIFICADO - solo de categoria
+  const availableTypes = useMemo(() => {
+    const types = new Set();
+    
+    files.forEach(file => {
+      if (file.categoria && file.categoria !== "") {
+        types.add(file.categoria);
+      }
+    });
+    
+    const sortedTypes = Array.from(types).sort();
+    console.log("🏷️ [UserDocuments] Tipos disponibles:", sortedTypes);
+    
+    return sortedTypes;
+  }, [files]);
 
   // Cálculos de paginación
   const totalPages = Math.ceil(filteredFiles.length / itemsPerPage);
@@ -460,6 +492,7 @@ export default function UserDocuments() {
           </Card>
         </div>
 
+        {/* Pasar availableTypes al DocumentToolbar */}
         <DocumentToolbar
           search={search}
           setSearch={setSearch}
@@ -473,6 +506,7 @@ export default function UserDocuments() {
           setViewMode={setViewMode}
           onRefresh={fetchFiles}
           clearAllFilters={clearAllFilters}
+          availableTypes={availableTypes} 
         />
 
         {loading ? (
@@ -556,7 +590,7 @@ export default function UserDocuments() {
                         variant={currentPage === pageNum ? "default" : "outline"}
                         size="sm"
                         onClick={() => setCurrentPage(pageNum)}
-                        className="min-w-[36px]"
+                        className="h-8 px-3"
                       >
                         {pageNum}
                       </Button>
@@ -569,7 +603,7 @@ export default function UserDocuments() {
                   size="icon"
                   onClick={goToNextPage}
                   disabled={currentPage === totalPages}
-                  title="Página siguiente"
+                  title="Siguiente página"
                 >
                   <ChevronRight className="h-4 w-4" />
                 </Button>
@@ -585,11 +619,11 @@ export default function UserDocuments() {
                 </Button>
               </div>
 
-              {/* Selector de items por página */}
+              {/* Selector de elementos por página */}
               <div className="flex items-center gap-2">
                 <span className="text-sm text-muted-foreground">Mostrar:</span>
                 <Select value={itemsPerPage.toString()} onValueChange={handleItemsPerPageChange}>
-                  <SelectTrigger className="w-20">
+                  <SelectTrigger className="w-[70px]">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -603,22 +637,24 @@ export default function UserDocuments() {
             </div>
           </div>
         )}
-
-        <PreviewFileDialog
-          file={previewFile}
-          onClose={() => setPreviewFile(null)}
-          handleDownload={handleDownload}
-          formatSize={formatSize}
-          formatDate={formatDate}
-        />
-
-        <ConfirmDeleteDialog
-          open={confirmDelete.open}
-          file={confirmDelete.file}
-          onCancel={() => setConfirmDelete({ open: false, file: null })}
-          onConfirm={handleDelete}
-        />
       </div>
+
+      {/* Dialogo de previsualización de archivo */}
+      <PreviewFileDialog
+        open={!!previewFile}
+        file={previewFile}
+        onClose={() => setPreviewFile(null)}
+        onDownload={handleDownload}
+      />
+
+      {/* Dialogo de confirmación de eliminación */}
+      <ConfirmDeleteDialog
+        open={confirmDelete.open}
+        onClose={() => setConfirmDelete({ open: false, file: null })}
+        onConfirm={handleDelete}
+        fileName={confirmDelete.file?.filename}
+      />
     </>
   );
 }
+
