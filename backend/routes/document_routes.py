@@ -404,27 +404,56 @@ async def search_all_documents(
     try:
         # Extraer rol del usuario de manera similar al endpoint /list
         user_role = None
-        if token_data and "custom_claims" in token_data:
-            claims = (token_data or {}).get("custom_claims", {}) or {}
-            user_role = (
-                (token_data or {}).get("role")
-                or claims.get("puesto_trabajo")
-                or claims.get("puesto")
-                or claims.get("role")
-            )
+        if token_data:
+            # Primero, intentar obtener desde custom_claims
+            if "custom_claims" in token_data:
+                claims = (token_data or {}).get("custom_claims", {}) or {}
+                user_role = (
+                    (token_data or {}).get("role")
+                    or claims.get("puesto_trabajo")
+                    or claims.get("puesto")
+                    or claims.get("role")
+                )
+            
+            # Si no se encuentra en custom_claims, buscar en Firestore
+            if not user_role:
+                try:
+                    db = get_firestore_client()
+                    uid = token_data.get("user_id")
+                    if uid:
+                        user_doc = db.collection("users").document(uid).get()
+                        if user_doc.exists:
+                            user_data = user_doc.to_dict() or {}
+                            user_role = user_data.get("role")
+                        else:
+                            # Buscar por email como fallback
+                            email = token_data.get("email")
+                            if email:
+                                users_query = db.collection("users").where("email", "==", email).limit(1).get()
+                                for doc in users_query:
+                                    user_data = doc.to_dict() or {}
+                                    user_role = user_data.get("role")
+                                    break
+                except Exception as e:
+                    print(f"Error getting user role from Firestore: {e}")
             
         if not user_role and isinstance(user_email, str):
             e = user_email.lower()
             if any(p in e for p in ["director", "ejecutiv"]):
-                user_role = "Dirección Ejecutiva"
+                user_role = "DireccionEjecutiva"
 
         role_norm = _norm(user_role)
-
-        # Build filters for Meilisearch
+        # Build filters for Meilisearch - TODOS los usuarios pueden buscar
         filters: Optional[str] = None
         is_exec = role_norm == "direccionejecutiva" or (isinstance(user_email, str) and any(p in user_email.lower() for p in ["director", "ejecutiv"]))
 
-        if not is_exec:
+
+        # Aplicar filtros según el rol
+        if is_exec:
+            # Dirección Ejecutiva ve todo
+            filters = None
+        else:
+            # Otros roles ven: documentos públicos, PES 2030, y documentos de su departamento
             role_display = _role_display_from_firestore(user_role) or ""
             rd_esc = role_display.replace('"', '\\"') if isinstance(role_display, str) else ""
             parts: List[str] = [
@@ -434,8 +463,6 @@ async def search_all_documents(
             if rd_esc:
                 parts.append(f'puesto_trabajo = "{rd_esc}"')
             filters = " OR ".join(parts)
-        else:
-            filters = None
 
         # Buscar en Meilisearch con la query
         from services.meilisearch_service import search_documents
