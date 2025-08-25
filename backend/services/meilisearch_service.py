@@ -11,6 +11,7 @@ from config import settings
 client: Optional[Client] = None
 
 INDEX_NAME = "documents"
+LIBRARY_INDEX_NAME = "library"
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 LOCAL_DATA_PATH = BASE_DIR.parent / "meilisearch-data" / "indexes" / "documents"
@@ -167,6 +168,13 @@ def initialize_meilisearch() -> None:
                 # print(f"Índice '{INDEX_NAME}' verificado y configurado correctamente")
             else:
                 print(f"Hubo un problema al configurar el índice '{INDEX_NAME}'")
+                
+            # Asegurar que el índice de biblioteca también existe
+            if _ensure_index_exists(LIBRARY_INDEX_NAME):
+                pass
+                # print(f"Índice '{LIBRARY_INDEX_NAME}' verificado y configurado correctamente")
+            else:
+                print(f"Hubo un problema al configurar el índice '{LIBRARY_INDEX_NAME}'")
         else:
             print("Meilisearch no está disponible. Usando modo fallback.")
             
@@ -614,7 +622,94 @@ def update_documents(documents: List[Dict[str, Any]]) -> bool:
         print(f"Error deleting document from Meilisearch: {str(e)}")
         return False
         
-def update_documents(documents: List[Dict[str, Any]]) -> bool:
+def update_document(document_id: str, update_data: Dict[str, Any]) -> bool:
+    """
+    Update a specific document in Meilisearch by its ID.
+    Only the fields provided in update_data will be updated.
+    
+    Args:
+        document_id: ID of the document to update
+        update_data: Dictionary with fields to update
+        
+    Returns:
+        True if update was successful, False otherwise
+    """
+    if not update_data:
+        return True
+        
+    if not check_meilisearch_health():
+        print(f"Meilisearch unavailable when updating document {document_id}")
+        return False
+    
+    try:
+        index = client.index(INDEX_NAME)
+        
+        # First get the existing document
+        existing_doc = None
+        try:
+            # Use a search to find the document by ID
+            search_results = index.search(document_id, {"limit": 1})
+            hits = search_results.get("hits", [])
+            
+            for hit in hits:
+                if hit.get("id") == document_id or hit.get("file_id") == document_id:
+                    existing_doc = hit
+                    break
+                    
+        except Exception as e:
+            print(f"Error retrieving document {document_id} for update: {e}")
+            # Continue with partial update even if we couldn't get the existing doc
+        
+        # Prepare document with ID and updated fields
+        update_doc = {"id": sanitize_document_id(document_id)}
+        
+        # If we have the existing document, we'll use it as a base
+        if existing_doc:
+            # Add all existing fields
+            for key, value in existing_doc.items():
+                if key != "id":  # Skip the ID as we already set it
+                    update_doc[key] = value
+        
+        # Update with the new data
+        for key, value in update_data.items():
+            update_doc[key] = value
+            
+        # Update the document
+        task = index.update_documents([update_doc], primary_key="id")
+        
+        # Check task status
+        task_uid, task_status = get_task_details(task)
+        if task_uid and task_status:
+            print(f"Update document task status: {task_status}")
+            
+            # Handle task status object
+            if hasattr(task_status, 'status'):
+                if task_status.status == "failed":
+                    error = task_status.error if hasattr(task_status, 'error') else "Unknown error"
+                    print(f"Failed to update document: {error}")
+                    return False
+                else:
+                    print(f"Document {document_id} update is being processed")
+                    return True
+            # Handle task status dict
+            elif isinstance(task_status, dict):
+                if task_status.get("status") == "failed":
+                    print(f"Failed to update document: {task_status.get('error')}")
+                    return False
+                else:
+                    print(f"Document {document_id} update is being processed")
+                    return True
+                
+            return True
+        else:
+            print("Could not get task details from update_document result")
+            return False
+            
+    except Exception as e:
+        print(f"Error updating document in Meilisearch: {str(e)}")
+        return False
+
+def update_documents(documents: List[Dict[str, Any]], index_name: str = INDEX_NAME) -> bool:
     if not documents:
         return True
         
@@ -623,7 +718,7 @@ def update_documents(documents: List[Dict[str, Any]]) -> bool:
         return False
         
     try:
-        index = client.index(INDEX_NAME)
+        index = client.index(index_name)
         
         for doc in documents:
             # Always align primary key with Firestore's document id
@@ -686,11 +781,12 @@ def search_documents(
     limit: int = 20,
     offset: int = 0,
     filters: Optional[str] = None,
-    sort: Optional[List[str]] = None
+    sort: Optional[List[str]] = None,
+    index_name: str = INDEX_NAME
 ) -> Dict[str, Any]:
     if check_meilisearch_health():
         try:
-            return _search_meilisearch(query, limit, offset, filters, sort)
+            return _search_meilisearch(query, limit, offset, filters, sort, index_name)
         except Exception as e:
             print(f"Error en búsqueda Meilisearch: {e}")
     
@@ -703,7 +799,8 @@ def _search_meilisearch(
     limit: int,
     offset: int,
     filters: Optional[str],
-    sort: Optional[List[str]]
+    sort: Optional[List[str]],
+    index_name: str = INDEX_NAME
 ) -> Dict[str, Any]:
     search_options = {
         "limit": limit,
@@ -720,7 +817,7 @@ def _search_meilisearch(
     search_options["highlightPreTag"] = "<mark>"
     search_options["highlightPostTag"] = "</mark>"
     
-    index = client.index(INDEX_NAME)
+    index = client.index(index_name)
     results = index.search(query, search_options)
     
     results["source"] = "meilisearch"
