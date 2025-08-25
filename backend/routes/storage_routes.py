@@ -533,13 +533,26 @@ async def create_folder(request: Request, folder: CreateFolderRequest, token_dat
 
     # 1. Obtener rol del usuario para determinar carpeta base permitida
     user_role = None
+    
     user_doc = firestore.collection("users").document(uid).get()
+    
     if user_doc.exists:
         user_data = user_doc.to_dict()
         user_role = user_data.get("role")
+    else:
+        # Intentar buscar por email si no encuentra por UID
+        users_query = firestore.collection("users").where("email", "==", email).limit(1).get()
+        if users_query:
+            for doc in users_query:
+                user_data = doc.to_dict()
+                user_role = user_data.get("role")
+                break
+    
     # Permitir crear SOLO si es Dirección Ejecutiva
     norm_role = _norm(user_role)
+    
     is_admin = norm_role == "direccionejecutiva" or (isinstance(email, str) and any(p in email.lower() for p in ["director", "ejecutiv"]))
+    
     if not is_admin:
         raise HTTPException(status_code=403, detail="Solo Dirección Ejecutiva puede crear carpetas.")
     # Admin opera en cualquier ruta; allowed_prefix vacío implica raíz completa
@@ -718,10 +731,23 @@ async def delete_storage_item(
 
     # Determinar rol y validar permisos (solo admin puede eliminar)
     user_role = None
+    
     user_doc = firestore.collection("users").document(uid).get()
+    
     if user_doc.exists:
-        user_role = (user_doc.to_dict() or {}).get("role")
+        user_data = user_doc.to_dict()
+        user_role = (user_data or {}).get("role")
+    else:
+        # Intentar buscar por email si no encuentra por UID
+        users_query = firestore.collection("users").where("email", "==", email).limit(1).get()
+        if users_query:
+            for doc in users_query:
+                user_data = doc.to_dict()
+                user_role = user_data.get("role")
+                break
+    
     norm_role = _norm(user_role)
+    
     is_admin = norm_role == "direccionejecutiva" or (isinstance(email, str) and any(p in email.lower() for p in ["director", "ejecutiv"]))
     
     if not is_admin:
