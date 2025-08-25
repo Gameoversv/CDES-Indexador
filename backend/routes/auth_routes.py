@@ -152,7 +152,7 @@ async def get_current_admin_user(request: Request, token_data=Depends(verify_fir
             return ""
         return unicodedata.normalize("NFD", text).encode("ascii", "ignore").decode("utf-8").lower().strip()
     is_admin = (
-        _norm(role_value) == "direccion ejecutiva"
+        _norm(role_value) == "direccionejecutiva"
         or token_data.get("admin") is True
         or token_data.get("custom_claims", {}).get("admin") is True
     )

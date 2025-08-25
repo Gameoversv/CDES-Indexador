@@ -125,7 +125,7 @@ export default function AdminDocuments() {
       });
       setFiles(normalized);
     } catch (error) {
-      console.error(error);
+      console.error("❌ [AdminDocuments] Error:", error);
       setFiles([]);
       toast.error("Error al obtener los archivos.");
     } finally {
@@ -189,24 +189,31 @@ export default function AdminDocuments() {
     return groupVersionedDocuments(sorted);
   }, [files, sortBy, sortOrder]);
 
+  // Filtrado SIMPLIFICADO - solo buscar en categoria
   const filteredFiles = useMemo(() => {
     return sortedFiles.filter((f) => {
       const matchesSearch = (f.filename || "")
         .toLowerCase()
         .includes(search.toLowerCase());
+        
       const matchesTypeFilter =
         typeFilter === "all" ||
         (f.filename || "").toLowerCase().endsWith(`.${typeFilter}`);
-      const matchesContentType =
-        typeContent === "all" || (f.tipo || "").toLowerCase() === typeContent;
+        
+      // SOLO buscar en categoria
+      const matchesContentType = typeContent === "all" || f.categoria === typeContent;
+      
       const updatedAt = new Date(f.updated);
       const inDateRange =
         (!dateRange.from || updatedAt >= new Date(dateRange.from)) &&
         (!dateRange.to || updatedAt <= new Date(dateRange.to));
 
-      return (
-        matchesSearch && matchesTypeFilter && matchesContentType && inDateRange
-      );
+      // Debug solo cuando hay filtro activo
+      if (typeContent !== "all") {
+        console.log(`🔍 [AdminDocuments] ${f.filename}: categoria="${f.categoria}", buscando="${typeContent}", match=${matchesContentType}`);
+      }
+
+      return matchesSearch && matchesTypeFilter && matchesContentType && inDateRange;
     });
   }, [sortedFiles, search, typeFilter, typeContent, dateRange]);
 

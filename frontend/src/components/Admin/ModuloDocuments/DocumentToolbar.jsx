@@ -34,6 +34,35 @@ export default function DocumentToolbar({
   onRefresh,
   clearAllFilters,
 }) {
+  const documentTypes = [
+    { value: "all", label: "Todos" },
+    { value: "actas", label: "Actas" },
+    { value: "mapas", label: "Mapas" },
+    { value: "logos", label: "Logos" },
+    { value: "graficos", label: "Gráficos" },
+    { value: "plan", label: "Plan" },
+    { value: "video", label: "Video" },
+    { value: "foto", label: "Foto" },
+    { value: "listado", label: "Listado" },
+    { value: "carta", label: "Carta" },
+    { value: "informe", label: "Informe" },
+    { value: "convenios", label: "Convenios" },
+    { value: "contrato", label: "Contrato" },
+    { value: "discursos", label: "Discursos" },
+    { value: "convocatorias", label: "Convocatorias" },
+    { value: "invitacion", label: "Invitación" },
+    { value: "cuestionario", label: "Cuestionario" },
+    { value: "tder", label: "TDER" },
+    { value: "cronograma", label: "Cronograma" },
+    { value: "diagnostico", label: "Diagnóstico" },
+    { value: "presentaciones", label: "Presentaciones" },
+    { value: "minutas_ayuda_memoria", label: "Minutas/Ayuda Memoria" },
+    { value: "nota_prensa_comunicaciones", label: "Nota Prensa/Comunicaciones" },
+    { value: "ficha_tecnica", label: "Ficha Técnica" },
+    { value: "estudio", label: "Estudio" },
+    { value: "memorias_institucionales", label: "Memorias Institucionales" },
+    { value: "declaracion_ciudadana", label: "Declaración Ciudadana" }
+  ];
   return (
     <div className="flex flex-wrap gap-4 items-end mb-6">
       <Input
@@ -43,21 +72,22 @@ export default function DocumentToolbar({
         className="w-[220px]"
       />
 
-      <div className="flex flex-col justify-end">
-        <label className="text-sm font-medium text-gray-700">Tipo</label>
-        <Select value={typeContent} onValueChange={setTypeContent}>
-          <SelectTrigger className="w-[130px]">
-            <SelectValue placeholder="Tipo" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Todos</SelectItem>
-            <SelectItem value="reporte">Reporte</SelectItem>
-            <SelectItem value="comunicado">Comunicado</SelectItem>
-            <SelectItem value="carta">Carta</SelectItem>
-            <SelectItem value="invitación">Invitación</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+      {/* Tipo - Actualizado con los nuevos tipos */}
+            <div className="flex flex-col justify-end">
+              <label className="text-sm font-medium text-gray-700">Tipo</label>
+              <Select value={typeContent} onValueChange={setTypeContent}>
+                <SelectTrigger className="w-[180px]"> {/* Aumentado el ancho para acomodar nombres más largos */}
+                <SelectValue placeholder="Tipo" />
+              </SelectTrigger>
+              <SelectContent className="max-h-60 overflow-y-auto"> {/*Añadido scroll para muchas opciones */}
+                {documentTypes.map((type) => (
+                   <SelectItem key={type.value} value={type.value}>
+                    {type.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
       <div className="flex flex-col justify-end">
         <label className="text-sm font-medium text-gray-700">Formato</label>

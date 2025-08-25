@@ -62,71 +62,127 @@ export default function UserDocuments() {
     getUserDepartment();
   }, []);
 
-  
+  // Resetea página cuando cambian los filtros
+  useEffect(() => {
+    setCurrentPage(1);
+    console.log("📄 [UserDocuments] Reseteando a página 1 por cambio en filtros");
+  }, [typeContent, search, typeFilter, dateRange]);
 
   const getUserDepartment = async () => {
     try {
-      // Intentar obtener datos del usuario desde la API
+      // Get user data from the API (which retrieves from Firestore)
       const response = await authAPI.getCurrentUser();
-      if (response.data && response.data.role) {
-        const departmentName = getDepartmentDisplayName(response.data.role);
-        setUserDepartment(departmentName);
-        // Verificar si es Dirección Ejecutiva
-        const isDirector = response.data.role === "Dirección Ejecutiva" || 
-                         response.data.role === "DireccionEjecutiva";
-        setIsDirectorEjecutivo(isDirector);
-        return;
+      if (response.data) {
+        const userRole = response.data.role || response.data.puesto_trabajo || response.data.puesto;
+        if (userRole) {
+          const departmentName = getDepartmentDisplayName(userRole);
+          setUserDepartment(departmentName);
+          
+          // Check if user is executive (note: backend already handles this logic)
+          const normalizedRole = normalizeRoleName(userRole);
+          const isDirector = normalizedRole === "direccionejecutiva";
+          setIsDirectorEjecutivo(isDirector);
+          
+          console.log(`User role: ${userRole}, department: ${departmentName}, isDirector: ${isDirector}`);
+          return;
+        }
       }
     } catch (error) {
-      console.warn("Error obteniendo datos del usuario desde API:", error);
+      console.warn("Error getting user data from API:", error);
     }
     
-    // Fallback: usar localStorage
+    // Fallback to localStorage
     try {
       const userData = localStorage.getItem("user");
       if (userData) {
         const parsedUser = JSON.parse(userData);
-        const departmentName = getDepartmentDisplayName(parsedUser.role);
-        setUserDepartment(departmentName);
-        // Verificar si es Dirección Ejecutiva
-        const isDirector = parsedUser.role === "Dirección Ejecutiva" || 
-                         parsedUser.role === "DireccionEjecutiva";
-        setIsDirectorEjecutivo(isDirector);
+        const userRole = parsedUser.role || parsedUser.puesto_trabajo || parsedUser.puesto;
+        
+        if (userRole) {
+          const departmentName = getDepartmentDisplayName(userRole);
+          setUserDepartment(departmentName);
+          
+          const normalizedRole = normalizeRoleName(userRole);
+          const isDirector = normalizedRole === "direccionejecutiva";
+          setIsDirectorEjecutivo(isDirector);
+          
+          console.log(`User role from localStorage: ${userRole}, department: ${departmentName}, isDirector: ${isDirector}`);
+        }
       }
     } catch (error) {
-      console.error("Error obteniendo departamento:", error);
+      console.error("Error getting user department:", error);
     }
+  };
+  
+  // Helper function to normalize role names for comparison
+  const normalizeRoleName = (role) => {
+    if (!role) return "";
+    return role.toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "") // Remove diacritics
+      .replace(/[_\s-]/g, ""); // Remove spaces, underscores, hyphens
   };
 
   const getDepartmentDisplayName = (role) => {
+    if (!role) return "Departamento";
+    
+    // Comprehensive mapping of all possible role name variations
     const roleNames = {
-      //admin: "Administración",
+      // Standard display names
       "Dirección Ejecutiva": "Dirección Ejecutiva",
-      "Coordinador Administrativa": "Coordinador Administrativa",
-      "Coordinación Proyectos y Planificación": "Coordinación Proyectos y Planificación", 
+      "Coordinación Administrativa": "Coordinación Administrativa",
+      "Coordinador Administrativa": "Coordinación Administrativa",
+      "Coordinación Proyectos y Planificación": "Coordinación Proyectos y Planificación",
       "Coordinación de Comunicaciones": "Coordinación de Comunicaciones",
       "Asistencia General": "Asistencia General",
-      // También mantener compatibilidad con los nombres antiguos
-      DireccionEjecutiva: "Dirección Ejecutiva",
-      CoordinadorAdministrativa: "Coordinador Administrativa",
-      CoordinacionProyectosPlanificacion: "Coordinación Proyectos y Planificación",
-      CoordinacionComunicaciones: "Coordinación de Comunicaciones",
-      AsistenciaGeneral: "Asistencia General"
+      
+      // Variations without spaces/accents (as in Firestore)
+      "DireccionEjecutiva": "Dirección Ejecutiva",
+      "CoordinacionAdministrativa": "Coordinación Administrativa",
+      "CoordinadorAdministrativa": "Coordinación Administrativa",
+      "CoordinacionProyectosyPlanificacion": "Coordinación Proyectos y Planificación",
+      "CoordinacionProyectosPlanificacion": "Coordinación Proyectos y Planificación",
+      "CoordinacionComunicaciones": "Coordinación de Comunicaciones",
+      "AsistenciaGeneral": "Asistencia General",
     };
-    return roleNames[role] || role || "Departamento";
+    
+    // First try direct lookup
+    if (roleNames[role]) {
+      return roleNames[role];
+    }
+    
+    // If not found, try normalized lookup (case insensitive, no accents, no spaces)
+    const normalizedRole = normalizeRoleName(role);
+    
+    for (const [key, value] of Object.entries(roleNames)) {
+      if (normalizeRoleName(key) === normalizedRole) {
+        return value;
+      }
+    }
+    
+    // If nothing matches, return the original role
+    return role;
   };
 
   const fetchFiles = async () => {
+    console.log("🔄 [UserDocuments] Iniciando carga de archivos...");
     setLoading(true);
     try {
-      // Prefer new documents endpoint (Meilisearch with Firestore fallback)
+      // El backend ya aplica los filtros basados en el rol del usuario
+      // No necesitamos filtrar aquí - solo normalizar los datos para la tabla
       const res = await documentsAPI.list();
       const data = res?.data || {};
       const items = data.files || data.documents || data.hits || [];
+      
+      console.log(`Backend returned ${items.length} documents (already filtered by user role)`);
+      console.log("Source:", data.source || "unknown");
+      
       // Normalize minimal fields expected by the table
       const normalized = items.map((d) => {
         const rawPath = d.storage_path || d.path || "";
         const nameFromPath = rawPath ? rawPath.split("/").pop() : "";
+        
+        // Extract all required metadata
         return {
           // Prefer filename from storage path to keep version suffix (_vN)
           filename: nameFromPath || d.filename || d.original_filename || d.title || "",
@@ -136,11 +192,21 @@ export default function UserDocuments() {
           tipo: d.tipo || d.tipo_documento || "",
           categoria: d.categoria || d.apartado || "",
           public: d.public ?? d.publico ?? false,
+          // Metadata for display (no filtering needed)
+          puesto_trabajo: d.puesto_trabajo || "",
+          user_role: d.user_role || ""
         };
       });
+      
+      // El backend ya filtró según el rol - solo usar los documentos directamente
       setFiles(normalized);
+      
+      console.log(`Showing ${normalized.length} documents to user in department: ${userDepartment}`);
+      
     } catch (error) {
-      console.error(error);
+
+      console.error("Error fetching documents:", error);
+
       setFiles([]);
       toast.error("Error al obtener los archivos.");
     } finally {
@@ -209,26 +275,51 @@ export default function UserDocuments() {
     return groupVersionedDocuments(sorted);
   }, [files, sortBy, sortOrder]);
 
+  // Filtrado SIMPLIFICADO - solo buscar en categoria
   const filteredFiles = useMemo(() => {
+    console.log("🔍 [UserDocuments] Filtrando con typeContent:", typeContent);
+    
     return sortedFiles.filter((f) => {
       const matchesSearch = (f.filename || "")
         .toLowerCase()
         .includes(search.toLowerCase());
+        
       const matchesTypeFilter =
         typeFilter === "all" ||
         (f.filename || "").toLowerCase().endsWith(`.${typeFilter}`);
-      const matchesContentType =
-        typeContent === "all" || (f.tipo || "").toLowerCase() === typeContent;
+        
+      // SOLO buscar en categoria
+      const matchesContentType = typeContent === "all" || f.categoria === typeContent;
+      
       const updatedAt = new Date(f.updated);
       const inDateRange =
         (!dateRange.from || updatedAt >= new Date(dateRange.from)) &&
         (!dateRange.to || updatedAt <= new Date(dateRange.to));
 
-      return (
-        matchesSearch && matchesTypeFilter && matchesContentType && inDateRange
-      );
+      // Debug solo cuando hay filtro activo
+      if (typeContent !== "all") {
+        console.log(`🔍 [UserDocuments] ${f.filename}: categoria="${f.categoria}", buscando="${typeContent}", match=${matchesContentType}`);
+      }
+
+      return matchesSearch && matchesTypeFilter && matchesContentType && inDateRange;
     });
   }, [sortedFiles, search, typeFilter, typeContent, dateRange]);
+
+  // Tipos disponibles SIMPLIFICADO - solo de categoria
+  const availableTypes = useMemo(() => {
+    const types = new Set();
+    
+    files.forEach(file => {
+      if (file.categoria && file.categoria !== "") {
+        types.add(file.categoria);
+      }
+    });
+    
+    const sortedTypes = Array.from(types).sort();
+    console.log("🏷️ [UserDocuments] Tipos disponibles:", sortedTypes);
+    
+    return sortedTypes;
+  }, [files]);
 
   // Cálculos de paginación
   const totalPages = Math.ceil(filteredFiles.length / itemsPerPage);
@@ -341,6 +432,16 @@ export default function UserDocuments() {
               <p className="text-sm text-muted-foreground mt-1">
                 {filteredFiles.length} documento{filteredFiles.length !== 1 ? 's' : ''} disponible{filteredFiles.length !== 1 ? 's' : ''}
               </p>
+              {!isDirectorEjecutivo && (
+                <p className="text-xs text-amber-600 mt-1">
+                  ✓ Mostrando solo documentos de tu departamento y documentos públicos (filtrado automático del servidor).
+                </p>
+              )}
+              {isDirectorEjecutivo && (
+                <p className="text-xs text-green-600 mt-1">
+                  ✓ Como Director Ejecutivo, puedes ver todos los documentos de todos los departamentos.
+                </p>
+              )}
             </div>
             <UploadModal
               open={uploadModalOpen}
@@ -391,6 +492,7 @@ export default function UserDocuments() {
           </Card>
         </div>
 
+        {/* Pasar availableTypes al DocumentToolbar */}
         <DocumentToolbar
           search={search}
           setSearch={setSearch}
@@ -404,6 +506,7 @@ export default function UserDocuments() {
           setViewMode={setViewMode}
           onRefresh={fetchFiles}
           clearAllFilters={clearAllFilters}
+          availableTypes={availableTypes} 
         />
 
         {loading ? (
@@ -487,7 +590,7 @@ export default function UserDocuments() {
                         variant={currentPage === pageNum ? "default" : "outline"}
                         size="sm"
                         onClick={() => setCurrentPage(pageNum)}
-                        className="min-w-[36px]"
+                        className="h-8 px-3"
                       >
                         {pageNum}
                       </Button>
@@ -500,7 +603,7 @@ export default function UserDocuments() {
                   size="icon"
                   onClick={goToNextPage}
                   disabled={currentPage === totalPages}
-                  title="Página siguiente"
+                  title="Siguiente página"
                 >
                   <ChevronRight className="h-4 w-4" />
                 </Button>
@@ -516,11 +619,11 @@ export default function UserDocuments() {
                 </Button>
               </div>
 
-              {/* Selector de items por página */}
+              {/* Selector de elementos por página */}
               <div className="flex items-center gap-2">
                 <span className="text-sm text-muted-foreground">Mostrar:</span>
                 <Select value={itemsPerPage.toString()} onValueChange={handleItemsPerPageChange}>
-                  <SelectTrigger className="w-20">
+                  <SelectTrigger className="w-[70px]">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -534,22 +637,24 @@ export default function UserDocuments() {
             </div>
           </div>
         )}
-
-        <PreviewFileDialog
-          file={previewFile}
-          onClose={() => setPreviewFile(null)}
-          handleDownload={handleDownload}
-          formatSize={formatSize}
-          formatDate={formatDate}
-        />
-
-        <ConfirmDeleteDialog
-          open={confirmDelete.open}
-          file={confirmDelete.file}
-          onCancel={() => setConfirmDelete({ open: false, file: null })}
-          onConfirm={handleDelete}
-        />
       </div>
+
+      {/* Dialogo de previsualización de archivo */}
+      <PreviewFileDialog
+        open={!!previewFile}
+        file={previewFile}
+        onClose={() => setPreviewFile(null)}
+        onDownload={handleDownload}
+      />
+
+      {/* Dialogo de confirmación de eliminación */}
+      <ConfirmDeleteDialog
+        open={confirmDelete.open}
+        onClose={() => setConfirmDelete({ open: false, file: null })}
+        onConfirm={handleDelete}
+        fileName={confirmDelete.file?.filename}
+      />
     </>
   );
 }
+
