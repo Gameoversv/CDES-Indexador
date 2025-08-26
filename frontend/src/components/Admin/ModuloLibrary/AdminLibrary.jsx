@@ -265,7 +265,10 @@ export default function AdminLibrary() {
             onConfirm={async () => {
               try {
                 setProcessingVisibility(true);
-                await libraryAPI.togglePublic(selectedDoc.path || selectedDoc.storage_path);
+                // Asegurarse de que usamos la ruta correcta y codificarla adecuadamente
+                const docPath = selectedDoc.path || selectedDoc.storage_path || "";
+                console.log("Cambiando visibilidad de documento:", docPath);
+                await libraryAPI.togglePublic(docPath);
                 if (selectedDoc.public) {
                   toast.success("Documento cambiado a privado correctamente");
                 } else {

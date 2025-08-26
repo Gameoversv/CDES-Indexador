@@ -1148,10 +1148,25 @@ async def toggle_document_public_status(
         from services.meilisearch_service import update_documents, client, check_meilisearch_health
 
         # Paso 1: Buscar documentos en Firestore relacionados con esta ruta de almacenamiento
+        print(f"Buscando documentos con storage_path: '{path}'")
+        
+        # Intentar diferentes variantes de la ruta
         firestore_docs = get_documents_by_storage_path(path)
         
+        # Si no encontró, intentar con una versión codificada/decodificada
         if not firestore_docs:
-            raise HTTPException(status_code=404, detail="Documento no encontrado")
+            try:
+                from urllib.parse import unquote
+                decoded_path = unquote(path)
+                if decoded_path != path:
+                    print(f"Intentando con ruta decodificada: '{decoded_path}'")
+                    firestore_docs = get_documents_by_storage_path(decoded_path)
+            except Exception as e:
+                print(f"Error al intentar decodificar ruta: {e}")
+        
+        if not firestore_docs:
+            print(f"ERROR: No se encontró ningún documento con storage_path: '{path}'")
+            raise HTTPException(status_code=404, detail=f"Documento no encontrado con ruta: {path}")
         
         # Crear un diccionario para almacenar resultados de la actualización
         update_results = {
@@ -1668,6 +1683,25 @@ async def get_document_info(
         effective_path = storage_path or path
         if not effective_path and not file_id:
             raise HTTPException(status_code=400, detail="Se requiere storage_path, path o file_id")
+            
+        # Añadir logs para depuración
+        print(f"GET /info buscando documento:")
+        print(f"- storage_path: {storage_path}")
+        print(f"- path: {path}")
+        print(f"- file_id: {file_id}")
+        print(f"- effective_path: {effective_path}")
+        
+        # Si tenemos una ruta efectiva, intentar decodificarla por si está codificada en URL
+        if effective_path:
+            try:
+                from urllib.parse import unquote
+                decoded_path = unquote(effective_path)
+                if decoded_path != effective_path:
+                    print(f"- decoded_path: {decoded_path}")
+                    # Usar la versión decodificada si es diferente
+                    effective_path = decoded_path
+            except Exception as e:
+                print(f"Error al decodificar ruta: {e}")
         
         document_data = None
         source = "unknown"
@@ -1722,19 +1756,47 @@ async def get_document_info(
                     'file_id': file_id
                 }))
         
-        # SEGUNDA FUENTE: Firestore
+        # SEGUNDA FUENTE: Firestore usando storage_path o path
+        if not document_data and effective_path:
+            try:
+                from services.firebase_service import get_documents_by_storage_path
+                
+                # Intentar buscar por la ruta exacta usando la función mejorada
+                firestore_docs = get_documents_by_storage_path(effective_path)
+                
+                if firestore_docs and len(firestore_docs) > 0:
+                    document_data = firestore_docs[0]
+                    source = "firestore_path"
+                    print(f"Documento encontrado por storage_path/path: {document_data.get('id')}")
+            except Exception as e:
+                print(f"Error buscando por storage_path: {str(e)}")
+                pass
+        
+        # TERCERA FUENTE: Firestore usando file_id o stem
         if not document_data:
             try:
-                firestore_doc = get_document_by_stem(file_id)
-                if not firestore_doc and storage_path:
-                    # Intenta buscar por el nombre de archivo (stem) extraído de la ruta
-                    path_stem = Path(storage_path).stem
-                    firestore_doc = get_document_by_stem(path_stem)
+                from services.firebase_service import get_document_by_stem
                 
-                if firestore_doc:
-                    document_data = firestore_doc
-                    source = "firestore"
+                # Primero intentar con file_id si existe
+                if file_id:
+                    firestore_doc = get_document_by_stem(file_id)
+                    if firestore_doc:
+                        document_data = firestore_doc
+                        source = "firestore_id"
+                        print(f"Documento encontrado por file_id: {file_id}")
+                
+                # Si no se encontró y tenemos storage_path, intentar por el nombre del archivo
+                if not document_data and effective_path:
+                    # Extraer el nombre base (stem) del archivo desde la ruta
+                    path_stem = Path(effective_path).stem
+                    firestore_doc = get_document_by_stem(path_stem)
+                    
+                    if firestore_doc:
+                        document_data = firestore_doc
+                        source = "firestore_stem"
+                        print(f"Documento encontrado por stem: {path_stem}")
             except Exception as e:
+                print(f"Error buscando por stem: {str(e)}")
                 pass
         
         # TERCERA FUENTE: Buscar usando el endpoint search con el nombre (sin extensión)
@@ -1759,8 +1821,19 @@ async def get_document_info(
             except Exception as e:
                 pass
         
+        # Si no se encuentra el documento en ninguna fuente
         if not document_data:
-            raise HTTPException(status_code=404, detail="Documento no encontrado")
+            error_details = {
+                "storage_path": storage_path,
+                "path": path,
+                "file_id": file_id,
+                "effective_path": effective_path
+            }
+            print(f"ERROR: Documento no encontrado. Parámetros de búsqueda: {error_details}")
+            raise HTTPException(
+                status_code=404, 
+                detail=f"Documento no encontrado con los parámetros proporcionados: {error_details}"
+            )
         
         # Asegurar que tenga los campos mínimos necesarios
         if "filename" not in document_data and "original_filename" in document_data:

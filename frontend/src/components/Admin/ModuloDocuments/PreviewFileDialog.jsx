@@ -27,6 +27,17 @@ const getExt = (name = "") => name.split(".").pop()?.toUpperCase() || "FILE";
 const stripExt = (s = "") => s.replace(/\.[^.]+$/, "");
 const pickFirst = (...vals) =>
   vals.find((v) => v !== undefined && v !== null && v !== "") ?? "";
+  
+// Función para formatear bytes a KB, MB, GB, etc.
+const defaultFormatSize = (bytes) => {
+  if (bytes === 0) return '0 Bytes';
+  
+  const k = 1024;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+};
 
 const getFileIcon = (filename = "") => {
   const ext = filename.split(".").pop()?.toLowerCase();
@@ -125,31 +136,62 @@ export default function PreviewFileDialog({
           try {
             // Primero intentar por path si existe
             if (rutaBase) {
-              const resp = await api.get("/documents/info", { 
-                params: { storage_path: rutaBase } 
-              });
-              const payload = resp?.data?.document || null;
-              
-              if (!canceled && payload && typeof payload === "object") {
-                console.log("Documento encontrado por storage_path:", payload);
-                setMeta(payload);
-                setLoadingMeta(false);
-                return;
+              try {
+                console.log("Buscando documento por storage_path:", rutaBase);
+                
+                // Codificar adecuadamente el parámetro para la URL
+                const encodedPath = encodeURIComponent(rutaBase);
+                const resp = await api.get(`/documents/info?storage_path=${encodedPath}`);
+                const payload = resp?.data?.document || null;
+                
+                if (!canceled && payload && typeof payload === "object") {
+                  console.log("Documento encontrado por storage_path:", payload);
+                  setMeta(payload);
+                  setLoadingMeta(false);
+                  return;
+                }
+              } catch (err) {
+                console.warn("Error buscando por storage_path:", err.message);
+                // Intentar con otras versiones de la ruta antes de continuar
+                try {
+                  // Intentar con la ruta decodificada por si ya viene codificada
+                  const decodedPath = decodeURIComponent(rutaBase);
+                  if (decodedPath !== rutaBase) {
+                    console.log("Intentando con ruta decodificada:", decodedPath);
+                    const encodedPath = encodeURIComponent(decodedPath);
+                    const resp = await api.get(`/documents/info?storage_path=${encodedPath}`);
+                    const payload = resp?.data?.document || null;
+                    
+                    if (!canceled && payload && typeof payload === "object") {
+                      console.log("Documento encontrado con ruta decodificada:", payload);
+                      setMeta(payload);
+                      setLoadingMeta(false);
+                      return;
+                    }
+                  }
+                } catch (innerErr) {
+                  console.warn("También falló con ruta decodificada:", innerErr.message);
+                }
               }
             }
             
             // Luego intentar por ID si no se encontró por path
             if (fileId) {
-              const resp = await api.get("/documents/info", { 
-                params: { file_id: fileId } 
-              });
-              const payload = resp?.data?.document || null;
-              
-              if (!canceled && payload && typeof payload === "object") {
-                console.log("Documento encontrado por file_id:", payload);
-                setMeta(payload);
-                setLoadingMeta(false);
-                return;
+              try {
+                console.log("Buscando documento por file_id:", fileId);
+                
+                // Usar la misma estructura de URL para consistencia
+                const resp = await api.get(`/documents/info?file_id=${encodeURIComponent(fileId)}`);
+                const payload = resp?.data?.document || null;
+                
+                if (!canceled && payload && typeof payload === "object") {
+                  console.log("Documento encontrado por file_id:", payload);
+                  setMeta(payload);
+                  setLoadingMeta(false);
+                  return;
+                }
+              } catch (err) {
+                console.warn("Error buscando por file_id:", err.message);
               }
             }
           } catch (err) {
@@ -211,7 +253,8 @@ export default function PreviewFileDialog({
     file?.file_size_bytes,
     0
   );
-  const tamano = formatSize?.(bytes) ?? `${bytes} B`;
+  // Usar la función de formateo proveída o nuestra implementación por defecto
+  const tamano = (formatSize || defaultFormatSize)(Number(bytes));
 
   const categoria = pickFirst(
     meta?.categoria,

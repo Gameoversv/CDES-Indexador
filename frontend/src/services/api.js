@@ -421,7 +421,13 @@ export const libraryAPI = {
   deleteByPath: (path) => documentsAPI.deleteByPath(path),
   
   // Cambiar estado de público a privado
-  togglePublic: (path) => api.put("/documents/toggle-public", null, { params: { path } }),
+  togglePublic: (path) => {
+    // Asegurarse de que la ruta esté codificada correctamente
+    const encodedPath = encodeURIComponent(path);
+    console.log("Toggle public para ruta:", path);
+    console.log("Ruta codificada:", encodedPath);
+    return api.put(`/documents/toggle-public?path=${encodedPath}`);
+  },
 
   // Eliminar documento por ID
   deleteDocument: (id) => api.delete(`/documents/${id}`),

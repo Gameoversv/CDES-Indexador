@@ -381,6 +381,7 @@ def delete_file_from_storage(blob_path: str) -> None:
 def get_documents_by_storage_path(storage_path: str) -> List[Dict[str, Any]]:
     """
     Busca documentos en Firestore que tengan un determinado storage_path.
+    Busca tanto en la colección "documents" como en "library".
     
     Args:
         storage_path: Ruta del archivo en Firebase Storage
@@ -390,15 +391,48 @@ def get_documents_by_storage_path(storage_path: str) -> List[Dict[str, Any]]:
     """
     try:
         db = get_firestore_client()
-        # Buscar documentos que tengan este storage_path
-        docs = db.collection("documents").where(filter=FieldFilter("storage_path", "==", storage_path)).stream()
-        
         results = []
+        
+        # 1. Primero buscar por storage_path en la colección "documents"
+        docs = db.collection("documents").where(filter=FieldFilter("storage_path", "==", storage_path)).stream()
         for doc in docs:
             data = doc.to_dict()
             data["id"] = doc.id
             results.append(data)
             
+        # 2. También buscar por path en la colección "documents"
+        docs = db.collection("documents").where(filter=FieldFilter("path", "==", storage_path)).stream()
+        for doc in docs:
+            # Evitar duplicados si ya lo encontramos por storage_path
+            if any(r.get("id") == doc.id for r in results):
+                continue
+            data = doc.to_dict()
+            data["id"] = doc.id
+            results.append(data)
+            
+        # 3. Buscar en la colección "library" por storage_path
+        docs = db.collection("library").where(filter=FieldFilter("storage_path", "==", storage_path)).stream()
+        for doc in docs:
+            data = doc.to_dict()
+            data["id"] = doc.id
+            results.append(data)
+            
+        # 4. También buscar por path en la colección "library"
+        docs = db.collection("library").where(filter=FieldFilter("path", "==", storage_path)).stream()
+        for doc in docs:
+            # Evitar duplicados si ya lo encontramos por storage_path
+            if any(r.get("id") == doc.id for r in results):
+                continue
+            data = doc.to_dict()
+            data["id"] = doc.id
+            results.append(data)
+            
+        # 5. Imprimir información sobre los resultados
+        if results:
+            print(f"Documentos encontrados para '{storage_path}': {len(results)}")
+            for doc in results:
+                print(f"- ID: {doc.get('id')}, Colección: {doc.get('collection', 'Desconocida')}")
+        
         return results
     except Exception as e:
         print(f"Error buscando documentos por storage_path: {e}")
@@ -441,6 +475,7 @@ def delete_document_from_firestore(doc_id: str) -> bool:
 def get_documents_by_storage_path(storage_path: str) -> List[Dict[str, Any]]:
     """
     Busca documentos en Firestore que tengan un determinado storage_path.
+    Busca tanto en la colección "documents" como en "library".
     
     Args:
         storage_path: Ruta del archivo en Firebase Storage
@@ -450,15 +485,48 @@ def get_documents_by_storage_path(storage_path: str) -> List[Dict[str, Any]]:
     """
     try:
         db = get_firestore_client()
-        # Buscar documentos que tengan este storage_path
-        docs = db.collection("documents").where(filter=FieldFilter("storage_path", "==", storage_path)).stream()
-        
         results = []
+        
+        # 1. Primero buscar por storage_path en la colección "documents"
+        docs = db.collection("documents").where(filter=FieldFilter("storage_path", "==", storage_path)).stream()
         for doc in docs:
             data = doc.to_dict()
             data["id"] = doc.id
             results.append(data)
             
+        # 2. También buscar por path en la colección "documents"
+        docs = db.collection("documents").where(filter=FieldFilter("path", "==", storage_path)).stream()
+        for doc in docs:
+            # Evitar duplicados si ya lo encontramos por storage_path
+            if any(r.get("id") == doc.id for r in results):
+                continue
+            data = doc.to_dict()
+            data["id"] = doc.id
+            results.append(data)
+            
+        # 3. Buscar en la colección "library" por storage_path
+        docs = db.collection("library").where(filter=FieldFilter("storage_path", "==", storage_path)).stream()
+        for doc in docs:
+            data = doc.to_dict()
+            data["id"] = doc.id
+            results.append(data)
+            
+        # 4. También buscar por path en la colección "library"
+        docs = db.collection("library").where(filter=FieldFilter("path", "==", storage_path)).stream()
+        for doc in docs:
+            # Evitar duplicados si ya lo encontramos por storage_path
+            if any(r.get("id") == doc.id for r in results):
+                continue
+            data = doc.to_dict()
+            data["id"] = doc.id
+            results.append(data)
+            
+        # 5. Imprimir información sobre los resultados
+        if results:
+            print(f"Documentos encontrados para '{storage_path}': {len(results)}")
+            for doc in results:
+                print(f"- ID: {doc.get('id')}, Colección: {doc.get('collection', 'Desconocida')}")
+        
         return results
     except Exception as e:
         print(f"Error buscando documentos por storage_path: {e}")
