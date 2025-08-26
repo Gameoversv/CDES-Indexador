@@ -593,9 +593,10 @@ export default function AdminDocuments() {
 
         <ConfirmDeleteDialog
           open={confirmDelete.open}
-          file={confirmDelete.file}
-          onCancel={() => setConfirmDelete({ open: false, file: null })}
+          onClose={() => setConfirmDelete({ open: false, file: null })}
           onConfirm={handleDelete}
+          filename={confirmDelete.file?.filename} // Verificar que esta prop tenga valor
+          file={confirmDelete.file} // respaldo si filename no funciona
           processing={deleteProcessing}
         />
       </div>

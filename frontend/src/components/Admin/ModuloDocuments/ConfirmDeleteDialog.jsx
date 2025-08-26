@@ -2,9 +2,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 
-export default function ConfirmDeleteDialog({ open, file, onCancel, onConfirm, processing = false }) {
+export default function ConfirmDeleteDialog({ open, onClose, onConfirm, filename, processing = false }) {
   return (
-    <Dialog open={open} onOpenChange={(state) => !state && onCancel()}>
+    <Dialog open={open} onOpenChange={(state) => !state && onClose()}>
       <DialogContent className="rounded-xl bg-white border border-gray-300">
         <DialogHeader>
           <DialogTitle className="text-gray-900">Confirmar eliminación</DialogTitle>
@@ -12,7 +12,7 @@ export default function ConfirmDeleteDialog({ open, file, onCancel, onConfirm, p
         <div className="space-y-4">
           <p className="text-gray-700">
             ¿Estás seguro de que deseas eliminar permanentemente el archivo 
-            <span className="font-semibold text-gray-900"> "{file?.filename}"</span>?
+            <span className="font-semibold text-gray-900"> "{filename}"</span>?
           </p>
           <p className="text-sm text-red-600">
             Esta acción no se puede deshacer y el archivo se perderá permanentemente.

@@ -717,7 +717,8 @@ export default function UserDocuments() {
         open={confirmDelete.open}
         onClose={() => setConfirmDelete({ open: false, file: null })}
         onConfirm={handleDelete}
-        fileName={confirmDelete.file?.filename}
+        filename={confirmDelete.file?.filename} // Verificar que esta prop tenga valor
+        file={confirmDelete.file} // respaldo
         processing={deleteProcessing}
       />
     </>
