@@ -61,11 +61,11 @@ function Modal({ open, onClose, title, children, footer }) {
   );
 }
 
-function DeleteConfirmationModal({ open, onClose, onConfirm, itemName, isFolder }) {
+function DeleteConfirmationModal({ open, onClose, onConfirm, itemName, isFolder, processing = false }) {
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-[70]">
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/40" onClick={!processing ? onClose : undefined} />
       <div className="absolute inset-0 flex items-center justify-center p-4">
         <div className="w-full max-w-md rounded-lg bg-white shadow-xl border border-gray-200">
           <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2">
@@ -81,9 +81,20 @@ function DeleteConfirmationModal({ open, onClose, onConfirm, itemName, isFolder 
             </p>
           </div>
           <div className="px-4 py-3 border-t border-gray-100 flex items-center justify-end gap-2">
-            <Button variant="outline" onClick={onClose}>Cancelar</Button>
-            <Button onClick={onConfirm} className="bg-red-600 hover:bg-red-700">
-              Eliminar
+            <Button variant="outline" onClick={onClose} disabled={processing}>Cancelar</Button>
+            <Button 
+              onClick={onConfirm} 
+              className="bg-red-600 hover:bg-red-700"
+              disabled={processing}
+            >
+              {processing ? (
+                <span className="flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Eliminando...
+                </span>
+              ) : (
+                "Eliminar"
+              )}
             </Button>
           </div>
         </div>
@@ -155,6 +166,7 @@ export default function UserFolders() {
   // Modal de confirmación de eliminación
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [itemToDelete, setItemToDelete] = useState({ path: '', name: '', isFolder: false });
+  const [deleteProcessing, setDeleteProcessing] = useState(false);
 
   // ===================== Helpers de datos =====================
   const currentPathText = useMemo(
@@ -696,6 +708,7 @@ export default function UserFolders() {
     
     try {
       setLoading(true);
+      setDeleteProcessing(true);
       setShowDeleteConfirm(false);
       
       await documentsAPI.deleteStorageItem(itemToDelete.path);
@@ -714,6 +727,7 @@ export default function UserFolders() {
       setError(`No fue posible eliminar ${itemToDelete.isFolder ? 'la carpeta' : 'el archivo'}`);
     } finally {
       setLoading(false);
+      setDeleteProcessing(false);
       // Limpiar el item que se intentó eliminar
       setItemToDelete({ path: '', name: '', isFolder: false });
     }
@@ -1156,6 +1170,7 @@ export default function UserFolders() {
         onConfirm={handleDelete}
         itemName={itemToDelete.name}
         isFolder={itemToDelete.isFolder}
+        processing={deleteProcessing}
       />
     </div>
   );

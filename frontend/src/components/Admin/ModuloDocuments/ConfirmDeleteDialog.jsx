@@ -1,7 +1,8 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Loader2 } from "lucide-react";
 
-export default function ConfirmDeleteDialog({ open, file, onCancel, onConfirm }) {
+export default function ConfirmDeleteDialog({ open, file, onCancel, onConfirm, processing = false }) {
   return (
     <Dialog open={open} onOpenChange={(state) => !state && onCancel()}>
       <DialogContent className="rounded-xl bg-white border border-gray-300">
@@ -17,11 +18,22 @@ export default function ConfirmDeleteDialog({ open, file, onCancel, onConfirm })
             Esta acción no se puede deshacer y el archivo se perderá permanentemente.
           </p>
           <div className="flex justify-end gap-3">
-            <Button variant="outline" onClick={onCancel} className="border border-gray-300 text-gray-900">
+            <Button variant="outline" onClick={onCancel} className="border border-gray-300 text-gray-900" disabled={processing}>
               Cancelar
             </Button>
-            <Button onClick={onConfirm} className="bg-red-600 text-white hover:bg-red-700">
-              Eliminar permanentemente
+            <Button 
+              onClick={onConfirm} 
+              className="bg-red-600 text-white hover:bg-red-700"
+              disabled={processing}
+            >
+              {processing ? (
+                <span className="flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" /> 
+                  Eliminando...
+                </span>
+              ) : (
+                "Eliminar permanentemente"
+              )}
             </Button>
           </div>
         </div>

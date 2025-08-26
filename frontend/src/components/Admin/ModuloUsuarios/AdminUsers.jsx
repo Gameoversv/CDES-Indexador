@@ -24,6 +24,7 @@ export default function Users() {
   const [modalOpen, setModalOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
+  const [processingUser, setProcessingUser] = useState(false);
   const [formData, setFormData] = useState({
     display_name: "",
     email: "",
@@ -80,6 +81,8 @@ export default function Users() {
       return;
     }
 
+    setProcessingUser(true);
+
     try {
       if (isEditing && selectedUser?.id) {
         await updateUser(selectedUser.id, {
@@ -96,9 +99,11 @@ export default function Users() {
 
       setModalOpen(false);
       resetForm();
-      fetchUsers();
+      await fetchUsers();
     } catch {
       toast.error("Error al guardar usuario");
+    } finally {
+      setProcessingUser(false);
     }
   };
 
@@ -128,12 +133,17 @@ export default function Users() {
 
   const handleDelete = async (id) => {
     if (!confirm("¿Eliminar este usuario?")) return;
+    
+    setProcessingUser(true);
+    
     try {
       await deleteUser(id);
       toast.success("Usuario eliminado");
-      fetchUsers();
+      await fetchUsers();
     } catch {
       toast.error("Error al eliminar usuario");
+    } finally {
+      setProcessingUser(false);
     }
   };
 
@@ -148,6 +158,9 @@ export default function Users() {
       toast.error("Debes ingresar una nueva contraseña.");
       return;
     }
+    
+    setProcessingUser(true);
+    
     try {
       await changeUserPassword(selectedUser.email, newPassword);
       toast.success("Contraseña actualizada");
@@ -155,6 +168,8 @@ export default function Users() {
       setSelectedUser(null);
     } catch {
       toast.error("Error actualizando contraseña");
+    } finally {
+      setProcessingUser(false);
     }
   };
 
@@ -202,6 +217,7 @@ export default function Users() {
               resetForm();
               setModalOpen(true);
             }}
+            processing={processingUser}
           />
         </div>
 
@@ -213,6 +229,7 @@ export default function Users() {
           newPassword={newPassword}
           setNewPassword={setNewPassword}
           onSubmit={handlePasswordSubmit}
+          processing={processingUser}
         />
 
         {/* Estadísticas */}

@@ -101,6 +101,10 @@ export default function DocumentToolbar({
             <SelectItem value="docx">Word</SelectItem>
             <SelectItem value="xlsx">Excel</SelectItem>
             <SelectItem value="pptx">PowerPoint</SelectItem>
+            <SelectItem value="jpg">JPG</SelectItem>
+            <SelectItem value="png">PNG</SelectItem>
+            <SelectItem value="mp4">MP4</SelectItem>
+            <SelectItem value="avi">AVI</SelectItem>
           </SelectContent>
         </Select>
       </div>

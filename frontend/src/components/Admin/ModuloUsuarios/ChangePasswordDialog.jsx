@@ -1,4 +1,5 @@
 import React from "react";
+import { Loader2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -15,6 +16,7 @@ export default function ChangePasswordDialog({
   newPassword,
   setNewPassword,
   onSubmit,
+  processing = false,
 }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -32,10 +34,19 @@ export default function ChangePasswordDialog({
             onChange={(e) => setNewPassword(e.target.value)}
           />
           <div className="flex justify-end gap-2 pt-2">
-            <Button variant="outline" onClick={() => setOpen(false)}>
+            <Button variant="outline" onClick={() => setOpen(false)} disabled={processing}>
               Cancelar
             </Button>
-            <Button onClick={onSubmit}>Actualizar</Button>
+            <Button onClick={onSubmit} disabled={processing}>
+              {processing ? (
+                <span className="flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Actualizando...
+                </span>
+              ) : (
+                "Actualizar"
+              )}
+            </Button>
           </div>
         </div>
       </DialogContent>

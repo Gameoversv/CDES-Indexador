@@ -45,6 +45,7 @@ export default function AdminDocuments() {
     open: false,
     file: null,
   });
+  const [deleteProcessing, setDeleteProcessing] = useState(false);
   const [viewMode, setViewMode] = useState("list");
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -140,7 +141,14 @@ export default function AdminDocuments() {
           public: d.public ?? d.publico ?? false,
         };
       });
-      setFiles(normalized);
+      // Agrupar documentos versionados (original + _vN) para mostrar como una sola entrada con lista de versiones
+      try {
+        const grouped = groupVersionedDocuments(normalized);
+        setFiles(grouped);
+      } catch (err) {
+        console.warn('[AdminDocuments] Error agrupando versiones, usando lista plana:', err);
+        setFiles(normalized);
+      }
     } catch (error) {
       console.error("❌ [AdminDocuments] Error:", error);
       setFiles([]);
@@ -334,13 +342,17 @@ export default function AdminDocuments() {
       return;
     }
     
+    // Establecer estado de procesamiento
+    setDeleteProcessing(true);
+    
     try {
       await documentsAPI.deleteByPath(confirmDelete.file.path);
       toast.success("Archivo eliminado correctamente");
-      fetchFiles();
+      await fetchFiles();
     } catch {
       toast.error("Error al eliminar archivo");
     } finally {
+      setDeleteProcessing(false);
       setConfirmDelete({ open: false, file: null });
     }
   };
@@ -584,6 +596,7 @@ export default function AdminDocuments() {
           file={confirmDelete.file}
           onCancel={() => setConfirmDelete({ open: false, file: null })}
           onConfirm={handleDelete}
+          processing={deleteProcessing}
         />
       </div>
     </AdminLayout>

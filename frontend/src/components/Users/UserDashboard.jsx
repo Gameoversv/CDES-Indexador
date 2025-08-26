@@ -29,12 +29,14 @@ import {
   Home,
   Building2,
   Shield,
-  Settings
+  Settings,
+  ExternalLink
 } from "lucide-react";
 
 // Importar componentes de documentos y carpetas
 import UserDocuments from "./UserDocuments/UserDocuments.jsx";
 import UserFolders from "./UserFolders/UserFolders.jsx";
+import UserLibrary from "./UserLibrary/UserLibrary.jsx";
 
 export default function UserDashboard() {
   const { currentUser, isAdmin, logout } = useAuth();
@@ -45,6 +47,7 @@ export default function UserDashboard() {
   const [userRole, setUserRole] = useState("");
   const [userDisplayName, setUserDisplayName] = useState("");
   const [isExecAdmin, setIsExecAdmin] = useState(false);
+  const [isCommunicationsCoord, setIsCommunicationsCoord] = useState(false);
 
   useEffect(() => {
     // Obtener información del usuario desde localStorage o Firebase
@@ -54,8 +57,20 @@ export default function UserDashboard() {
       const roleVal = parsedUser.role || "Usuario";
       setUserRole(roleVal);
       setUserDisplayName(parsedUser.display_name || parsedUser.email);
-      if (typeof roleVal === 'string' && roleVal.toLowerCase() === 'direccion ejecutiva') {
-        setIsExecAdmin(true);
+      
+      // Verificar roles específicos
+      if (typeof roleVal === 'string') {
+        const normalizedRole = roleVal.toLowerCase().replace(/[_\s-]/g, "");
+        
+        // Verificar si es dirección ejecutiva
+        if (normalizedRole === 'direccionejecutiva') {
+          setIsExecAdmin(true);
+        }
+        
+        // Verificar si es coordinación de comunicaciones
+        if (normalizedRole === 'coordinacioncomunicaciones' || normalizedRole === 'coordinaciondecomunicaciones') {
+          setIsCommunicationsCoord(true);
+        }
       }
     }
   }, [currentUser]);
@@ -94,28 +109,67 @@ export default function UserDashboard() {
       id: "folders",
       icon: FolderTree,
       description: "Organiza tus archivos en carpetas"
+    },
+    {
+      name: "Biblioteca Pública",
+      id: "library",
+      icon: Building2,
+      description: "Administra los documentos de la biblioteca pública",
+      requiredRole: "coordinacioncomunicaciones" // Solo visible para este rol
+    },
+    {
+      name: "CMS Strapi",
+      id: "strapi",
+      icon: ExternalLink,
+      description: "Accede al sistema de gestión de contenidos",
+      requiredRole: "coordinacioncomunicaciones", // Solo visible para este rol
+      externalUrl: "https://hopeful-animal-11e82f343d.strapiapp.com/admin"
     }
   ];
 
   const NavigationItems = ({ mobile = false, onItemClick = () => {} }) => (
     <>
-      {navigation.map((item) => {
-        const Icon = item.icon;
-        return (
-          <Button
-            key={item.id}
-            variant={activeSection === item.id ? "default" : "ghost"}
-            className={`${mobile ? "w-full justify-start" : ""} gap-2`}
-            onClick={() => {
-              setActiveSection(item.id);
-              onItemClick();
-            }}
-          >
-            <Icon className="h-4 w-4" />
-            {item.name}
-          </Button>
-        );
-      })}
+      {navigation
+        .filter(item => {
+          // Si el item requiere un rol específico, verificar si el usuario tiene ese rol
+          if (item.requiredRole === "coordinacioncomunicaciones") {
+            return isCommunicationsCoord;
+          }
+          // Si no requiere rol específico, mostrar siempre
+          return true;
+        })
+        .map((item) => {
+          const Icon = item.icon;
+          return item.externalUrl ? (
+            // External link
+            <Button
+              key={item.id}
+              variant="ghost"
+              className={`${mobile ? "w-full justify-start" : ""} gap-2`}
+              onClick={() => {
+                window.open(item.externalUrl, "_blank", "noopener,noreferrer");
+                onItemClick();
+              }}
+            >
+              <Icon className="h-4 w-4" />
+              {item.name}
+            </Button>
+          ) : (
+            // Internal section
+            <Button
+              key={item.id}
+              variant={activeSection === item.id ? "default" : "ghost"}
+              className={`${mobile ? "w-full justify-start" : ""} gap-2`}
+              onClick={() => {
+                setActiveSection(item.id);
+                onItemClick();
+              }}
+            >
+              <Icon className="h-4 w-4" />
+              {item.name}
+            </Button>
+          );
+        })}
       
       {/* Botón de Administración - Solo visible para admins */}
       { (isAdmin || isExecAdmin) && (
@@ -278,6 +332,7 @@ export default function UserDashboard() {
         <div className="transition-all duration-200">
           {activeSection === "documents" && <UserDocuments />}
           {activeSection === "folders" && <UserFolders />}
+          {activeSection === "library" && <UserLibrary />}
         </div>
       </main>
     </div>

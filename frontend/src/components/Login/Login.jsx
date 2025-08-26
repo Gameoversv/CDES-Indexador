@@ -42,19 +42,24 @@ export default function Login({ className, ...props }) {
         // fallback silencioso
       }
 
-      const role = JSON.parse(localStorage.getItem("user") || "{}").role;
-      switch (role) {
-        case "admin":
-          navigate("/admin");
-          break;
-        case "secretaria":
-          navigate("/secretaria");
-          break;
-        case "supervisor":
-          navigate("/supervisor");
-          break;
-        default:
-          navigate("/dashboard");
+      const userData = JSON.parse(localStorage.getItem("user") || "{}");
+      const role = userData.role;
+      
+      // Verificar si es administrador (Dirección Ejecutiva)
+      if (role === "DireccionEjecutiva" || role === "Dirección Ejecutiva" || role === "admin") {
+        navigate("/admin");
+      } else {
+        // Para otros roles, usar el switch existente o ir al dashboard
+        switch (role) {
+          case "secretaria":
+            navigate("/secretaria");
+            break;
+          case "supervisor":
+            navigate("/supervisor");
+            break;
+          default:
+            navigate("/dashboard");
+        }
       }
     } catch (err) {
       console.error("Error al iniciar sesión:", err);

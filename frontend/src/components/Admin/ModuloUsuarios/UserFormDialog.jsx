@@ -7,7 +7,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Plus } from "lucide-react";
+import { Plus, Loader2 } from "lucide-react";
 
 export default function UserFormDialog({
   open,
@@ -17,6 +17,7 @@ export default function UserFormDialog({
   setFormData,
   onSubmit,
   onOpenNew,
+  processing = false,
 }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -80,8 +81,19 @@ export default function UserFormDialog({
             </select>
           </div>
           <div className="flex justify-end gap-2 pt-2">
-            <Button variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>
-            <Button onClick={onSubmit}>{isEditing ? "Actualizar" : "Crear"}</Button>
+            <Button variant="outline" onClick={() => setOpen(false)} disabled={processing}>
+              Cancelar
+            </Button>
+            <Button onClick={onSubmit} disabled={processing}>
+              {processing ? (
+                <span className="flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  {isEditing ? "Actualizando..." : "Creando..."}
+                </span>
+              ) : (
+                isEditing ? "Actualizar" : "Crear"
+              )}
+            </Button>
           </div>
         </div>
       </DialogContent>

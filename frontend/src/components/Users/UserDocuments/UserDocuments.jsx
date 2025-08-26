@@ -48,6 +48,7 @@ export default function UserDocuments() {
     open: false,
     file: null,
   });
+  const [deleteProcessing, setDeleteProcessing] = useState(false);
   const [viewMode, setViewMode] = useState("list");
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -215,8 +216,14 @@ export default function UserDocuments() {
         };
       });
       
-      // El backend ya filtró según el rol - solo usar los documentos directamente
-      setFiles(normalized);
+      // Agrupar documentos versionados (original + _vN) para mostrar como una sola entrada con lista de versiones
+      try {
+        const grouped = groupVersionedDocuments(normalized);
+        setFiles(grouped);
+      } catch (err) {
+        console.warn('[UserDocuments] Error agrupando versiones, usando lista plana:', err);
+        setFiles(normalized);
+      }
       
       console.log(`Showing ${normalized.length} documents to user in department: ${userDepartment}`);
       
@@ -435,6 +442,7 @@ export default function UserDocuments() {
     
     try {
       setLoading(true);
+      setDeleteProcessing(true);
       const path = confirmDelete.file.path;
       
       // 1. Eliminar el archivo del bucket de Firebase Storage
@@ -452,6 +460,7 @@ export default function UserDocuments() {
       toast.error("Error al eliminar el documento");
     } finally {
       setLoading(false);
+      setDeleteProcessing(false);
     }
   };
 
@@ -696,10 +705,11 @@ export default function UserDocuments() {
 
       {/* Dialogo de previsualización de archivo */}
       <PreviewFileDialog
-        open={!!previewFile}
         file={previewFile}
         onClose={() => setPreviewFile(null)}
-        onDownload={handleDownload}
+        handleDownload={handleDownload}
+        formatSize={formatSize}
+        formatDate={formatDate}
       />
 
       {/* Dialogo de confirmación de eliminación */}
@@ -708,6 +718,7 @@ export default function UserDocuments() {
         onClose={() => setConfirmDelete({ open: false, file: null })}
         onConfirm={handleDelete}
         fileName={confirmDelete.file?.filename}
+        processing={deleteProcessing}
       />
     </>
   );

@@ -1,18 +1,19 @@
 import React, { useState, useEffect, useMemo } from "react";
-import AdminLayout from "@/components/Admin/Layout/AdminLayout";
 import { libraryAPI, documentsAPI } from "@/services/api";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
-import LibraryToolbar from "./LibraryToolbar";
-import LibraryStatsCards from "./LibraryStatsCards";
-import LibraryTable from "./LibraryTable";
-import LibraryGridView from "./LibraryGridView";
-import PreviewFileDialog from "../ModuloDocuments/PreviewFileDialog";
-import ConfirmDeleteDialog from "./ConfirmDeleteDialog";
+
+// Re-using components from Admin library with minor modifications
+import LibraryToolbar from "../../Admin/ModuloLibrary/LibraryToolbar";
+import LibraryStatsCards from "../../Admin/ModuloLibrary/LibraryStatsCards";
+import LibraryTable from "../../Admin/ModuloLibrary/LibraryTable";
+import LibraryGridView from "../../Admin/ModuloLibrary/LibraryGridView";
+import PreviewFileDialog from "../../Admin/ModuloDocuments/PreviewFileDialog";
+import ConfirmDeleteDialog from "../../Admin/ModuloLibrary/ConfirmDeleteDialog";
 
 import Pagination from "@/components/ui/Pagination";
 
-// Función helper para formatear bytes (añadir al inicio del archivo)
+// Función helper para formatear bytes
 const formatSize = (bytes) => {
   if (bytes === 0) return '0 Bytes';
   
@@ -23,7 +24,7 @@ const formatSize = (bytes) => {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 };
 
-export default function AdminLibrary() {
+export default function UserLibrary() {
   const [documents, setDocuments] = useState([]);
   const [viewMode, setViewMode] = useState("list");
   const [search, setSearch] = useState("");
@@ -147,51 +148,80 @@ export default function AdminLibrary() {
   };
 
   return (
-    <AdminLayout>
-      <div className="space-y-6 p-6">
-        {/* Encabezado */}
-        <div className="flex justify-between items-center mb-2">
-          <h2 className="text-2xl font-bold text-gray-900">
-            Gestión de Biblioteca Pública
-          </h2>
-        </div>
-
-        {/* Estadísticas */}
-        <LibraryStatsCards
-          stats={stats}
-          statType={statType}
-          setStatType={setStatType}
-        />
-
-        {/* Filtros */}
-        <LibraryToolbar
-          viewMode={viewMode}
-          setViewMode={setViewMode}
-          search={search}
-          setSearch={setSearch}
-          typeFilter={typeFilter}
-          setTypeFilter={setTypeFilter}
-          typeContent={typeContent}
-          setTypeContent={setTypeContent}
-          dateRange={dateRange}
-          setDateRange={setDateRange}
-          // onRefresh vuelve a cargar con la búsqueda actual
-          onRefresh={() => fetchData(search)}
-          clearAllFilters={clearAllFilters}
-        />
-
-        {/* Vista principal */}
-  {loading ? (
-          <div className="flex justify-center py-10">
-            <Loader2 className="w-6 h-6 animate-spin" />
+    <div className="space-y-6">
+      {/* Encabezado */}
+      <div className="bg-white rounded-lg shadow-sm p-4 border-l-4 border-blue-600">
+        <div className="flex justify-between items-center">
+          <div>
+            <h2 className="text-xl font-bold text-gray-900">
+              Gestión de Biblioteca Pública
+            </h2>
+            <p className="text-sm text-muted-foreground mt-1">
+              Administra los documentos visibles en la biblioteca pública
+            </p>
           </div>
-        ) : filteredDocs.length === 0 ? (
-          <p className="text-center text-gray-500">
+        </div>
+      </div>
+
+      {/* Estadísticas */}
+      <LibraryStatsCards
+        stats={stats}
+        statType={statType}
+        setStatType={setStatType}
+      />
+
+      {/* Filtros */}
+      <LibraryToolbar
+        viewMode={viewMode}
+        setViewMode={setViewMode}
+        search={search}
+        setSearch={setSearch}
+        typeFilter={typeFilter}
+        setTypeFilter={setTypeFilter}
+        typeContent={typeContent}
+        setTypeContent={setTypeContent}
+        dateRange={dateRange}
+        setDateRange={setDateRange}
+        onRefresh={() => fetchData(search)}
+        clearAllFilters={clearAllFilters}
+      />
+
+      {/* Vista principal */}
+      {loading ? (
+        <div className="flex justify-center py-10">
+          <Loader2 className="w-6 h-6 animate-spin" />
+        </div>
+      ) : filteredDocs.length === 0 ? (
+        <div className="text-center py-10">
+          <p className="text-gray-500">
             No hay documentos para mostrar.
           </p>
-        ) : viewMode === "grid" ? (
-          <LibraryGridView
-            documents={paginatedDocs}
+        </div>
+      ) : viewMode === "grid" ? (
+        <LibraryGridView
+          documents={paginatedDocs}
+          onView={setSelectedDoc}
+          onDelete={(file) => {
+            setSelectedDoc(file);
+            setShowDeleteDialog(true);
+          }}
+          onDownload={(file) =>
+            documentsAPI.downloadByPath(file.storage_path || file.path).then((res) => {
+              const url = window.URL.createObjectURL(res.data);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = file.name || file.filename || "documento";
+              a.click();
+            }).catch(error => {
+              console.error("Error al descargar:", error);
+              toast.error("Error al descargar el documento");
+            })
+          }
+        />
+      ) : (
+        <div className="border rounded-lg overflow-hidden">
+          <LibraryTable
+            files={paginatedDocs}
             onView={setSelectedDoc}
             onDelete={(file) => {
               setSelectedDoc(file);
@@ -209,90 +239,67 @@ export default function AdminLibrary() {
                 toast.error("Error al descargar el documento");
               })
             }
+            sortKey={sortBy.field}
+            sortOrder={sortBy.direction}
+            onSort={(field, direction) =>
+              setSortBy({ field, direction })
+            }
           />
-        ) : (
-          <div className="border rounded-lg overflow-hidden">
-            <LibraryTable
-              files={paginatedDocs}
-              onView={setSelectedDoc}
-              onDelete={(file) => {
-                setSelectedDoc(file);
-                setShowDeleteDialog(true);
-              }}
-              onDownload={(file) =>
-                documentsAPI.downloadByPath(file.storage_path || file.path).then((res) => {
-                  const url = window.URL.createObjectURL(res.data);
-                  const a = document.createElement("a");
-                  a.href = url;
-                  a.download = file.name || file.filename || "documento";
-                  a.click();
-                }).catch(error => {
-                  console.error("Error al descargar:", error);
-                  toast.error("Error al descargar el documento");
-                })
-              }
-              sortKey={sortBy.field}
-              sortOrder={sortBy.direction}
-              onSort={(field, direction) =>
-                setSortBy({ field, direction })
-              }
-            />
-            <Pagination
-              currentPage={currentPage}
-              totalPages={totalPages}
-              onPageChange={setCurrentPage}
-              itemsPerPage={itemsPerPage}
-              totalItems={filteredDocs.length}
-            />
-          </div>
-        )}
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPageChange={setCurrentPage}
+            itemsPerPage={itemsPerPage}
+            totalItems={filteredDocs.length}
+          />
+        </div>
+      )}
 
-        {/* Vista previa */}
-        {selectedDoc && (
-          <PreviewFileDialog
-            file={selectedDoc}
-            onClose={() => setSelectedDoc(null)}
-          />
-        )}
+      {/* Vista previa */}
+      {selectedDoc && (
+        <PreviewFileDialog
+          file={selectedDoc}
+          onClose={() => setSelectedDoc(null)}
+        />
+      )}
 
-        {/* Confirmación de cambio de visibilidad */}
-        {showDeleteDialog && selectedDoc && (
-          <ConfirmDeleteDialog
-            open={showDeleteDialog}
-            setOpen={setShowDeleteDialog}
-            doc={selectedDoc}
-            processing={processingVisibility}
-            onConfirm={async () => {
-              try {
-                setProcessingVisibility(true);
-                await libraryAPI.togglePublic(selectedDoc.path || selectedDoc.storage_path);
-                if (selectedDoc.public) {
-                  toast.success("Documento cambiado a privado correctamente");
-                } else {
-                  toast.success("Documento cambiado a público correctamente");
-                }
-                await fetchData();
-              } catch (error) {
-                console.error("Error al cambiar visibilidad:", error);
-                toast.error("Error al cambiar la visibilidad del documento");
-              } finally {
-                setProcessingVisibility(false);
-                setShowDeleteDialog(false);
+      {/* Confirmación de cambio de visibilidad */}
+      {showDeleteDialog && selectedDoc && (
+        <ConfirmDeleteDialog
+          open={showDeleteDialog}
+          setOpen={setShowDeleteDialog}
+          doc={selectedDoc}
+          processing={processingVisibility}
+          onConfirm={async () => {
+            try {
+              setProcessingVisibility(true);
+              await libraryAPI.togglePublic(selectedDoc.path || selectedDoc.storage_path);
+              if (selectedDoc.public) {
+                toast.success("Documento cambiado a privado correctamente");
+              } else {
+                toast.success("Documento cambiado a público correctamente");
               }
-            }}
-          />
-        )}
-        
-        {/* Overlay de carga mientras se procesa el cambio de visibilidad */}
-        {processingVisibility && (
-          <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
-            <div className="bg-white p-6 rounded-lg shadow-lg flex items-center gap-3">
-              <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
-              <p>Procesando cambio de visibilidad...</p>
-            </div>
+              await fetchData();
+            } catch (error) {
+              console.error("Error al cambiar visibilidad:", error);
+              toast.error("Error al cambiar la visibilidad del documento");
+            } finally {
+              setProcessingVisibility(false);
+              setShowDeleteDialog(false);
+            }
+          }}
+        />
+      )}
+      
+      {/* Overlay de carga mientras se procesa el cambio de visibilidad */}
+      {processingVisibility && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg shadow-lg flex items-center gap-3">
+            <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
+            <p>Procesando cambio de visibilidad...</p>
           </div>
-        )}
-      </div>
-    </AdminLayout>
+        </div>
+      )}
+    </div>
   );
 }

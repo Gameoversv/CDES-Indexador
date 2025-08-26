@@ -18,7 +18,7 @@ from openai import OpenAI
 
 from config import settings
 
-ALLOWED_EXTENSIONS = {'.pdf', '.docx', '.pptx', '.xlsx', '.txt', '.md', '.png', '.jpg', '.jpeg', '.mp3', '.mp4'}
+ALLOWED_EXTENSIONS = {'.pdf', '.docx', '.pptx', '.xlsx', '.txt', '.md', '.png', '.jpg', '.jpeg', '.mp3', '.mp4', '.avi'}
 
 _AI_PROVIDERS: Dict[str, type["AIService"]] = {}
 
@@ -175,7 +175,7 @@ Analiza este documento y extrae los siguientes metadatos en formato JSON estrict
 1. "title": Título principal o tema central del documento.
 2. "summary": Resumen conciso de máximo {self.max_summary_words} palabras.
 3. "keywords": Entre 5 y {self.max_keywords} palabras clave relevantes.
-4. "date": Fecha más significativa en formato YYYY-MM-DD o "Fecha no encontrada".
+4. "date": Usa el formato YYYY-MM-DD. No extraigas esta fecha, se establecerá automáticamente.
 
 IMPORTANTE: Responde ÚNICAMENTE con el objeto JSON, sin bloques de código markdown ni texto adicional.
 """
@@ -255,7 +255,7 @@ IMPORTANTE: Responde ÚNICAMENTE con el objeto JSON, sin bloques de código mark
                 "title": ai_metadata["title"],
                 "summary": ai_metadata["summary"],
                 "keywords": ai_metadata["keywords"],
-                "date": ai_metadata["date"],
+                "date": datetime.now().strftime("%Y-%m-%d"),
                 "processing_timestamp": datetime.now().isoformat() + "Z",
                 "ai_model": self.model_name,
                 "file_hash": file_hash
@@ -270,7 +270,7 @@ IMPORTANTE: Responde ÚNICAMENTE con el objeto JSON, sin bloques de código mark
                 "title": f"Error procesando {filename}",
                 "summary": "No se pudieron extraer metadatos debido a un error.",
                 "keywords": [],
-                "date": "Fecha no encontrada",
+                "date": datetime.now().strftime("%Y-%m-%d"),
                 "processing_timestamp": datetime.now().isoformat() + "Z",
                 "error": str(e),
                 "file_hash": hashlib.sha256(file_bytes).hexdigest()
@@ -481,7 +481,7 @@ class GeminiService(AIService):
                 "title": str(parsed_data.get("title", "Título no encontrado")).strip(),
                 "summary": str(parsed_data.get("summary", "Resumen no disponible")).strip(),
                 "keywords": parsed_data.get("keywords", []) if isinstance(parsed_data.get("keywords"), list) else [],
-                "date": str(parsed_data.get("date", "Fecha no encontrada")).strip(),
+                "date": datetime.now().strftime("%Y-%m-%d"),
             }
         except Exception as e:
             print(f"Error en _process_file: {e}")
@@ -489,7 +489,7 @@ class GeminiService(AIService):
                 "title": "Error de procesamiento con Gemini",
                 "summary": f"Error: {str(e)}",
                 "keywords": [],
-                "date": "Fecha no encontrada",
+                "date": datetime.now().strftime("%Y-%m-%d"),
             }
 
 class OpenAIService(AIService):
@@ -535,14 +535,14 @@ class OpenAIService(AIService):
                 "title": str(parsed_data.get("title", "Título no encontrado")).strip(),
                 "summary": str(parsed_data.get("summary", "Resumen no disponible")).strip(),
                 "keywords": parsed_data.get("keywords", []) if isinstance(parsed_data.get("keywords"), list) else [],
-                "date": str(parsed_data.get("date", "Fecha no encontrada")).strip(),
+                "date": datetime.now().strftime("%Y-%m-%d"),
             }
         except Exception as e:
             return {
                 "title": "Error de procesamiento con OpenAI",
                 "summary": f"Error: {str(e)}",
                 "keywords": [],
-                "date": "Fecha no encontrada",
+                "date": datetime.now().strftime("%Y-%m-%d"),
             }
 
 
@@ -585,14 +585,14 @@ class DeepSeekService(AIService):
                 "title": str(parsed_data.get("title", "Título no encontrado")).strip(),
                 "summary": str(parsed_data.get("summary", "Resumen no disponible")).strip(),
                 "keywords": parsed_data.get("keywords", []) if isinstance(parsed_data.get("keywords"), list) else [],
-                "date": str(parsed_data.get("date", "Fecha no encontrada")).strip(),
+                "date": datetime.now().strftime("%Y-%m-%d"),
             }
         except Exception as e:
             return {
                 "title": "Error de procesamiento con DeepSeek",
                 "summary": f"Error: {str(e)}",
                 "keywords": [],
-                "date": "Fecha no encontrada",
+                "date": datetime.now().strftime("%Y-%m-%d"),
             }
 
 

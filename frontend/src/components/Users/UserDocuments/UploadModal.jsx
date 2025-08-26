@@ -21,6 +21,7 @@ import {
   UploadCloud,
   Image as ImageIcon,
   X,
+  Loader2,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
@@ -329,7 +330,7 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
               uploading={uploading}
               progress={progress}
               placeholder="Arrastra tu archivo aquí o selecciónalo manualmente"
-              acceptedTypes=".pdf,.docx,.xlsx,.pptx,.mp4"
+              acceptedTypes=".pdf,.docx,.xlsx,.pptx,.mp4,.jpg,.jpeg,.png,.avi"
             />
           </div>
 
@@ -414,21 +415,28 @@ export default function UploadDocumentDialog({ open, setOpen, onUploaded }) {
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
-              <DialogClose asChild>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setShowConfirmDialog(false)}
-                >
-                  Cancelar
-                </Button>
-              </DialogClose>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowConfirmDialog(false)}
+                disabled={uploading}
+              >
+                Cancelar
+              </Button>
               <Button
                 type="button"
                 variant="destructive"
                 onClick={handleConfirmUpload}
+                disabled={uploading}
               >
-                Confirmar
+                {uploading ? (
+                  <span className="flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Subiendo...
+                  </span>
+                ) : (
+                  "Confirmar"
+                )}
               </Button>
             </DialogFooter>
           </DialogContent>

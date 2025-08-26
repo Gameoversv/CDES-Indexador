@@ -9,7 +9,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff, Loader2 } from "lucide-react";
 
 export default function ConfirmDeleteDialog({
   open,
@@ -17,6 +17,7 @@ export default function ConfirmDeleteDialog({
   onConfirm,
   doc,
   fileName,
+  processing = false,
 }) {
   const name = doc?.name || fileName || doc?.filename || "documento";
   const isPublic = !!doc?.public;
@@ -43,17 +44,26 @@ export default function ConfirmDeleteDialog({
         </div>
 
         <DialogFooter className="pt-4">
-          <Button variant="outline" onClick={() => setOpen(false)}>
+          <Button 
+            variant="outline" 
+            onClick={() => setOpen(false)}
+            disabled={processing}
+          >
             Cancelar
           </Button>
           <Button
             variant="default"
-            onClick={() => {
-              onConfirm();
-              setOpen(false);
-            }}
+            onClick={() => onConfirm()}
+            disabled={processing}
           >
-            {isPublic ? "Cambiar a privado" : "Cambiar a público"}
+            {processing ? (
+              <span className="flex items-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Procesando...
+              </span>
+            ) : (
+              isPublic ? "Cambiar a privado" : "Cambiar a público"
+            )}
           </Button>
         </DialogFooter>
       </DialogContent>
