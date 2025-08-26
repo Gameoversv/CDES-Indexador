@@ -18,7 +18,7 @@ export default function ConfirmDeleteDialog({ open, onClose, onConfirm, filename
             Esta acción no se puede deshacer y el archivo se perderá permanentemente.
           </p>
           <div className="flex justify-end gap-3">
-            <Button variant="outline" onClick={onCancel} className="border border-gray-300 text-gray-900" disabled={processing}>
+            <Button variant="outline" onClick={onClose} className="border border-gray-300 text-gray-900" disabled={processing}>
               Cancelar
             </Button>
             <Button 

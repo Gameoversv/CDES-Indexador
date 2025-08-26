@@ -43,9 +43,9 @@ const root = createRoot(rootElement);
 if (import.meta.env.DEV) {
   // Modo desarrollo con StrictMode para debugging
   root.render(
-    <StrictMode>
+    //<StrictMode>
       <App />
-    </StrictMode>
+    //</StrictMode>
   );
 } else {
   // Modo producción optimizado
