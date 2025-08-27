@@ -14,6 +14,7 @@ import ChangePasswordDialog from "@/components/Admin/ModuloUsuarios/ChangePasswo
 import UserTable from "@/components/Admin/ModuloUsuarios/UserTable";
 import UserStatsCards from "@/components/Admin/ModuloUsuarios/UserStatsCards";
 import UserSearchBar from "@/components/Admin/ModuloUsuarios/UserSearchBar";
+import ConfirmDeleteUserDialog from "@/components/Admin/ModuloUsuarios/ConfirmDeleteUserDialog";
 
 import Pagination from "@/components/ui/Pagination";
 
@@ -36,6 +37,10 @@ export default function Users() {
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const [newPassword, setNewPassword] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
+  const [confirmDelete, setConfirmDelete] = useState({
+    open: false,
+    user: null,
+  });
   const itemsPerPage = 10;
 
   const fetchUsers = async () => {
@@ -131,19 +136,24 @@ export default function Users() {
     setModalOpen(true);
   };
 
-  const handleDelete = async (id) => {
-    if (!confirm("¿Eliminar este usuario?")) return;
+  const showDeleteConfirm = (user) => {
+    setConfirmDelete({ open: true, user });
+  };
+
+  const handleDelete = async () => {
+    if (!confirmDelete.user) return;
     
     setProcessingUser(true);
     
     try {
-      await deleteUser(id);
+      await deleteUser(confirmDelete.user.id);
       toast.success("Usuario eliminado");
       await fetchUsers();
     } catch {
       toast.error("Error al eliminar usuario");
     } finally {
       setProcessingUser(false);
+      setConfirmDelete({ open: false, user: null });
     }
   };
 
@@ -232,6 +242,14 @@ export default function Users() {
           processing={processingUser}
         />
 
+        <ConfirmDeleteUserDialog
+          open={confirmDelete.open}
+          onClose={() => setConfirmDelete({ open: false, user: null })}
+          onConfirm={handleDelete}
+          username={confirmDelete.user?.display_name}
+          processing={processingUser}
+        />
+
         {/* Estadísticas */}
         <UserStatsCards stats={stats} />
 
@@ -248,7 +266,7 @@ export default function Users() {
           <UserTable
             users={paginatedUsers}
             onEdit={handleEdit}
-            onDelete={handleDelete}
+            onDelete={showDeleteConfirm}
             onChangePassword={openPasswordModal}
           />
            <Pagination

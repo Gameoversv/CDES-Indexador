@@ -443,35 +443,28 @@ async def search_all_documents(
                 user_role = "DireccionEjecutiva"
 
         role_norm = _norm(user_role)
-        # Build filters for Meilisearch - TODOS los usuarios pueden buscar
-        filters: Optional[str] = None
+        # Build filters for Meilisearch - eliminar regla de public=true en 'documents'
         is_exec = role_norm == "direccionejecutiva" or (isinstance(user_email, str) and any(p in user_email.lower() for p in ["director", "ejecutiv"]))
-
-
-        # Aplicar filtros según el rol
-        if is_exec:
-            # Dirección Ejecutiva ve todo
-            filters = None
-        else:
-            # Otros roles ven: documentos públicos, PES 2030, y documentos de su departamento
+        doc_filters: Optional[str] = None
+        if not is_exec:
             role_display = _role_display_from_firestore(user_role) or ""
             rd_esc = role_display.replace('"', '\\"') if isinstance(role_display, str) else ""
             parts: List[str] = [
-                "public = true",
                 'apartado = "PES 2030"'  # TODOS ven documentos de PES 2030
             ]
             if rd_esc:
                 parts.append(f'puesto_trabajo = "{rd_esc}"')
-            filters = " OR ".join(parts)
+            doc_filters = " OR ".join(parts) if parts else None
 
-        # Buscar en Meilisearch con la query
+        # Buscar en Meilisearch con la query en ambos índices: documents (con filtros) y library (sin filtros)
         from services.meilisearch_service import search_documents
-        results = search_documents(query=q, limit=limit, offset=offset, filters=filters)
-        hits = (results or {}).get("hits", [])
-        source = (results or {}).get("source", ("meilisearch" if is_meilisearch_available() else "local"))
+        docs_results = search_documents(query=q, limit=limit, offset=offset, filters=doc_filters)
+        lib_results = search_documents(query=q, limit=limit, offset=offset, index_name=LIBRARY_INDEX_NAME)
+        hits = (lib_results or {}).get("hits", []) + (docs_results or {}).get("hits", [])
+        source = "combined_meilisearch" if is_meilisearch_available() else (docs_results or {}).get("source", "local")
 
         # Firestore fallback si Meilisearch no está disponible
-        if not is_meilisearch_available() or source == "local":
+        if not is_meilisearch_available() or source in ["local", "error"]:
             try:
                 fs_hits: List[Dict[str, Any]] = []
                 db = get_firestore_client()
@@ -485,6 +478,7 @@ async def search_all_documents(
                     for doc in collection_ref.limit(1000).stream():
                         doc_data = doc.to_dict() or {}
                         doc_data["id"] = doc.id
+                        doc_data["source_collection"] = collection_name
                         
                         # Aplicar filtros de búsqueda en los campos especificados
                         query_lower = q.lower()
@@ -503,20 +497,21 @@ async def search_all_documents(
                         )
                         
                         if matches_search:
-                            # Aplicar filtros de rol
+                            # Aplicar reglas de visibilidad
                             if is_exec:
                                 results_list.append(doc_data)
                             else:
-                                is_public = doc_data.get("public", False) or doc_data.get("publico", False)
-                                is_pes_2030 = doc_data.get("apartado") == "PES 2030"
-                                user_dept_match = False
-                                
-                                if role_display:
-                                    doc_dept = doc_data.get("puesto_trabajo", "")
-                                    user_dept_match = doc_dept == role_display
-                                
-                                if is_public or is_pes_2030 or user_dept_match:
+                                # Siempre incluir docs de la colección 'library'
+                                if collection_name == "library":
                                     results_list.append(doc_data)
+                                else:
+                                    is_pes_2030 = doc_data.get("apartado") == "PES 2030"
+                                    user_dept_match = False
+                                    if role_display:
+                                        doc_dept = doc_data.get("puesto_trabajo", "")
+                                        user_dept_match = doc_dept == role_display
+                                    if is_pes_2030 or user_dept_match:
+                                        results_list.append(doc_data)
                     
                     return results_list
 
@@ -639,19 +634,18 @@ async def search_documents_by_path(
             # Dirección Ejecutiva ve todo
             filters = None
         else:
-            # Otros roles ven: documentos públicos, PES 2030, y documentos de su departamento
+            # Otros roles ven: PES 2030, y documentos de su departamento (sin regla public=true)
             role_display = _role_display_from_firestore(user_role) or ""
             rd_esc = role_display.replace('"', '\\"') if isinstance(role_display, str) else ""
             parts: List[str] = [
-                "public = true",
-                'apartado = "PES 2030"'  # TODOS ven documentos de PES 2030
+                'apartado = "PES 2030"'
             ]
             if rd_esc:
                 parts.append(f'puesto_trabajo = "{rd_esc}"')
             filters = " OR ".join(parts)
 
         # Configurar opciones de búsqueda específicas para storage_path
-        from services.meilisearch_service import client, check_meilisearch_health
+        from services.meilisearch_service import client, check_meilisearch_health, LIBRARY_INDEX_NAME
         
         if check_meilisearch_health() and client:
             try:
@@ -664,9 +658,25 @@ async def search_documents_by_path(
                 if filters:
                     search_options["filter"] = filters
                 
-                index = client.index("documents")
-                results = index.search(q, search_options)
-                results["source"] = "meilisearch"
+                # Buscar primero en 'documents' con filtros
+                index_docs = client.index("documents")
+                results_docs = index_docs.search(q, search_options)
+                
+                # Buscar en 'library' sin filtros
+                index_lib = client.index(LIBRARY_INDEX_NAME)
+                results_lib = index_lib.search(q, {"limit": limit, "offset": offset})
+                
+                # Combinar resultados
+                hits_combined = (results_lib or {}).get("hits", []) + (results_docs or {}).get("hits", [])
+                total_combined = len(hits_combined)
+                results = {
+                    "hits": hits_combined,
+                    "estimatedTotalHits": total_combined,
+                    "query": q,
+                    "limit": limit,
+                    "offset": offset,
+                    "source": "meilisearch"
+                }
                 
             except Exception as meilisearch_error:
                 print(f"Error en búsqueda Meilisearch por path: {meilisearch_error}")
@@ -730,6 +740,7 @@ async def _search_by_path_firestore_fallback(
             for doc in collection_ref.limit(1000).stream():
                 doc_data = doc.to_dict() or {}
                 doc_data["id"] = doc.id
+                doc_data["source_collection"] = collection_name
                 
                 # Buscar en storage_path
                 query_lower = query.lower()
@@ -745,20 +756,20 @@ async def _search_by_path_firestore_fallback(
                 )
                 
                 if matches_search:
-                    # Aplicar filtros de rol
+                    # Aplicar reglas de visibilidad
                     if is_exec:
                         results_list.append(doc_data)
                     else:
-                        is_public = doc_data.get("public", False) or doc_data.get("publico", False)
-                        is_pes_2030 = doc_data.get("apartado") == "PES 2030"
-                        user_dept_match = False
-                        
-                        if role_display:
-                            doc_dept = doc_data.get("puesto_trabajo", "")
-                            user_dept_match = doc_dept == role_display
-                        
-                        if is_public or is_pes_2030 or user_dept_match:
+                        if collection_name == "library":
                             results_list.append(doc_data)
+                        else:
+                            is_pes_2030 = doc_data.get("apartado") == "PES 2030"
+                            user_dept_match = False
+                            if role_display:
+                                doc_dept = doc_data.get("puesto_trabajo", "")
+                                user_dept_match = doc_dept == role_display
+                            if is_pes_2030 or user_dept_match:
+                                results_list.append(doc_data)
             
             return results_list
 
@@ -1147,7 +1158,7 @@ async def toggle_document_public_status(
         from services.firebase_service import get_documents_by_storage_path, get_firestore_client
         from services.meilisearch_service import update_documents, client, check_meilisearch_health
 
-        # Paso 1: Buscar documentos en Firestore relacionados con esta ruta de almacenamiento
+        # Paso 1: Buscar documentos en Firestore relacionados con esta ruta de almacenamiento (solo en library)
         print(f"Buscando documentos con storage_path: '{path}'")
         
         # Intentar diferentes variantes de la ruta
@@ -1164,9 +1175,25 @@ async def toggle_document_public_status(
             except Exception as e:
                 print(f"Error al intentar decodificar ruta: {e}")
         
-        if not firestore_docs:
-            print(f"ERROR: No se encontró ningún documento con storage_path: '{path}'")
-            raise HTTPException(status_code=404, detail=f"Documento no encontrado con ruta: {path}")
+        # Filtrar documentos que realmente existan en la colección 'library'
+        library_docs = []
+        db = get_firestore_client()
+        for d in (firestore_docs or []):
+            did = d.get("id") or d.get("file_id")
+            if not did:
+                continue
+            try:
+                if db.collection("library").document(did).get().exists:
+                    library_docs.append(d)
+            except Exception:
+                continue
+
+        if not library_docs:
+            print(f"ERROR: No se encontró ningún documento en la colección 'library' con storage_path: '{path}'")
+            raise HTTPException(status_code=404, detail="Solo se puede cambiar visibilidad de documentos en la biblioteca (library)")
+        
+        # Usar solo documentos de la colección library
+        firestore_docs = library_docs
         
         # Crear un diccionario para almacenar resultados de la actualización
         update_results = {
@@ -1174,8 +1201,7 @@ async def toggle_document_public_status(
             "meilisearch_updated": []
         }
         
-        # Paso 2: Actualizar en Firestore
-        db = get_firestore_client()
+        # Paso 2: Actualizar en Firestore (solo collection 'library')
         for doc in firestore_docs:
             doc_id = doc.get("id") or doc.get("file_id")
             if not doc_id:
@@ -1186,25 +1212,8 @@ async def toggle_document_public_status(
                 current_public = doc.get("public", True)
                 new_public = not bool(current_public)
                 
-                # Determinar en qué colección está el documento actualmente
-                collection_name = "library"  # Asumimos que está en library por defecto
-                
-                # Verificar si el documento existe en la colección library
-                doc_ref_library = db.collection("library").document(doc_id)
-                if not doc_ref_library.get().exists:
-                    # Si no existe en library, verificar si está en documents
-                    doc_ref_documents = db.collection("documents").document(doc_id)
-                    if doc_ref_documents.get().exists:
-                        collection_name = "documents"
-                    else:
-                        # El documento no existe en ninguna colección conocida
-                        log_error(Exception(f"Documento no encontrado en ninguna colección: {doc_id}"), 
-                                "DOCUMENT_TOGGLE_PUBLIC", user_id=user_id, 
-                                additional_details={"path": path, "doc_id": doc_id})
-                        continue
-                
-                # Actualizar en la colección correcta
-                doc_ref = db.collection(collection_name).document(doc_id)
+                # Actualizar en la colección 'library' únicamente
+                doc_ref = db.collection("library").document(doc_id)
                 doc_ref.update({"public": new_public})
                 
                 # Actualizar el documento local para Meilisearch
@@ -1230,73 +1239,49 @@ async def toggle_document_public_status(
                          additional_details={"path": path, "doc_id": doc_id if 'doc_id' in locals() else None})
                 continue
         
-        # Paso 3: Actualizar en Meilisearch
+        # Paso 3: Actualizar en Meilisearch (solo índice 'library')
         if check_meilisearch_health() and client:
             try:
-                # Preparar documentos para actualizar en Meilisearch (payload mínimo)
-                docs_to_update = []
-                for doc in firestore_docs:
-                    doc_id = doc.get("id") or doc.get("file_id")
-                    if doc_id:
-                        # Use the per-document public value which was updated above
-                        docs_to_update.append({
-                            "file_id": doc_id,
-                            "public": doc.get("public", False)
-                        })
+                # Preparar payload solo para índice de biblioteca
+                payload = []
+                for d in firestore_docs:
+                    fid = d.get("id") or d.get("file_id")
+                    if not fid:
+                        continue
+                    payload.append({
+                        "file_id": fid,
+                        "public": d.get("public", False)
+                    })
 
-                if docs_to_update:
-                    # Actualizar en ambos índices: 'documents' y 'library'
-                    indexes_to_update = ["documents", LIBRARY_INDEX_NAME]
-                    from services.meilisearch_service import sanitize_document_id, get_task_details
+                from services.meilisearch_service import sanitize_document_id, get_task_details
 
-                    for index_name in indexes_to_update:
-                        try:
-                            # Use the service wrapper which handles primary key sanitization and task response
-                            success = update_documents(docs_to_update, index_name=index_name)
-                            if success:
-                                update_results["meilisearch_updated"].extend([d.get("file_id") or d.get("id") for d in docs_to_update])
-                                continue
-
-                            # Si el wrapper falló, intentar actualización directa en MeiliCloud
-                            try:
-                                index = client.index(index_name)
-                                # Prepare payload with sanitized 'id'
-                                direct_payload = []
-                                for d in docs_to_update:
-                                    fid = d.get("file_id") or d.get("id")
-                                    if not fid:
-                                        continue
-                                    direct_payload.append({
-                                        "id": sanitize_document_id(fid),
-                                        "public": d.get("public")
-                                    })
-                                if direct_payload:
-                                    task = index.update_documents(direct_payload, primary_key="id")
-                                    task_uid, task_status = get_task_details(task)
-                                    if task_uid and task_status:
-                                        # If task_status object has `status`, consider enqueued/processing/succeeded as success
-                                        if hasattr(task_status, 'status') and task_status.status in ["enqueued", "processing", "succeeded"]:
-                                            update_results["meilisearch_updated"].extend([p.get("id") for p in direct_payload])
-                                        elif isinstance(task_status, dict) and task_status.get("status") in ["enqueued", "processing", "succeeded"]:
-                                            update_results["meilisearch_updated"].extend([p.get("id") for p in direct_payload])
-                                    else:
-                                        # As a last resort, assume update submitted
+                if payload:
+                    try:
+                        success = update_documents(payload, index_name=LIBRARY_INDEX_NAME)
+                        if success:
+                            update_results["meilisearch_updated"].extend([d.get("file_id") or d.get("id") for d in payload])
+                        else:
+                            # Fallback directo
+                            index = client.index(LIBRARY_INDEX_NAME)
+                            direct_payload = [{"id": sanitize_document_id(p.get("file_id")), "public": p.get("public")} for p in payload if p.get("file_id")]
+                            if direct_payload:
+                                task = index.update_documents(direct_payload, primary_key="id")
+                                task_uid, task_status = get_task_details(task)
+                                if not task_uid or not task_status:
+                                    update_results["meilisearch_updated"].extend([p.get("id") for p in direct_payload])
+                                else:
+                                    if (hasattr(task_status, 'status') and task_status.status in ["enqueued", "processing", "succeeded"]) or (isinstance(task_status, dict) and task_status.get("status") in ["enqueued", "processing", "succeeded"]):
                                         update_results["meilisearch_updated"].extend([p.get("id") for p in direct_payload])
-                            except Exception as direct_err:
-                                log_error(direct_err, f"MEILISEARCH_DIRECT_UPDATE_{index_name}", user_id=user_id,
-                                         additional_details={"path": path})
-                        except Exception as idx_error:
-                            log_error(idx_error, f"MEILISEARCH_UPDATE_{index_name}", user_id=user_id,
-                                     additional_details={"path": path})
+                    except Exception as idx_error:
+                        log_error(idx_error, f"MEILISEARCH_UPDATE_LIBRARY", user_id=user_id,
+                                 additional_details={"path": path})
             except Exception as meilisearch_error:
                 log_error(meilisearch_error, "MEILISEARCH_UPDATE", user_id=user_id,
                          additional_details={"path": path})
         
         # Registrar en el log los resultados
-        # Determine an example new_public_state for logging (first updated doc) or None
-        new_state_for_log = None
-        if docs_to_update and len(docs_to_update) > 0:
-            new_state_for_log = docs_to_update[0].get("public")
+        # Obtener el nuevo estado para el log
+        new_state_for_log = firestore_docs[0].get("public") if firestore_docs else None
 
         audit_log(user_id, 'DOCUMENT_TOGGLE_PUBLIC', _ctx(request, {
             'user_email': user_email,
@@ -1313,7 +1298,7 @@ async def toggle_document_public_status(
         return {
             "message": "Estado público del documento actualizado correctamente", 
             "path": path,
-            "public": False,
+            "public": new_state_for_log,
             "update_results": update_results
         }
         
@@ -1410,30 +1395,26 @@ async def list_all_documents(
 
         role_norm = _norm(user_role)
 
-        # Build filters for Meilisearch
-        filters: Optional[str] = None
+        # Build filters for Meilisearch (remove public=true for 'documents')
         is_exec = role_norm == "direccionejecutiva" or (isinstance(user_email, str) and any(p in user_email.lower() for p in ["director", "ejecutiv"]))
+        doc_filters: Optional[str] = None
+        if not is_exec and not public_only:
+            role_display = _role_display_from_firestore(user_role) or ""
+            rd_esc = role_display.replace('"', '\\"') if isinstance(role_display, str) else ""
+            parts: List[str] = [
+                'apartado = "PES 2030"'
+            ]
+            if rd_esc:
+                parts.append(f'puesto_trabajo = "{rd_esc}"')
+            doc_filters = " OR ".join(parts) if parts else None
 
-        if public_only:
-            filters = "public = true"
-        else:
-            if not is_exec:
-                role_display = _role_display_from_firestore(user_role) or ""
-                rd_esc = role_display.replace('"', '\\"') if isinstance(role_display, str) else ""
-                parts: List[str] = [
-                    "public = true",
-                    'apartado = "PES 2030"'  # TODOS ven documentos de PES 2030
-                ]
-                if rd_esc:
-                    parts.append(f'puesto_trabajo = "{rd_esc}"')
-                filters = " OR ".join(parts)
-            else:
-                filters = None
-
-        # Query Meilisearch (empty query -> list)
-        ms = search_documents(query="", limit=1000, offset=0, filters=filters)
-        hits = (ms or {}).get("hits", [])
-        source = (ms or {}).get("source", ("meilisearch" if is_meilisearch_available() else "local"))
+        # Query Meilisearch in both indices
+        ms_docs = search_documents(query="", limit=1000, offset=0, filters=(None if is_exec or public_only else doc_filters))
+        ms_lib = search_documents(query="", limit=1000, offset=0, index_name=LIBRARY_INDEX_NAME)
+        hits = (ms_lib or {}).get("hits", [])
+        if not public_only:
+            hits = hits + (ms_docs or {}).get("hits", [])
+        source = "combined_meilisearch" if is_meilisearch_available() else (ms_docs or {}).get("source", "local")
 
         # Firestore fallback if Meilisearch unavailable
         if not is_meilisearch_available():
@@ -1442,36 +1423,37 @@ async def list_all_documents(
                 db = get_firestore_client()
                 
                 # Buscar en ambas colecciones
-                # Documentos públicos de la biblioteca
+                # Documentos en la biblioteca: SIEMPRE visibles para todos
                 library_qref = db.collection("library")
                 for d in library_qref.limit(1000).stream():
                     data = d.to_dict() or {}
                     data["id"] = d.id
+                    data["_collection"] = "library"
                     fs_hits.append(data)
                 
-                # Documentos privados (solo si no es public_only)
+                # Documentos en 'documents' (solo si no es public_only)
                 if not public_only:
                     docs_qref = db.collection("documents")
                     for d in docs_qref.limit(1000).stream():
                         data = d.to_dict() or {}
                         data["id"] = d.id
+                        data["_collection"] = "documents"
                         fs_hits.append(data)
 
                 # Apply same logic client-side
                 if public_only:
-                    # Los documentos de library ya son públicos, 
-                    # pero también verificar el flag public por compatibilidad
-                    hits = [x for x in fs_hits if x.get("public") is True]
+                    # Para public_only, devolver solo de la colección 'library'
+                    hits = [x for x in fs_hits if x.get("_collection") == "library"]
                 else:
                     if not is_exec:
                         role_display = _role_display_from_firestore(user_role) or ""
                         rn_disp = _norm(role_display)
 
                         def _match(doc: Dict[str, Any]) -> bool:
-                            # Los documentos de library son siempre visibles (públicos)
-                            if doc.get("public") is True:
+                            # Documentos de library: siempre visibles
+                            if doc.get("_collection") == "library":
                                 return True
-                            # TODOS ven documentos de PES 2030
+                            # Documentos en 'documents': visibles si PES 2030 o coincide departamento
                             if doc.get("apartado") == "PES 2030":
                                 return True
                             pt = _norm(doc.get("puesto_trabajo") or "")
