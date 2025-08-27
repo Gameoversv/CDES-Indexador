@@ -33,10 +33,10 @@ class Settings(BaseSettings):
     )
 
     # ===== CONFIGURACIÓN DE FIREBASE =====
-    FIREBASE_SERVICE_ACCOUNT_KEY_PATH: str = Field(
+    FIREBASE_SERVICE_ACCOUNT_JSON: str = Field(
         ...,
-        description="Ruta al archivo JSON de credenciales de Firebase",
-        example="firebase-service-account.json"
+        description="JSON de credenciales de Firebase como string",
+        example="{\"type\": \"service_account\", ...}"
     )
     
     FIREBASE_STORAGE_BUCKET: str = Field(
@@ -177,9 +177,12 @@ def validar_configuracion():
     """Valida que todas las configuraciones están correctas."""
     errores = []
     
-    firebase_path = os.path.join(BASE_DIR, settings.FIREBASE_SERVICE_ACCOUNT_KEY_PATH)
-    if not os.path.exists(firebase_path):
-        errores.append(f"Archivo de credenciales Firebase no encontrado: {firebase_path}")
+    # Validar que el JSON de Firebase es válido
+    import json
+    try:
+        json.loads(settings.FIREBASE_SERVICE_ACCOUNT_JSON)
+    except json.JSONDecodeError:
+        errores.append("FIREBASE_SERVICE_ACCOUNT_JSON debe ser un JSON válido")
     
     if not settings.FIREBASE_STORAGE_BUCKET.endswith('.appspot.com'):
         errores.append("El bucket de Firebase Storage debe terminar en '.appspot.com'")

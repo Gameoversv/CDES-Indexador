@@ -24,14 +24,11 @@ def initialize_firebase() -> None:
         return
     
     try:
-        base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        service_account_path = os.path.join(base_path, settings.FIREBASE_SERVICE_ACCOUNT_KEY_PATH)
-
-        if not os.path.exists(service_account_path):
-            raise FileNotFoundError(f"Archivo de credenciales no encontrado: {service_account_path}")
+        import json
 
         if not firebase_admin._apps:
-            cred = credentials.Certificate(service_account_path)
+            # Usar el JSON directamente desde la variable de entorno
+            cred = credentials.Certificate(json.loads(settings.FIREBASE_SERVICE_ACCOUNT_JSON))
             _firebase_app = firebase_admin.initialize_app(cred, {
                 'storageBucket': settings.FIREBASE_STORAGE_BUCKET
             })
