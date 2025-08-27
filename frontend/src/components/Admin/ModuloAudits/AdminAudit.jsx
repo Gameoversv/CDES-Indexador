@@ -176,7 +176,7 @@ export default function AdminAudit() {
           <div className="p-4 border rounded text-red-600 bg-red-50">{error}</div>
         ) : (
           <>
-            <AuditStatsCards stats={stats} />
+            <AuditStatsCards logs={filteredLogs} stats={stats} />
             <AuditFilters
               filters={filters}
               setFilters={setFilters}
